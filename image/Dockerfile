@@ -18,7 +18,7 @@
 # Debian rather than Alpine on purpose: sandboxes run Python, and musl has no
 # manylinux wheels, so on Alpine every numpy/pandas install compiles from source
 # inside the sandbox.
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 # netcat-openbsd gives the preview relay its fast path; without it the relay
 # falls back to python3, which works but pays interpreter startup per connection.
