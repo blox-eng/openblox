@@ -1,6 +1,6 @@
 module github.com/blox-eng/openblox
 
-go 1.25.4
+go 1.25.12
 
 require (
 	github.com/containerd/errdefs v1.0.0

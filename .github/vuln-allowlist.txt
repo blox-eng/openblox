@@ -1,0 +1,15 @@
+# Vulnerabilities govulncheck reports as reachable that we cannot currently fix.
+#
+# One ID per line. Blank lines and #-comments are ignored. Anything reachable and
+# NOT listed here fails CI — so this file is the complete, reviewable record of
+# what we are knowingly carrying.
+#
+# Every entry must say WHY it is here and what would remove it. An entry with no
+# route out is a decision to stop caring, which is not the same as an exception.
+
+# github.com/docker/docker — no fixed version published upstream. v28.5.2 is the
+# latest release, so there is nothing to upgrade to. Both are reached through the
+# Docker client's own container-create path, which openblox cannot avoid using.
+# Remove these the moment a fixed release exists.
+GO-2026-4887
+GO-2026-4883
