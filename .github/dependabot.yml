@@ -1,0 +1,31 @@
+version: 2
+
+updates:
+  # The Go module's own dependencies. Grouped so routine bumps arrive as one
+  # pull request rather than a wall of them.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns: ['*']
+
+  # Every action is pinned to a commit SHA, which is the right call — but a
+  # pinned SHA never updates on its own, so without this the pins silently rot,
+  # security fixes to the actions included.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  # The sandbox base image. This is the ENTIRE userland untrusted code runs in,
+  # so it is the surface most worth keeping current — and the one most easily
+  # forgotten, since nothing about it changes when the Go code does.
+  - package-ecosystem: docker
+    directory: /image
+    schedule:
+      interval: weekly
