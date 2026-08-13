@@ -84,6 +84,28 @@ jobs:
   # Integration tests need a gVisor-capable host, which hosted runners are not.
   # Compiling them on every PR is what stops them rotting between the rare runs
   # on a self-hosted box — a test that no longer builds is a test nobody runs.
+  vuln:
+    name: Vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Gates on NEW reachable vulnerabilities. govulncheck exits non-zero on any
+      # finding, which is useless as a gate when a dependency has a reachable
+      # vulnerability with no published fix — the check goes permanently red and
+      # people learn to ignore it. Known-unfixable findings live in
+      # .github/vuln-allowlist.txt with a reason, rather than being suppressed.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          .github/scripts/vulncheck.sh
+
   integration-build:
     name: Integration Tests (compile only)
     runs-on: ubuntu-latest
