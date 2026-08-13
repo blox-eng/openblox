@@ -1,18 +1,14 @@
 name: CI
 
+# No paths-ignore. These jobs are required for merge, and a skipped required
+# check never reports — so a docs-only pull request would be unmergeable
+# forever, with nothing the author could do about it. The jobs are fast; that
+# is a better trade than a class of PR that silently cannot land.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
