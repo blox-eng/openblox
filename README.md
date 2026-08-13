@@ -6,7 +6,11 @@ openblox is a small Go library over Docker and [gVisor](https://gvisor.dev). The
 no control plane, no database, and no scheduler — a sandbox is a container, and
 the container is the state.
 
-> **Status: pre-release.** The API is taking shape and will change. Not yet published.
+> **Status: pre-release.** The API is taking shape and will change.
+
+The image above is the [reference sandbox userland](image/README.md) openblox
+publishes; any image works, as long as it has a shell, a non-root default user,
+and `nc` or `python3`.
 
 ```go
 backend, err := docker.New()
@@ -17,7 +21,8 @@ defer backend.Close()
 
 // No options: no network, non-root, read-only rootfs, capped CPU/memory/PIDs,
 // gVisor runtime, reaped when idle.
-sb, err := backend.Create(ctx, "session-1", sandbox.WithImage("python:3.13-slim@sha256:..."))
+sb, err := backend.Create(ctx, "session-1",
+    sandbox.WithImage("ghcr.io/blox-eng/openblox-sandbox:latest"))
 if err != nil {
     return err
 }

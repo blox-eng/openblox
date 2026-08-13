@@ -1,0 +1,175 @@
+name: Publish image
+
+# Builds the reference sandbox image and pushes it to ghcr.
+#
+# openblox pulls an absent image on create, so publishing is what makes the
+# default work on a host that has never seen it. A release tag publishes the
+# matching image version; main publishes :edge so the tip is always testable
+# without cutting a release.
+#
+# The digest is printed to the job summary. Pin THAT downstream, not the tag: an
+# image is the sandbox's entire userland, and whoever controls the registry can
+# repoint a tag.
+#
+# Every ${{ }} value is passed through env rather than interpolated into a run:
+# script — workflow_dispatch inputs are attacker-controlled by anyone who can
+# trigger the workflow, and this job holds a registry-write token.
+
+on:
+  pull_request:
+    paths:
+      - 'image/**'
+      - '.github/workflows/publish-image.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'image/**'
+      - '.github/workflows/publish-image.yml'
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to publish (e.g. 0.1.0). Defaults to :edge.'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-image
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # A pull request builds the image and asserts the contract, but never pushes.
+  # Without this a broken Dockerfile is only discovered after it reaches main,
+  # where the failure is a missing image rather than a red check.
+  verify:
+    name: Build & Verify
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      # Single-platform and loaded into the local daemon: buildx cannot --load a
+      # multi-platform manifest, and running the contract check matters more here
+      # than proving both architectures build.
+      - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: image
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: openblox-sandbox:pr
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the contract
+        run: |
+          docker run --rm --entrypoint /bin/sh openblox-sandbox:pr -c \
+            'command -v bash && command -v python3 && command -v nc && [ "$(id -u)" -ne 0 ]'
+
+  publish:
+    name: Build & Push
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Resolve the version BEFORE anything can push. A tag push publishes that
+      # version plus :latest; anything else is :edge. A dispatch override is
+      # validated, because it reaches a shell holding a write token.
+      - name: Resolve tags
+        id: meta
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/openblox-sandbox"
+
+          version=""
+          if [ -n "$TAG_INPUT" ]; then
+            version="${TAG_INPUT#v}"
+          elif [ "$REF_TYPE" = tag ]; then
+            version="${REF_NAME#v}"
+          fi
+
+          if [ -n "$version" ]; then
+            if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "refusing version '$version': expected semver like 1.2.3" >&2
+              exit 1
+            fi
+            printf 'tags=%s:%s,%s:latest\n' "$image" "$version" "$image" >> "$GITHUB_OUTPUT"
+          else
+            printf 'tags=%s:edge\n' "$image" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: image
+          # arm64 as well as amd64: Apple Silicon is where most people will try
+          # this first, and emulating the whole sandbox to run a demo is not a
+          # first impression worth having.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Smoke-test the published image against the contract the Dockerfile
+      # asserts at build time. The build only proves it held on the BUILD
+      # platform; this proves the pushed manifest runs.
+      - name: Verify the pushed image
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          ref="${TAGS%%,*}"
+          docker pull "$ref"
+          docker run --rm --entrypoint /bin/sh "$ref" -c \
+            'command -v bash && command -v python3 && command -v nc && [ "$(id -u)" -ne 0 ]'
+          echo "contract holds for $ref"
+
+      - name: Report the digest to pin
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo '## Sandbox image published'
+            echo
+            echo 'Tags:'
+            echo
+            printf '%s\n' "$TAGS" | tr ',' '\n' | sed 's/^/- `/; s/$/`/'
+            echo
+            echo 'Pin this digest rather than a tag:'
+            echo
+            echo '```'
+            printf '%s@%s\n' "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/openblox-sandbox" "$DIGEST"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
