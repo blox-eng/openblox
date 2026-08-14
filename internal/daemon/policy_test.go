@@ -35,9 +35,12 @@ func TestNoRequestFieldReachesTheSpec(t *testing.T) {
 		`{"name":"a","profile":"code-exec","registry_auth":{"username":"x"}}`,
 		`{"name":"a","profile":"code-exec","max_processes":0}`,
 
-		// Casing variant: DisallowUnknownFields still matches "Runtime"
-		// case-insensitively against the struct's known fields, so this must
-		// stay unmatched and rejected exactly like the lowercase form.
+		// Casing variant of a field that does not exist on CreateRequest at
+		// all: this is not a distinct attack from the lowercase "runtime"
+		// case above (same rejection, same code path), just a pin on
+		// encoding/json's case-insensitive matching — the same mechanism that
+		// lets a caller write "Profile" for the real "profile" field must not
+		// also resolve "Runtime" to some field that isn't there.
 		`{"name":"a","profile":"code-exec","Runtime":"runc"}`,
 
 		// Valid JSON, but not an object: decoding into CreateRequest must
@@ -55,7 +58,11 @@ func TestNoRequestFieldReachesTheSpec(t *testing.T) {
 		// Duplicate "labels" key where the first occurrence is benign and
 		// the second smuggles the reserved profile-marker label. The whole
 		// field is replaced by the last occurrence, not merged, so the
-		// reserved-label check must see (and reject) the winning value.
+		// reserved-label check must see (and reject) the winning value. This
+		// is also the only case in this file that carries the strong half of
+		// the reserved-label guarantee (fake.created empty, not just 4xx) —
+		// TestCreateRejectsReservedProfileLabel in sandboxes_test.go now
+		// carries that assertion too, so the two do not depend on each other.
 		`{"name":"a","profile":"code-exec","labels":{"x":"1"},"labels":{"openbloxd.profile":"pwned"}}`,
 	}
 	for _, body := range bodies {
@@ -83,6 +90,12 @@ func TestAcceptedRequestGetsExactlyTheProfilePolicy(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/sandboxes",
 		strings.NewReader(`{"name":"a","profile":"code-exec","env":["K=v"],"labels":{"t":"1"}}`)))
+
+	// Without this, a 400 and a wrong-policy 201 both surface as the same
+	// zero-value Spec mismatch below — the failure wouldn't say which.
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body %s", rec.Code, rec.Body.String())
+	}
 
 	got := fake.created["a"]
 	want := sandbox.NewSpec(srv.cfg.Profiles["code-exec"].Options()...)
@@ -120,7 +133,8 @@ func TestHostileLabelValuesDoNotReachTypedSpecFields(t *testing.T) {
 	}
 }
 
-// TestReservedProfileLabelIsRefused from the brief duplicates
-// TestCreateRejectsReservedProfileLabel in sandboxes_test.go: both send
-// labels:{"openbloxd.profile": <any value>} and assert 400. Kept as one test,
-// not two, so the two copies cannot drift apart later.
+// TestReservedProfileLabelIsRefused from the brief is not a separate test
+// here: TestCreateRejectsReservedProfileLabel in sandboxes_test.go covers the
+// same body and now asserts both the 400 and fake.created being empty — the
+// full guarantee, under the name that claims it. A second copy would only
+// invite the two to drift apart.

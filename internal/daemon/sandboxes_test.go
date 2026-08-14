@@ -248,8 +248,12 @@ func TestCreateRequiresName(t *testing.T) {
 	}
 }
 
+// The 400 alone is the weaker half: a handler can reject the request and
+// still have called Create first. fake.created staying empty is what proves
+// the forged label never reached the backend.
 func TestCreateRejectsReservedProfileLabel(t *testing.T) {
 	srv := newTestServer(t)
+	fake := srv.backend.(*fakeBackend)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes",
 		strings.NewReader(`{"name":"a","profile":"code-exec","labels":{"openbloxd.profile":"code-exec"}}`))
@@ -257,6 +261,9 @@ func TestCreateRejectsReservedProfileLabel(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if len(fake.created) != 0 {
+		t.Fatalf("a rejected request created a sandbox: %+v", fake.created)
 	}
 }
 
