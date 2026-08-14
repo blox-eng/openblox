@@ -5,8 +5,12 @@
 
 # openblox
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/blox-eng/openblox.svg)](https://pkg.go.dev/github.com/blox-eng/openblox)
 [![CI](https://github.com/blox-eng/openblox/actions/workflows/ci.yml/badge.svg)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://openblox.sh/badges/tests.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
+[![Integration tests](https://img.shields.io/endpoint?url=https://openblox.sh/badges/integration.json)](https://github.com/blox-eng/openblox/issues/3)
+[![Coverage](https://img.shields.io/endpoint?url=https://openblox.sh/badges/coverage.json)](https://github.com/blox-eng/openblox/issues/10)
+[![Lines of Go](https://img.shields.io/endpoint?url=https://openblox.sh/badges/loc.json)](ARCHITECTURE.md)
+[![Go Reference](https://pkg.go.dev/badge/github.com/blox-eng/openblox.svg)](https://pkg.go.dev/github.com/blox-eng/openblox)
 [![Go 1.25](https://img.shields.io/badge/go-1.25-00ADD8.svg)](https://go.dev/dl/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
@@ -109,10 +113,12 @@ installing `runsc` and wiring it up.
 
 ## Status
 
-2,000 lines across three packages, 43 unit tests and 39 integration tests, two direct dependencies
-(`docker/docker` and `containerd/errdefs`). Every release publishes a
-multi-architecture sandbox image with an SBOM and build provenance. CI runs
-lint, tests, and `govulncheck`, gating on newly reachable vulnerabilities.
+The badges above are measured from the source on every deploy, not typed here —
+size, test counts, and coverage cannot drift from the code that produced them.
+Two direct dependencies (`docker/docker` and `containerd/errdefs`). Every release
+publishes a multi-architecture sandbox image with an SBOM and build provenance.
+CI runs lint, tests, and `govulncheck`, gating on newly reachable
+vulnerabilities.
 
 Honest about the gaps: the integration suite compiles in CI but does not run
 there — it needs a host with Docker and `runsc`, so it runs locally
