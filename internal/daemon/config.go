@@ -81,9 +81,25 @@ func (c *Config) validate() error {
 	if c.ReapInterval == 0 {
 		c.ReapInterval = time.Minute
 	}
+	var authName string
+	var auth *RegistryAuth
 	for name, p := range c.Profiles {
 		if err := p.validate(name); err != nil {
 			return err
+		}
+		if p.RegistryAuth == nil {
+			continue
+		}
+		if auth == nil {
+			authName, auth = name, p.RegistryAuth
+		} else if *p.RegistryAuth != *auth {
+			// docker.Option configures the Backend, not a single pull: one Docker
+			// connection carries one credential. Map iteration order is random, so
+			// silently picking a "last one wins" credential would mean the daemon
+			// authenticates as a different registry account on every restart.
+			// Refuse rather than serve with an operator-invisible coin flip.
+			return fmt.Errorf("%w: profiles %q and %q specify different registry_auth, but one Docker connection carries one credential",
+				sandbox.ErrInvalid, authName, name)
 		}
 	}
 	return nil

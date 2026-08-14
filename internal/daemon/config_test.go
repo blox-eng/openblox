@@ -79,3 +79,47 @@ func TestLoadRejectsNoProfiles(t *testing.T) {
 		t.Fatal("expected an error: no profiles configured")
 	}
 }
+
+func TestLoadRejectsConflictingRegistryAuth(t *testing.T) {
+	path := writeConfig(t, `
+socket: /tmp/s.sock
+profiles:
+  code-exec:
+    image: example.com/sandbox@sha256:abc
+    registry_auth:
+      username: alice
+      password: one
+  browser:
+    image: example.com/browser@sha256:def
+    registry_auth:
+      username: bob
+      password: two
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected an error: profiles specify different registry_auth, but one Docker connection carries one credential")
+	}
+}
+
+func TestLoadAcceptsMatchingRegistryAuth(t *testing.T) {
+	path := writeConfig(t, `
+socket: /tmp/s.sock
+profiles:
+  code-exec:
+    image: example.com/sandbox@sha256:abc
+    registry_auth:
+      username: alice
+      password: one
+  browser:
+    image: example.com/browser@sha256:def
+    registry_auth:
+      username: alice
+      password: one
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Profiles["code-exec"].RegistryAuth.Username != "alice" {
+		t.Errorf("registry auth not preserved: %+v", cfg.Profiles["code-exec"].RegistryAuth)
+	}
+}
