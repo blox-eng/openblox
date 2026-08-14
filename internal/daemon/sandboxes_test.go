@@ -3,6 +3,8 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,16 +17,40 @@ import (
 
 // fakeSandbox is the minimal Sandbox a handler under test can observe: its
 // identity and its Labels, which is exactly what infoOf and the profile check
-// read. Every other method is unused by these tests and panics via the nil
-// embed if a handler starts relying on one, which is the point.
+// read. It is also extended to support Exec, WriteFile, ReadFile, and
+// StartProcess for testing the exec handlers.
 type fakeSandbox struct {
 	sandbox.Sandbox
-	info sandbox.Info
+	info    sandbox.Info
+	backend *fakeBackend // back-reference to store test data
 }
 
 func (f *fakeSandbox) Info() sandbox.Info { return f.info }
 
 func (f *fakeSandbox) Stop(context.Context) error { return nil }
+
+func (f *fakeSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result, error) {
+	f.backend.lastCommand = cmd
+	return sandbox.Result{Stdout: []byte("output"), ExitCode: 0}, nil
+}
+
+func (f *fakeSandbox) WriteFile(ctx context.Context, path string, mode fs.FileMode, src io.Reader) error {
+	data, _ := io.ReadAll(src)
+	if f.backend.written == nil {
+		f.backend.written = map[string]string{}
+	}
+	f.backend.written[path] = string(data)
+	return nil
+}
+
+func (f *fakeSandbox) ReadFile(ctx context.Context, path string) (io.ReadCloser, error) {
+	// Return a reader with some test content
+	return io.NopCloser(strings.NewReader("file content")), nil
+}
+
+func (f *fakeSandbox) StartProcess(ctx context.Context, name string, cmd sandbox.Command) error {
+	return nil
+}
 
 // fakeBackend stands in for a real provisioner. existing simulates sandboxes
 // that were already created under some profile before the test began — the
@@ -41,6 +67,10 @@ type fakeBackend struct {
 	// one this request resolved, exactly as Backend.Create's session-affinity
 	// contract would when a name gets taken mid-request.
 	createWinsUnderProfile string
+
+	// Exec, WriteFile, ReadFile, and StartProcess test fields
+	lastCommand sandbox.Command
+	written     map[string]string // path -> content
 }
 
 func (f *fakeBackend) Create(_ context.Context, name string, opts ...sandbox.CreateOption) (sandbox.Sandbox, error) {
@@ -57,7 +87,7 @@ func (f *fakeBackend) Create(_ context.Context, name string, opts ...sandbox.Cre
 	if f.createWinsUnderProfile != "" {
 		labels = map[string]string{labelProfile: f.createWinsUnderProfile}
 	}
-	return &fakeSandbox{info: sandbox.Info{Name: name, Image: spec.Image, Labels: labels}}, nil
+	return &fakeSandbox{info: sandbox.Info{Name: name, Image: spec.Image, Labels: labels}, backend: f}, nil
 }
 
 func (f *fakeBackend) Open(_ context.Context, name string) (sandbox.Sandbox, error) {
@@ -65,7 +95,7 @@ func (f *fakeBackend) Open(_ context.Context, name string) (sandbox.Sandbox, err
 	if !ok {
 		return nil, sandbox.ErrNotFound
 	}
-	return &fakeSandbox{info: sandbox.Info{Name: name, Labels: map[string]string{labelProfile: profile}}}, nil
+	return &fakeSandbox{info: sandbox.Info{Name: name, Labels: map[string]string{labelProfile: profile}}, backend: f}, nil
 }
 
 func (f *fakeBackend) List(context.Context) ([]sandbox.Info, error) {

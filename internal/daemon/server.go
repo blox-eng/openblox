@@ -56,14 +56,6 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-func (s *Server) handleExec(w http.ResponseWriter, _ *http.Request) { fail(w, sandbox.ErrNotFound) }
-func (s *Server) handleWriteFile(w http.ResponseWriter, _ *http.Request) {
-	fail(w, sandbox.ErrNotFound)
-}
-func (s *Server) handleReadFile(w http.ResponseWriter, _ *http.Request) { fail(w, sandbox.ErrNotFound) }
-func (s *Server) handleStartProcess(w http.ResponseWriter, _ *http.Request) {
-	fail(w, sandbox.ErrNotFound)
-}
 func (s *Server) handleDial(w http.ResponseWriter, _ *http.Request)     { fail(w, sandbox.ErrNotFound) }
 func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) { fail(w, sandbox.ErrNotFound) }
 
