@@ -8,9 +8,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -69,17 +71,33 @@ func run(configPath string) error {
 	// own command timeouts are the bound that applies here.
 	httpSrv := &http.Server{Handler: srv.Handler()}
 
-	serveErr := make(chan error, 1)
-	go func() {
-		slog.Info("openbloxd listening", slog.String("socket", cfg.Socket), slog.Int("profiles", len(cfg.Profiles)))
-		serveErr <- httpSrv.Serve(ln)
-	}()
+	slog.Info("openbloxd listening", slog.String("socket", cfg.Socket), slog.Int("profiles", len(cfg.Profiles)))
+	return serve(ctx, httpSrv, ln)
+}
 
-	<-ctx.Done()
+// serve runs httpSrv on ln until ctx is cancelled or Serve fails on its own.
+//
+// A Serve failure with no signal must return promptly rather than wait on
+// ctx.Done(), which may never fire: Restart=on-failure in the unit only
+// triggers if the process actually exits, and a process that hangs after
+// Serve dies looks "active (running)" to systemd while accepting nothing.
+func serve(ctx context.Context, httpSrv *http.Server, ln net.Listener) error {
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- httpSrv.Serve(ln) }()
+
+	select {
+	case err := <-serveErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("serve: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+	}
+
 	// Shutdown closes the listener the instant it's called, before it starts
 	// waiting on in-flight connections — so it must run synchronously here and
-	// block run() until it (or its 10s budget) is done. Do this on a goroutine
-	// instead and main() returns the moment Serve unblocks, killing that
+	// block until it (or its 10s budget) is done. Do this on a goroutine
+	// instead and the caller returns the moment Serve unblocks, killing that
 	// goroutine mid-wait and turning the grace period into dead code.
 	//
 	// This still can't wait out a hijacked preview stream: once a connection is
@@ -91,7 +109,7 @@ func run(configPath string) error {
 		slog.Warn("openbloxd: graceful shutdown did not complete in time", slog.Any("error", err))
 	}
 
-	if err := <-serveErr; err != nil && err != http.ErrServerClosed {
+	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve: %w", err)
 	}
 	return nil
