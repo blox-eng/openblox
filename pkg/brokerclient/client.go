@@ -28,6 +28,10 @@ const baseURL = "http://openbloxd"
 type Client struct {
 	http *http.Client
 
+	// socket is redialled directly by DialPort, which needs a raw connection
+	// outside the pooled http.Client — see dial.go.
+	socket string
+
 	// signer and previewBase are set only when WithPreviews was passed. Expose
 	// and Revoke fail cleanly when they are nil, rather than minting a URL
 	// nothing serves.
@@ -41,6 +45,7 @@ func New(socketPath string, opts ...Option) (*Client, error) {
 		return nil, fmt.Errorf("%w: socket path is empty", sandbox.ErrInvalid)
 	}
 	c := &Client{
+		socket: socketPath,
 		http: &http.Client{
 			Transport: &http.Transport{
 				// The address net/http computed is discarded: there is exactly one
@@ -203,8 +208,9 @@ func errorFrom(resp *http.Response) error {
 func pathEscape(name string) string { return url.PathEscape(name) }
 
 // Compile-time proof the broker client satisfies the same contract the
-// Docker backend does.
+// Docker backend does, and needs no adapter to serve preview.NewHandler.
 var (
 	_ sandbox.Backend = (*Client)(nil)
 	_ sandbox.Sandbox = (*brokerSandbox)(nil)
+	_ preview.Dialer  = (*Client)(nil)
 )
