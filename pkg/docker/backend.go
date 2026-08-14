@@ -9,7 +9,9 @@ package docker
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,6 +20,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 
 	"github.com/blox-eng/openblox/pkg/sandbox"
@@ -63,6 +66,10 @@ type Backend struct {
 	// previews is nil unless WithPreviews was passed, in which case Expose
 	// reports that rather than minting a URL nothing serves.
 	previews *previews
+
+	// registryAuth is the base64url X-Registry-Auth value used when pulling.
+	// Empty means anonymous, which is what openblox did before this existed.
+	registryAuth string
 }
 
 // Option configures a Backend at construction.
@@ -87,6 +94,26 @@ func New(opts ...Option) (*Backend, error) {
 
 // Close releases the Docker client. Running sandboxes are left alone.
 func (b *Backend) Close() error { return b.cli.Close() }
+
+// WithRegistryAuth authenticates image pulls.
+//
+// Without it a private image must already be present in the local store,
+// because openblox pulls anonymously. Credentials given here stay in this
+// process: they are sent to the daemon on pull and never recorded on the
+// sandbox, whose labels are visible to anything with daemon access.
+func WithRegistryAuth(username, password string) Option {
+	return func(b *Backend) error {
+		if username == "" {
+			return fmt.Errorf("%w: registry username is empty", sandbox.ErrInvalid)
+		}
+		blob, err := json.Marshal(registry.AuthConfig{Username: username, Password: password})
+		if err != nil {
+			return fmt.Errorf("encode registry auth: %w", err)
+		}
+		b.registryAuth = base64.URLEncoding.EncodeToString(blob)
+		return nil
+	}
+}
 
 // Create returns a running sandbox for name, creating it if absent.
 func (b *Backend) Create(ctx context.Context, name string, opts ...sandbox.CreateOption) (sandbox.Sandbox, error) {
