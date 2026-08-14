@@ -36,10 +36,6 @@ func New(backend Backend, cfg *Config) *Server {
 // No path carries a version prefix: the daemon and its client ship together and
 // speak over a local socket, so there is no independently versioned consumer to
 // protect. A header can version this later without a guess baked into a path.
-//
-// The lifecycle handlers (sandboxes.go) are real; the rest are stubs Tasks 6-7
-// replace, and until then answer ErrNotFound so the route table itself,
-// decode, and fail can be exercised end to end.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /sandboxes", s.handleCreate)
@@ -55,9 +51,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /profiles", s.handleProfiles)
 	return mux
 }
-
-func (s *Server) handleDial(w http.ResponseWriter, _ *http.Request)     { fail(w, sandbox.ErrNotFound) }
-func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) { fail(w, sandbox.ErrNotFound) }
 
 // decode reads a strict JSON body. An unknown field is a 400 and not an
 // ignored field: silently accepting one is how a request field that must not

@@ -71,6 +71,10 @@ type fakeBackend struct {
 	// Exec, WriteFile, ReadFile, and StartProcess test fields
 	lastCommand sandbox.Command
 	written     map[string]string // path -> content
+
+	// conn is what DialPort hands back, standing in for the relay a real
+	// backend would open over the runtime's exec channel.
+	conn net.Conn
 }
 
 func (f *fakeBackend) Create(_ context.Context, name string, opts ...sandbox.CreateOption) (sandbox.Sandbox, error) {
@@ -108,7 +112,7 @@ func (f *fakeBackend) List(context.Context) ([]sandbox.Info, error) {
 
 func (f *fakeBackend) Destroy(context.Context, string) error { return nil }
 
-func (f *fakeBackend) DialPort(context.Context, string, int) (net.Conn, error) { return nil, nil }
+func (f *fakeBackend) DialPort(context.Context, string, int) (net.Conn, error) { return f.conn, nil }
 func (f *fakeBackend) Reap(context.Context) ([]string, error)                  { return nil, nil }
 
 func newTestServer(t *testing.T) *Server {
