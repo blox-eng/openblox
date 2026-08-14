@@ -4,20 +4,32 @@ name: Docs
 #
 # A pull request builds but does not deploy, so a broken docs build is a red check
 # rather than a broken site. Only main deploys.
+#
+# This workflow also publishes the badge endpoints the README reads. They are
+# measured from the Go source, which is why pkg/** is in the trigger: leave it
+# out and the badges freeze at whatever the last docs edit happened to see.
 
 on:
   push:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'pkg/**'
       - 'mkdocs.yml'
+      - 'go.mod'
+      - 'go.sum'
       - 'requirements-docs.txt'
+      - '.github/scripts/badges.sh'
       - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'docs/**'
+      - 'pkg/**'
       - 'mkdocs.yml'
+      - 'go.mod'
+      - 'go.sum'
       - 'requirements-docs.txt'
+      - '.github/scripts/badges.sh'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -53,6 +65,16 @@ jobs:
       # missing from the nav fails here instead of shipping.
       - name: Build
         run: mkdocs build --strict
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Writes shields.io endpoint JSON into the site, so the README's numbers
+      # are measured on every deploy rather than typed once and left to rot.
+      - name: Badges
+        run: .github/scripts/badges.sh site/badges
 
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
