@@ -141,6 +141,7 @@ func infoFrom(i brokerapi.Info) sandbox.Info {
 		Image:     i.Image,
 		State:     sandbox.State(i.State),
 		CreatedAt: i.CreatedAt,
+		Labels:    i.Labels,
 	}
 }
 

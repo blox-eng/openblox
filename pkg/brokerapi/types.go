@@ -21,14 +21,18 @@ type CreateRequest struct {
 }
 
 // Info describes a sandbox. Profile is reported so a caller can tell which
-// policy a pre-existing sandbox was created under.
+// policy a pre-existing sandbox was created under. Labels are exactly the
+// caller's own labels from Create — the daemon's own bookkeeping (which
+// profile a sandbox belongs to) is never mixed in here, because it is already
+// reported separately as Profile.
 type Info struct {
-	Name      string    `json:"name"`
-	ID        string    `json:"id"`
-	Image     string    `json:"image"`
-	State     string    `json:"state"`
-	CreatedAt time.Time `json:"created_at"`
-	Profile   string    `json:"profile"`
+	Name      string            `json:"name"`
+	ID        string            `json:"id"`
+	Image     string            `json:"image"`
+	State     string            `json:"state"`
+	CreatedAt time.Time         `json:"created_at"`
+	Profile   string            `json:"profile"`
+	Labels    map[string]string `json:"labels,omitempty"`
 }
 
 // ExecRequest runs one command. Timeout is a Go duration string; the daemon

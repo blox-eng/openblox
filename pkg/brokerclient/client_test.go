@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blox-eng/openblox/pkg/brokerapi"
 	"github.com/blox-eng/openblox/pkg/sandbox"
@@ -79,6 +80,9 @@ func TestCreateRejectsPolicyBearingOptions(t *testing.T) {
 		{"egress", sandbox.WithEgress(sandbox.EgressUnrestricted), "egress"},
 		{"image", sandbox.WithImage("evil.example.com/x"), "image"},
 		{"user", sandbox.WithUser("0:0"), "user"},
+		{"resources", sandbox.WithResources(sandbox.Resources{CPUs: 4}), "resources"},
+		{"lifetime", sandbox.WithLifetime(sandbox.Lifetime{MaxAge: time.Hour}), "lifetime"},
+		{"timeouts", sandbox.WithCommandTimeouts(5*time.Second, 30*time.Second), "timeouts"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -120,6 +124,32 @@ func TestCreateAllowsEnvAndLabels(t *testing.T) {
 	// wire — it would collide with the daemon's own reserved label.
 	if _, ok := got.Labels[profileLabel]; ok {
 		t.Errorf("request labels leaked %q: %+v", profileLabel, got.Labels)
+	}
+}
+
+// TestLabelsRoundTripThroughInfo is the client-side half of the label round
+// trip: whatever the wire Info carries in Labels must surface on
+// sb.Info().Labels — this used to be silently dropped, the same class of bug
+// Create's policy-field rejection exists to prevent for CreateOptions.
+func TestLabelsRoundTripThroughInfo(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		var req brokerapi.CreateRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		// Respond the way the daemon actually does: caller labels back,
+		// openbloxd.profile never included (it is reported as Profile).
+		respondJSON(w, http.StatusCreated, brokerapi.Info{
+			Name: "a", State: "running", Profile: req.Profile, Labels: req.Labels,
+		})
+	})
+	sb, err := c.Create(context.Background(), "a", WithProfile("code-exec"), sandbox.WithLabel("tenant", "t1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.Info().Labels["tenant"] != "t1" {
+		t.Errorf("Info().Labels = %+v, want tenant=t1", sb.Info().Labels)
+	}
+	if _, ok := sb.Info().Labels[profileLabel]; ok {
+		t.Errorf("Info().Labels leaked %q: %+v", profileLabel, sb.Info().Labels)
 	}
 }
 

@@ -75,6 +75,12 @@ func policyFields(spec sandbox.Spec) []string {
 	if spec.Lifetime != def.Lifetime {
 		set = append(set, "lifetime")
 	}
+	// DefaultTimeout and MaxTimeout bound every Exec in the sandbox, the same
+	// way Resources and Lifetime do, and live in the profile config exactly
+	// like them — WithCommandTimeouts is daemon policy for the same reason.
+	if spec.DefaultTimeout != def.DefaultTimeout || spec.MaxTimeout != def.MaxTimeout {
+		set = append(set, "timeouts")
+	}
 	return set
 }
 

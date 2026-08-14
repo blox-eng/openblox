@@ -133,5 +133,25 @@ func infoOf(i sandbox.Info, profile string) brokerapi.Info {
 		State:     string(i.State),
 		CreatedAt: i.CreatedAt,
 		Profile:   profile,
+		Labels:    callerLabels(i.Labels),
 	}
+}
+
+// callerLabels strips the daemon's own bookkeeping label before a sandbox's
+// labels go out over the wire. labelProfile is already reported separately as
+// Info.Profile; leaving it in the label map too would leak internal
+// bookkeeping into the caller's own namespace, exactly what
+// pkg/docker's userLabels helper exists to prevent for the layer below this
+// one.
+func callerLabels(labels map[string]string) map[string]string {
+	if _, ok := labels[labelProfile]; !ok {
+		return labels
+	}
+	out := make(map[string]string, len(labels)-1)
+	for k, v := range labels {
+		if k != labelProfile {
+			out[k] = v
+		}
+	}
+	return out
 }

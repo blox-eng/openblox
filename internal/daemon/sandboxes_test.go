@@ -61,6 +61,11 @@ type fakeBackend struct {
 	created   map[string]sandbox.Spec
 	existing  map[string]string // name -> profile label
 
+	// existingLabels adds caller-set labels to an entry from existing, so a
+	// test can check what the response does with them alongside the profile
+	// label. Only consulted for names present in existing.
+	existingLabels map[string]string
+
 	// createWinsUnderProfile simulates a concurrent Create winning the race
 	// between this request's Open check and its own Create call: Create hands
 	// back a live sandbox already labelled under a different profile than the
@@ -99,7 +104,11 @@ func (f *fakeBackend) Open(_ context.Context, name string) (sandbox.Sandbox, err
 	if !ok {
 		return nil, sandbox.ErrNotFound
 	}
-	return &fakeSandbox{info: sandbox.Info{Name: name, Labels: map[string]string{labelProfile: profile}}, backend: f}, nil
+	labels := map[string]string{labelProfile: profile}
+	for k, v := range f.existingLabels {
+		labels[k] = v
+	}
+	return &fakeSandbox{info: sandbox.Info{Name: name, Labels: labels}, backend: f}, nil
 }
 
 func (f *fakeBackend) List(context.Context) ([]sandbox.Info, error) {
@@ -312,6 +321,37 @@ func TestGetReturnsProfileFromLabel(t *testing.T) {
 	}
 	if body.Profile != "browser" {
 		t.Errorf("profile = %q, want browser", body.Profile)
+	}
+}
+
+// TestGetIncludesCallerLabelsWithoutTheProfileMarker is the daemon-side half
+// of the label round trip: a caller's own labels must reach the response, but
+// the daemon's own openbloxd.profile bookkeeping label must not — it is
+// already reported separately as Profile, and leaking it into the caller's
+// label namespace would repeat the mistake pkg/docker's userLabels helper
+// exists to prevent one layer down.
+func TestGetIncludesCallerLabelsWithoutTheProfileMarker(t *testing.T) {
+	srv := newTestServer(t)
+	fake := srv.backend.(*fakeBackend)
+	fake.existing = map[string]string{"a": "browser"}
+	fake.existingLabels = map[string]string{"tenant": "t1"}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/a", nil)
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body %s", rec.Code, rec.Body.String())
+	}
+	var body brokerapi.Info
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Labels["tenant"] != "t1" {
+		t.Errorf("labels = %+v, want tenant=t1", body.Labels)
+	}
+	if _, ok := body.Labels[labelProfile]; ok {
+		t.Errorf("labels leaked the daemon's own %q marker: %+v", labelProfile, body.Labels)
 	}
 }
 
