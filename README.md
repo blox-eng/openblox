@@ -1,16 +1,23 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/openblox-mark-dark.svg">
+  <img alt="openblox" src=".github/assets/openblox-mark.svg" width="76">
+</picture>
+
 # openblox
 
-Secure sandboxes for running untrusted, AI-generated code.
+[![Go Reference](https://pkg.go.dev/badge/github.com/blox-eng/openblox.svg)](https://pkg.go.dev/github.com/blox-eng/openblox)
+[![CI](https://github.com/blox-eng/openblox/actions/workflows/ci.yml/badge.svg)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
+[![Go 1.25](https://img.shields.io/badge/go-1.25-00ADD8.svg)](https://go.dev/dl/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
-openblox is a small Go library over Docker and [gVisor](https://gvisor.dev). There is
-no control plane, no database, and no scheduler — a sandbox is a container, and
-the container is the state.
+Run untrusted, AI-generated code on your own hardware. 2,000 lines of Go over
+Docker and [gVisor](https://gvisor.dev) — no control plane, no database, no
+scheduler. A sandbox is a container, and the container is the state.
+
+[Docs](https://openblox.sh) · [Getting started](https://openblox.sh/getting-started/) ·
+[Architecture](ARCHITECTURE.md) · [Security](SECURITY.md) · [Sandbox image](image/README.md)
 
 > **Status: pre-release.** The API is taking shape and will change.
-
-The image above is the [reference sandbox userland](image/README.md) openblox
-publishes; any image works, as long as it has a shell, a non-root default user,
-and `nc` or `python3`.
 
 ```go
 backend, err := docker.New()
@@ -33,6 +40,10 @@ res, err := sb.Exec(ctx, sandbox.Command{
 fmt.Println(string(res.Stdout)) // 42
 ```
 
+That image is the [reference sandbox userland](image/README.md) openblox
+publishes. Any image works, as long as it has a shell, a non-root default user,
+and `nc` or `python3`.
+
 ## Why
 
 Running code an LLM wrote, against files a user uploaded, is a hostile workload
@@ -41,8 +52,8 @@ means your customers' data crosses someone else's boundary — or a plain
 container, which shares a kernel with the host.
 
 openblox takes the third option: a substrate small enough to read in an
-afternoon, that you run yourself, with hardware-grade isolation supplied by
-gVisor rather than by hope.
+afternoon, that you run yourself, with isolation supplied by gVisor rather than
+by hope.
 
 ## Secure by default
 
@@ -66,6 +77,16 @@ If the host cannot provide the requested isolation, `Create` fails with
 sandbox that is quietly less isolated than you asked for is worse than no
 sandbox, because you keep trusting it.
 
+## What you get
+
+| | |
+|---|---|
+| **Exec** | run a command with a per-call timeout, get stdout, stderr, exit code |
+| **Files** | read and write inside the sandbox without a shell round-trip |
+| **Processes** | start a detached background command, idempotently |
+| **Preview links** | HMAC-signed reverse proxy to a port inside the sandbox |
+| **Reaping** | idle timeout and max age, enforced without a scheduler |
+
 ## What it is not
 
 - **Not multi-tenant.** No organizations, auth, billing, or metering. Tenancy is
@@ -76,18 +97,41 @@ sandbox, because you keep trusting it.
 
 Those are deliberate. See [ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning.
 
-## Requirements
+## Install
 
-- Go 1.25+
-- Docker Engine
-- gVisor (`runsc`) registered as a Docker runtime
+```bash
+go get github.com/blox-eng/openblox
+```
 
-## Documentation
+Requires Go 1.25+, Docker Engine, and gVisor (`runsc`) registered as a Docker
+runtime. The [getting started guide](https://openblox.sh/getting-started/) covers
+installing `runsc` and wiring it up.
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — design, state model, security model
-- [SECURITY.md](SECURITY.md) — threat model and how to report a vulnerability
-- [CONTRIBUTING.md](CONTRIBUTING.md) — development setup and conventions
+## Status
+
+2,000 lines across three packages, 43 unit tests and 39 integration tests, two direct dependencies
+(`docker/docker` and `containerd/errdefs`). Every release publishes a
+multi-architecture sandbox image with an SBOM and build provenance. CI runs
+lint, tests, and `govulncheck`, gating on newly reachable vulnerabilities.
+
+Honest about the gaps: the integration suite compiles in CI but does not run
+there — it needs a host with Docker and `runsc`, so it runs locally
+([#3](https://github.com/blox-eng/openblox/issues/3)). Using openblox today also
+means giving your service access to the Docker socket, which is root-equivalent
+on the host; closing that is
+[#2](https://github.com/blox-eng/openblox/issues/2), the most consequential open
+issue. The [open issues](https://github.com/blox-eng/openblox/issues) are the
+honest roadmap.
+
+Written for [Blox](https://blox.bg), where it is the only sandbox backend and
+replaced a hosted platform. Its own production rollout is gated on #2. The API
+is unstable pre-1.0 — expect breaking changes on minor versions. No support SLA.
+
+## Contributing
+
+Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits follow
+[Conventional Commits](https://www.conventionalcommits.org/); CI enforces it.
 
 ## License
 
-[MIT](LICENSE)
+MIT — see [LICENSE](LICENSE).
