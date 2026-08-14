@@ -34,6 +34,13 @@ type fakeBackend struct {
 	createErr error
 	created   map[string]sandbox.Spec
 	existing  map[string]string // name -> profile label
+
+	// createWinsUnderProfile simulates a concurrent Create winning the race
+	// between this request's Open check and its own Create call: Create hands
+	// back a live sandbox already labelled under a different profile than the
+	// one this request resolved, exactly as Backend.Create's session-affinity
+	// contract would when a name gets taken mid-request.
+	createWinsUnderProfile string
 }
 
 func (f *fakeBackend) Create(_ context.Context, name string, opts ...sandbox.CreateOption) (sandbox.Sandbox, error) {
@@ -45,7 +52,12 @@ func (f *fakeBackend) Create(_ context.Context, name string, opts ...sandbox.Cre
 		f.created = map[string]sandbox.Spec{}
 	}
 	f.created[name] = spec
-	return &fakeSandbox{info: sandbox.Info{Name: name, Image: spec.Image, Labels: spec.Labels}}, nil
+
+	labels := spec.Labels
+	if f.createWinsUnderProfile != "" {
+		labels = map[string]string{labelProfile: f.createWinsUnderProfile}
+	}
+	return &fakeSandbox{info: sandbox.Info{Name: name, Image: spec.Image, Labels: labels}}, nil
 }
 
 func (f *fakeBackend) Open(_ context.Context, name string) (sandbox.Sandbox, error) {
@@ -156,6 +168,28 @@ func TestCreateOnExistingNameWithSameProfileSucceeds(t *testing.T) {
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201, body %s", rec.Code, rec.Body.String())
+	}
+}
+
+// The Open check happens before Create, not during it. A concurrent request
+// can create the name under a different profile in between; Create then
+// returns that sandbox rather than a fresh one, and the response must still
+// refuse rather than report the caller's requested profile as though it held.
+func TestCreateRaceLoserUnderDifferentProfileConflicts(t *testing.T) {
+	srv := newTestServer(t)
+	fake := srv.backend.(*fakeBackend)
+	fake.createWinsUnderProfile = "browser"
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes",
+		strings.NewReader(`{"name":"a","profile":"code-exec"}`))
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"profile":"code-exec"`) {
+		t.Error("response reports the requested profile rather than refusing — caller cannot tell it got the wrong policy")
 	}
 }
 

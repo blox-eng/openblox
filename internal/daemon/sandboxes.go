@@ -64,7 +64,21 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	respond(w, http.StatusCreated, infoOf(sb.Info(), req.Profile))
+
+	// The Open check above closes the window before Create, not the one during
+	// it: Create returns the EXISTING sandbox when the name is taken, so a
+	// concurrent request can win the race and create it under a different
+	// profile between our check and this call. Re-check on what Create actually
+	// handed back. Do not destroy it — we did not create it, and destroying
+	// another request's sandbox out from under it would be worse than the bug
+	// this guards against. Refuse and let the caller retry.
+	info := sb.Info()
+	if got := info.Labels[labelProfile]; got != req.Profile {
+		fail(w, fmt.Errorf("%w: %q exists under profile %q, requested %q",
+			brokerapi.ErrProfileConflict, req.Name, got, req.Profile))
+		return
+	}
+	respond(w, http.StatusCreated, infoOf(info, info.Labels[labelProfile]))
 }
 
 func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
