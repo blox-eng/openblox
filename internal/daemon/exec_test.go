@@ -8,24 +8,31 @@ import (
 	"time"
 )
 
-func TestExecPassesArgvAndClampedTimeout(t *testing.T) {
+func TestExecPassesArgvAndTimeout(t *testing.T) {
 	srv := newTestServer(t)
 	fake := srv.backend.(*fakeBackend)
 	fake.existing = map[string]string{"a": "code-exec"}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/a/exec",
-		strings.NewReader(`{"argv":["echo","hi"],"timeout":"5s"}`))
+		strings.NewReader(`{"argv":["echo","hi"],"env":["FOO=bar"],"dir":"/work","timeout":"5s"}`))
 	srv.Handler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
-	if got := fake.lastCommand.Argv; len(got) != 2 || got[0] != "echo" {
-		t.Errorf("argv = %v", got)
+	cmd := fake.lastCommand
+	if got := cmd.Argv; len(got) != 2 || got[0] != "echo" || got[1] != "hi" {
+		t.Errorf("argv = %v, want [echo hi]", got)
 	}
-	if fake.lastCommand.Timeout != 5*time.Second {
-		t.Errorf("timeout = %v, want 5s", fake.lastCommand.Timeout)
+	if cmd.Env == nil || len(cmd.Env) != 1 || cmd.Env[0] != "FOO=bar" {
+		t.Errorf("env = %v, want [FOO=bar]", cmd.Env)
+	}
+	if cmd.Dir != "/work" {
+		t.Errorf("dir = %q, want /work", cmd.Dir)
+	}
+	if cmd.Timeout != 5*time.Second {
+		t.Errorf("timeout = %v, want 5s", cmd.Timeout)
 	}
 }
 
