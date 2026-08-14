@@ -1,0 +1,27 @@
+[Unit]
+Description=openbloxd sandbox policy broker
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/openbloxd --config /etc/openbloxd/config.yaml
+User=openbloxd
+# The Docker socket is the daemon's whole privilege. It holds it so nothing
+# else has to.
+SupplementaryGroups=docker
+RuntimeDirectory=openbloxd
+# There is a window between net.Listen creating the socket and os.Chmod
+# narrowing it to 0660: for that window the socket carries whatever mode the
+# umask gives it. This runtime directory mode is what gates access during
+# that window, so do not loosen it.
+RuntimeDirectoryMode=0750
+Restart=on-failure
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
