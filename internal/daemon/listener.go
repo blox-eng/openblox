@@ -22,7 +22,7 @@ const socketMode = 0o660
 // removing anything else would let a misconfigured path delete a real file.
 func Listen(socketPath, group string) (net.Listener, error) {
 	if info, err := os.Stat(socketPath); err == nil {
-		if info.Mode()&os.ModeSocket == 0 && info.Size() > 0 {
+		if info.Mode()&os.ModeSocket == 0 {
 			return nil, fmt.Errorf("refusing to replace %q: not a socket", socketPath)
 		}
 		if err := os.Remove(socketPath); err != nil {
