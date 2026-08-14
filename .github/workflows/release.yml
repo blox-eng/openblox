@@ -6,6 +6,10 @@ name: Release
 # so this stays useful while the repository is private: consumers can require a
 # real version instead of a commit pseudo-version. No goreleaser hook yet; there
 # are no binaries to ship until cmd/openbloxd exists.
+#
+# The tag is not inert, though: publish-image.yml watches `v*` and builds the
+# matching sandbox image from it. That makes the token this job pushes with load
+# bearing — see the note on it below.
 on:
   workflow_run:
     workflows: [CI]
@@ -49,4 +53,13 @@ jobs:
           allow-initial-development-versions: true
           prepend: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A PAT, not the built-in GITHUB_TOKEN: GitHub refuses to start a
+          # workflow for a ref pushed with GITHUB_TOKEN, so the tag this step
+          # creates would never reach publish-image.yml's `tags: ['v*']` trigger
+          # and every release would ship without its container image.
+          #
+          # RELEASE_TOKEN is a fine-grained PAT scoped to this repository with
+          # Contents: write — enough to push the tag, commit the changelog, and
+          # cut the release, and nothing else. It expires; when it does this job
+          # fails outright rather than silently skipping the image.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
