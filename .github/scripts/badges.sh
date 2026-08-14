@@ -12,6 +12,11 @@ set -euo pipefail
 OUT=${1:?usage: badges.sh <output-dir>}
 mkdir -p "$OUT"
 
+# Private scratch, cleaned up on exit. Fixed /tmp paths would let a reused
+# runner hand us a stale — or planted — coverage profile from an earlier job.
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+
 badge() { # name label message color
   printf '{"schemaVersion":1,"label":"%s","message":"%s","color":"%s","cacheSeconds":3600}\n' \
     "$2" "$3" "$4" > "$OUT/$1.json"
@@ -25,20 +30,23 @@ unit_files=$(grep -rL 'go:build integration' --include='*_test.go' -r pkg || tru
 
 count_tests() { # files...
   [ -z "$1" ] && { echo 0; return; }
+  # grep exits 1 when a file holds only helpers and no Test function. Under
+  # pipefail that would kill the script, so absence is normalised to zero here.
   # shellcheck disable=SC2086
-  grep -ho '^func Test[A-Za-z0-9_]*' $1 | wc -l | tr -d ' '
+  { grep -ho '^func Test[A-Za-z0-9_]*' $1 || true; } | wc -l | tr -d ' '
 }
 
 unit=$(count_tests "$unit_files")
 integration=$(count_tests "$integration_files")
 
-# Run the unit suite; the badge reports what actually happened.
-if go test ./... > /tmp/badge-test.log 2>&1; then
+# One run, both badges. Running the suite twice would let the tests badge and
+# the coverage badge observe different outcomes and disagree with each other.
+if go test -coverprofile="$WORK/cover.out" ./... > "$WORK/test.log" 2>&1; then
   badge tests tests "$unit passing" brightgreen
 else
   badge tests tests failing red
   echo "--- go test output ---"
-  cat /tmp/badge-test.log
+  cat "$WORK/test.log"
 fi
 
 badge integration "integration tests" "$integration" blue
@@ -46,8 +54,13 @@ badge integration "integration tests" "$integration" blue
 # Coverage over the unit suite only. Labelled as such: most of pkg/docker is
 # exercised by the integration suite, which does not run in CI (issue #3), so an
 # unqualified "coverage" number here would overstate what CI verifies.
-go test -coverprofile=/tmp/badge-cover.out ./... > /dev/null 2>&1 || true
-pct=$(go tool cover -func=/tmp/badge-cover.out 2>/dev/null | awk '/^total:/ {print $3}' | tr -d '%')
+#
+# A failing suite may leave no profile at all, so its absence reports zero
+# rather than aborting the whole badge run.
+pct=0
+if [ -s "$WORK/cover.out" ]; then
+  pct=$(go tool cover -func="$WORK/cover.out" | awk '/^total:/ {print $3}' | tr -d '%')
+fi
 pct=${pct:-0}
 # Colour thresholds are deliberately modest — this measures the unit suite alone.
 if   awk "BEGIN{exit !($pct >= 70)}"; then colour=brightgreen
