@@ -35,8 +35,12 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Read-only on purpose. Every write on this job goes through RELEASE_TOKEN,
+    # and checkout runs with persist-credentials: false, so the built-in token
+    # has no consumer left — granting it write would only widen what a
+    # compromised third-party action could reach.
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
