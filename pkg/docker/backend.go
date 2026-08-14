@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -173,6 +174,7 @@ func (b *Backend) List(ctx context.Context) ([]sandbox.Info, error) {
 			Image:     c.Image,
 			State:     stateFromStatus(c.State),
 			CreatedAt: parseTimeLabel(c.Labels[labelCreatedAt]),
+			Labels:    userLabels(c.Labels),
 		})
 	}
 	return out, nil
@@ -314,6 +316,24 @@ func parseDurationLabel(v string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+// userLabels extracts the caller's own labels from a container's full label
+// set, stripping labelUserPfx. openblox's own bookkeeping labels (managed,
+// name, created-at, the timeout labels) carry no such prefix and are excluded
+// by construction, not by an exclusion list — so a new bookkeeping label added
+// later cannot leak in here by accident.
+func userLabels(labels map[string]string) map[string]string {
+	var out map[string]string
+	for k, v := range labels {
+		if name, ok := strings.CutPrefix(k, labelUserPfx); ok {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[name] = v
+		}
+	}
+	return out
 }
 
 func parseTimeLabel(v string) time.Time {

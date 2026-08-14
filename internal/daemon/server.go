@@ -37,9 +37,9 @@ func New(backend Backend, cfg *Config) *Server {
 // speak over a local socket, so there is no independently versioned consumer to
 // protect. A header can version this later without a guess baked into a path.
 //
-// Handlers below are stubs. Tasks 5-7 replace each with its real
-// implementation; until then every route answers ErrNotFound so the route
-// table itself, decode, and fail can be exercised end to end.
+// The lifecycle handlers (sandboxes.go) are real; the rest are stubs Tasks 6-7
+// replace, and until then answer ErrNotFound so the route table itself,
+// decode, and fail can be exercised end to end.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /sandboxes", s.handleCreate)
@@ -56,12 +56,7 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-func (s *Server) handleCreate(w http.ResponseWriter, _ *http.Request)  { fail(w, sandbox.ErrNotFound) }
-func (s *Server) handleList(w http.ResponseWriter, _ *http.Request)    { fail(w, sandbox.ErrNotFound) }
-func (s *Server) handleGet(w http.ResponseWriter, _ *http.Request)     { fail(w, sandbox.ErrNotFound) }
-func (s *Server) handleDestroy(w http.ResponseWriter, _ *http.Request) { fail(w, sandbox.ErrNotFound) }
-func (s *Server) handleStop(w http.ResponseWriter, _ *http.Request)    { fail(w, sandbox.ErrNotFound) }
-func (s *Server) handleExec(w http.ResponseWriter, _ *http.Request)    { fail(w, sandbox.ErrNotFound) }
+func (s *Server) handleExec(w http.ResponseWriter, _ *http.Request) { fail(w, sandbox.ErrNotFound) }
 func (s *Server) handleWriteFile(w http.ResponseWriter, _ *http.Request) {
 	fail(w, sandbox.ErrNotFound)
 }
