@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#141414" role="img" aria-label="openblox">
+  <!-- A box with an open top, and something running inside it. Isometric 2:1,
+       alpha ramp = one ink. Rim 1.0 / left wall 0.52 / right wall 0.28.
+       The walls are unbroken and the contents never cross them: the boundary
+       holds. The top is open because you can see in — that is the whole
+       argument for running the sandbox yourself rather than renting one. -->
+
+  <!-- rim: the open top, an unbroken ring -->
+  <path fill-rule="evenodd" d="M 12 2 L 22 7 L 12 12 L 2 7 Z M 12 3.8 L 18.4 7 L 12 10.2 L 5.6 7 Z"/>
+
+  <!-- walls -->
+  <path d="M 2 7 L 12 12 L 12 18 L 2 13 Z" opacity=".52"/>
+  <path d="M 22 7 L 12 12 L 12 18 L 22 13 Z" opacity=".28"/>
+
+  <!-- contents: a cube down inside the box, seen through the opening -->
+  <path d="M 12 5.2 L 14.8 6.6 L 12 8 L 9.2 6.6 Z"/>
+  <path d="M 9.2 6.6 L 12 8 L 12 10 L 9.2 8.6 Z" opacity=".52"/>
+  <path d="M 14.8 6.6 L 12 8 L 12 10 L 14.8 8.6 Z" opacity=".28"/>
+</svg>

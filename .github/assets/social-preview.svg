@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="openblox — secure sandboxes for untrusted, AI-generated code">
+  <!-- GitHub social preview card, 1280x640. Rendered to social-preview.png and
+       uploaded in repository settings; GitHub does not accept SVG there.
+       Dark ground because the mark's light-ink variant is the stronger one, and
+       a link unfurl competes with whatever timeline it lands in. -->
+  <rect width="1280" height="640" fill="#0d0f10"/>
+
+  <!-- hairline frame, echoing the rim of the mark -->
+  <rect x="48" y="48" width="1184" height="544" fill="none" stroke="#EDEDED" stroke-opacity=".12" stroke-width="2"/>
+
+  <!-- mark, 200px, at the 24-unit grid scaled 8.333x and translated -->
+  <g transform="translate(120 168) scale(8.333)" fill="#EDEDED">
+    <path fill-rule="evenodd" d="M 12 2 L 22 7 L 12 12 L 2 7 Z M 12 3.8 L 18.4 7 L 12 10.2 L 5.6 7 Z"/>
+    <path d="M 2 7 L 12 12 L 12 18 L 2 13 Z" opacity=".52"/>
+    <path d="M 22 7 L 12 12 L 12 18 L 22 13 Z" opacity=".28"/>
+    <path d="M 12 5.2 L 14.8 6.6 L 12 8 L 9.2 6.6 Z"/>
+    <path d="M 9.2 6.6 L 12 8 L 12 10 L 9.2 8.6 Z" opacity=".52"/>
+    <path d="M 14.8 6.6 L 12 8 L 12 10 L 14.8 8.6 Z" opacity=".28"/>
+  </g>
+
+  <g font-family="DejaVu Sans Mono, Liberation Mono, monospace">
+    <text x="368" y="268" fill="#EDEDED" font-size="76" font-weight="700" letter-spacing="-2">openblox</text>
+    <text x="372" y="330" fill="#9aa3a6" font-size="27">Secure sandboxes for untrusted, AI-generated code.</text>
+    <text x="372" y="372" fill="#9aa3a6" font-size="27">Run it on your own hardware.</text>
+
+    <text x="372" y="452" fill="#5f6a6d" font-size="21" letter-spacing="3">GO &#183; DOCKER &#183; GVISOR &#183; MIT</text>
+  </g>
+
+  <text x="120" y="556" fill="#5f6a6d" font-family="DejaVu Sans Mono, Liberation Mono, monospace" font-size="21">github.com/blox-eng/openblox</text>
+  <text x="1160" y="556" text-anchor="end" fill="#5f6a6d" font-family="DejaVu Sans Mono, Liberation Mono, monospace" font-size="21">openblox.sh</text>
+</svg>

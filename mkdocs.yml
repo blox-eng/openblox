@@ -8,8 +8,10 @@ copyright: MIT licensed
 
 theme:
   name: material
-  icon:
-    logo: material/cube-outline
+  # The header is black in both palettes, so the light-ink mark is the one that
+  # belongs there. The favicon is the dark-ink variant, for light browser tabs.
+  logo: assets/openblox-mark-dark.svg
+  favicon: assets/openblox-mark.svg
   features:
     - navigation.instant
     - navigation.tracking
