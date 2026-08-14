@@ -155,9 +155,13 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
           sudo apt-get update -qq
           sudo apt-get install -y -qq runsc
-          # The package's postinst registers the runtime with dockerd itself;
-          # runtimes are reloadable, so this needs no daemon restart.
-          sudo systemctl reload docker
+          # Register explicitly rather than trusting the package's postinst. It
+          # does register on some hosts (it logs "Runtime runsc not found:
+          # adding") but did not on this runner image, and a silently
+          # unregistered runtime turns the whole suite red one step later.
+          # `runsc install` merges into /etc/docker/daemon.json and is idempotent.
+          sudo runsc install
+          sudo systemctl restart docker
           runsc --version
 
       # openblox refuses to fall back to runc, so without this the whole suite
