@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
@@ -73,6 +74,60 @@ func TestDialPortRoundTripsBytesPipelinedBehindThe101(t *testing.T) {
 	}
 	if string(got) != "pong!" {
 		t.Errorf("read %q, want pong! (bytes sent behind the 101 were lost)", got)
+	}
+}
+
+// TestDialPortCloseWriteSignalsEndOfInput proves CloseWrite actually
+// half-closes the connection: the peer's read must observe EOF while the
+// connection is still usable to read the peer's response afterward. A stub
+// CloseWrite that does nothing would leave the peer's read blocked forever
+// instead, which this test would catch via its timeout.
+func TestDialPortCloseWriteSignalsEndOfInput(t *testing.T) {
+	sawEOF := make(chan struct{}, 1)
+	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, buf, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_, _ = io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: openblox-stream\r\nConnection: Upgrade\r\n\r\n")
+
+		// A read that only returns once the client half-closes its write side.
+		if _, err := io.ReadAll(buf); err != nil {
+			t.Errorf("server read: %v", err)
+			return
+		}
+		sawEOF <- struct{}{}
+		_, _ = io.WriteString(conn, "bye")
+	}))
+
+	conn, err := c.DialPort(context.Background(), "a", 8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	cw, ok := conn.(interface{ CloseWrite() error })
+	if !ok {
+		t.Fatal("connection returned by DialPort does not implement CloseWrite")
+	}
+	if err := cw.CloseWrite(); err != nil {
+		t.Fatalf("CloseWrite: %v", err)
+	}
+
+	select {
+	case <-sawEOF:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server never observed end-of-input; CloseWrite did not half-close the connection")
+	}
+
+	got := make([]byte, 3)
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "bye" {
+		t.Errorf("read %q after CloseWrite, want bye", got)
 	}
 }
 

@@ -66,3 +66,23 @@ type upgradedConn struct {
 }
 
 func (c *upgradedConn) Read(p []byte) (int, error) { return c.r.Read(p) }
+
+// CloseWrite half-closes the connection, signalling end-of-input while
+// leaving the response direction open. net/http asserts for this on request
+// bodies; without it, a proxied request with a body (e.g. through
+// preview.Handler's httputil.ReverseProxy) never completes.
+//
+// net.Conn is embedded here as an interface, so its promoted method set is
+// fixed at that interface's own — CloseWrite is not among them, even though
+// the concrete value underneath (a *net.UnixConn) has one. Without this
+// method net/http's type assertion for it just silently fails.
+func (c *upgradedConn) CloseWrite() error {
+	cw, ok := c.Conn.(interface{ CloseWrite() error })
+	if !ok {
+		return fmt.Errorf("%T does not support CloseWrite", c.Conn)
+	}
+	return cw.CloseWrite()
+}
+
+// net/http type-asserts for this to half-close request bodies.
+var _ interface{ CloseWrite() error } = (*upgradedConn)(nil)
