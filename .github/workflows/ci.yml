@@ -81,9 +81,6 @@ jobs:
           CGO_ENABLED: '1'
         run: go test -race -cover -v ./...
 
-  # Integration tests need a gVisor-capable host, which hosted runners are not.
-  # Compiling them on every PR is what stops them rotting between the rare runs
-  # on a self-hosted box — a test that no longer builds is a test nobody runs.
   vuln:
     name: Vulnerabilities
     runs-on: ubuntu-latest
@@ -124,3 +121,69 @@ jobs:
         env:
           CGO_ENABLED: '0'
         run: go build -tags integration ./... && go vet -tags integration ./...
+
+  # The engine is only actually verified by the integration suite: containment on
+  # a live container, egress blocked, the reaper, the resource caps under attack.
+  # Everything else in this file grades a package whose unit coverage is 17.7%.
+  #
+  # This was long assumed to need a self-hosted box. It does not: gVisor's systrap
+  # platform uses seccomp and does not require KVM or nested virtualisation, so a
+  # standard hosted runner can register runsc. That also keeps the suite off a
+  # self-hosted runner, which for a public repo would mean executing a stranger's
+  # PR on our own hardware.
+  integration:
+    name: Integration Tests (gVisor)
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install gVisor
+        run: |
+          set -euo pipefail
+          curl -fsSL https://gvisor.dev/archive.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
+            | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq runsc
+          # Register explicitly rather than trusting the package's postinst. It
+          # does register on some hosts (it logs "Runtime runsc not found:
+          # adding") but did not on this runner image, and a silently
+          # unregistered runtime turns the whole suite red one step later.
+          # `runsc install` merges into /etc/docker/daemon.json and is idempotent.
+          sudo runsc install
+          sudo systemctl restart docker
+          runsc --version
+
+      # openblox refuses to fall back to runc, so without this the whole suite
+      # would fail on ErrRuntimeUnavailable rather than on anything it tests.
+      # Asserted as its own step so that failure is legible instead of arriving
+      # as fifty identical test errors.
+      - name: Verify runsc is registered
+        run: |
+          set -euo pipefail
+          docker info --format '{{range $k, $v := .Runtimes}}{{$k}} {{end}}' | tr ' ' '\n' | grep -qx runsc
+          # Prove it actually boots a guest, not merely that it is listed: a
+          # registered-but-broken runtime is the failure this guards against.
+          kernel=$(docker run --rm --runtime=runsc --network=none alpine:3.20 uname -r)
+          echo "guest kernel: $kernel"
+          case "$kernel" in
+            *gvisor*) ;;
+            *) echo "::error::runsc ran but the guest is not gVisor ($kernel)"; exit 1 ;;
+          esac
+
+      # -count=1 because these assert against live host state (process counts,
+      # free memory) that a cached PASS would silently stand in for.
+      - name: Run integration tests
+        env:
+          CGO_ENABLED: '0'
+        run: go test -tags integration -count=1 -v -timeout 20m ./...

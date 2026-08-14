@@ -7,7 +7,7 @@
 
 [![CI](https://github.com/blox-eng/openblox/actions/workflows/ci.yml/badge.svg)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/endpoint?url=https://openblox.sh/badges/tests.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
-[![Integration tests](https://img.shields.io/endpoint?url=https://openblox.sh/badges/integration.json)](https://github.com/blox-eng/openblox/issues/3)
+[![Integration tests](https://img.shields.io/endpoint?url=https://openblox.sh/badges/integration.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://openblox.sh/badges/coverage.json)](https://github.com/blox-eng/openblox/issues/10)
 [![Lines of Go](https://img.shields.io/endpoint?url=https://openblox.sh/badges/loc.json)](ARCHITECTURE.md)
 [![Go Reference](https://pkg.go.dev/badge/github.com/blox-eng/openblox.svg)](https://pkg.go.dev/github.com/blox-eng/openblox)
@@ -118,13 +118,12 @@ size, test counts, and coverage cannot drift from the code that produced them.
 Two direct dependencies (`docker/docker` and `containerd/errdefs`). Every release
 publishes a multi-architecture sandbox image with an SBOM and build provenance.
 CI runs lint, tests, and `govulncheck`, gating on newly reachable
-vulnerabilities.
+vulnerabilities. The integration suite runs there too, against a real gVisor
+daemon on a hosted runner — including the adversarial cases that try to break
+the resource caps.
 
-Honest about the gaps: the integration suite compiles in CI but does not run
-there — it needs a host with Docker and `runsc`, so it runs locally
-([#3](https://github.com/blox-eng/openblox/issues/3)). Using openblox today also
-means giving your service access to the Docker socket, which is root-equivalent
-on the host; closing that is
+Honest about the gaps: using openblox today means giving your service access to
+the Docker socket, which is root-equivalent on the host; closing that is
 [#2](https://github.com/blox-eng/openblox/issues/2), the most consequential open
 issue. The [open issues](https://github.com/blox-eng/openblox/issues) are the
 honest roadmap.
