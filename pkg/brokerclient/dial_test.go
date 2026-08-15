@@ -15,7 +15,7 @@ import (
 // upgraded connection, not merely that a 101 arrived: it writes from the
 // client, echoes on the daemon stand-in, and reads the echo back.
 func TestDialPortRoundTrips(t *testing.T) {
-	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		conn, buf, err := http.NewResponseController(w).Hijack()
 		if err != nil {
 			t.Error(err)
@@ -49,7 +49,7 @@ func TestDialPortRoundTrips(t *testing.T) {
 // connection: bytes the daemon writes immediately behind its 101 response —
 // before the client has issued a single Read — must not be lost.
 func TestDialPortRoundTripsBytesPipelinedBehindThe101(t *testing.T) {
-	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		conn, buf, err := http.NewResponseController(w).Hijack()
 		if err != nil {
 			t.Error(err)
@@ -84,7 +84,7 @@ func TestDialPortRoundTripsBytesPipelinedBehindThe101(t *testing.T) {
 // instead, which this test would catch via its timeout.
 func TestDialPortCloseWriteSignalsEndOfInput(t *testing.T) {
 	sawEOF := make(chan struct{}, 1)
-	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		conn, buf, err := http.NewResponseController(w).Hijack()
 		if err != nil {
 			t.Error(err)
@@ -146,7 +146,7 @@ func TestDialPortRejectsOutOfRangePort(t *testing.T) {
 // as every other client method, so errors.Is against sandbox sentinels works
 // here too.
 func TestDialPortMapsDaemonError(t *testing.T) {
-	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		respondJSON(w, http.StatusNotFound, map[string]string{"error": "no such sandbox", "kind": "not_found"})
 	}))
 

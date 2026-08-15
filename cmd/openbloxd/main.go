@@ -69,7 +69,14 @@ func run(configPath string) error {
 	// No read or write timeout: exec can legitimately run for minutes and a
 	// dialled preview stream is open for as long as the page is. The library's
 	// own command timeouts are the bound that applies here.
-	httpSrv := &http.Server{Handler: srv.Handler()}
+	//
+	// ReadHeaderTimeout is different: it only bounds the time to read the
+	// request line and headers, which completes before Hijack (dial.go) or
+	// the handler body (exec.go) ever runs — so it can't truncate a long exec
+	// or a long-lived dialled stream. It closes a real Slowloris hole (a peer
+	// that trickles headers forever) on the socket that holds the Docker
+	// connection, even though that peer is local.
+	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 
 	slog.Info("openbloxd listening", slog.String("socket", cfg.Socket), slog.Int("profiles", len(cfg.Profiles)))
 	return serve(ctx, httpSrv, ln)

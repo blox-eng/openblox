@@ -35,7 +35,7 @@ func (s *Server) handleDial(w http.ResponseWriter, r *http.Request) {
 	rc := http.NewResponseController(w)
 	downstream, buf, err := rc.Hijack()
 	if err != nil {
-		fail(w, fmt.Errorf("%w: connection cannot be hijacked: %s", sandbox.ErrInvalid, err))
+		fail(w, fmt.Errorf("%w: connection cannot be hijacked: %w", sandbox.ErrInvalid, err))
 		return
 	}
 	defer func() { _ = downstream.Close() }()

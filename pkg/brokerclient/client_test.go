@@ -26,7 +26,7 @@ func newTestClient(t *testing.T, handler http.HandlerFunc, opts ...Option) *Clie
 	t.Helper()
 
 	if handler == nil {
-		handler = func(w http.ResponseWriter, r *http.Request) {
+		handler = func(_ http.ResponseWriter, r *http.Request) {
 			t.Fatalf("unexpected request reached the daemon: %s %s", r.Method, r.URL.Path)
 		}
 	}
@@ -238,7 +238,7 @@ func TestSandboxMethodsHitTheDaemonRoutes(t *testing.T) {
 	var procReq brokerapi.ProcessRequest
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /sandboxes", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /sandboxes", func(w http.ResponseWriter, _ *http.Request) {
 		respondJSON(w, http.StatusCreated, brokerapi.Info{Name: "a", State: "running"})
 	})
 	mux.HandleFunc("POST /sandboxes/{name}/exec", func(w http.ResponseWriter, r *http.Request) {
@@ -274,7 +274,7 @@ func TestSandboxMethodsHitTheDaemonRoutes(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&procReq)
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("POST /sandboxes/{name}/stop", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /sandboxes/{name}/stop", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
@@ -358,7 +358,7 @@ func TestFilesRouteSurvivesAdversarialPaths(t *testing.T) {
 				w.Header().Set("Content-Type", "application/octet-stream")
 				w.WriteHeader(http.StatusOK)
 			})
-			mux.HandleFunc("POST /sandboxes", func(w http.ResponseWriter, r *http.Request) {
+			mux.HandleFunc("POST /sandboxes", func(w http.ResponseWriter, _ *http.Request) {
 				respondJSON(w, http.StatusCreated, brokerapi.Info{Name: "a", State: "running"})
 			})
 

@@ -29,12 +29,12 @@ func (f *fakeSandbox) Info() sandbox.Info { return f.info }
 
 func (f *fakeSandbox) Stop(context.Context) error { return nil }
 
-func (f *fakeSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result, error) {
+func (f *fakeSandbox) Exec(_ context.Context, cmd sandbox.Command) (sandbox.Result, error) {
 	f.backend.lastCommand = cmd
 	return sandbox.Result{Stdout: []byte("output"), ExitCode: 0}, nil
 }
 
-func (f *fakeSandbox) WriteFile(ctx context.Context, path string, mode fs.FileMode, src io.Reader) error {
+func (f *fakeSandbox) WriteFile(_ context.Context, path string, _ fs.FileMode, src io.Reader) error {
 	data, _ := io.ReadAll(src)
 	if f.backend.written == nil {
 		f.backend.written = map[string]string{}
@@ -43,12 +43,12 @@ func (f *fakeSandbox) WriteFile(ctx context.Context, path string, mode fs.FileMo
 	return nil
 }
 
-func (f *fakeSandbox) ReadFile(ctx context.Context, path string) (io.ReadCloser, error) {
+func (f *fakeSandbox) ReadFile(_ context.Context, _ string) (io.ReadCloser, error) {
 	// Return a reader with some test content
 	return io.NopCloser(strings.NewReader("file content")), nil
 }
 
-func (f *fakeSandbox) StartProcess(ctx context.Context, name string, cmd sandbox.Command) error {
+func (f *fakeSandbox) StartProcess(_ context.Context, _ string, _ sandbox.Command) error {
 	return nil
 }
 

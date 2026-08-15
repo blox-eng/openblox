@@ -53,7 +53,7 @@ type RegistryAuth struct {
 // silently unapplied bound, because an unapplied bound looks identical to a
 // working one until something escapes.
 func Load(path string) (*Config, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // path is the operator's own --config flag, not request input; whoever can set it can already read the file directly
 	if err != nil {
 		return nil, fmt.Errorf("open config: %w", err)
 	}

@@ -41,14 +41,20 @@ func (c *Client) DialPort(ctx context.Context, name string, port int) (net.Conn,
 	}
 
 	br := bufio.NewReader(conn)
+	//nolint:bodyclose // On a 101 the body isn't a body at all: the connection
+	// is taken over as a raw stream and closing it here would tear down the
+	// stream we're about to hand back. The non-101 branch below closes both
+	// the response body and the connection before returning.
 	resp, err := http.ReadResponse(br, req)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("dial port %d in %q: %w", port, name, err)
 	}
 	if resp.StatusCode != http.StatusSwitchingProtocols {
+		err := errorFrom(resp)
+		_ = resp.Body.Close()
 		_ = conn.Close()
-		return nil, errorFrom(resp)
+		return nil, err
 	}
 
 	// http.ReadResponse buffers ahead of the 101 line, so bytes the daemon

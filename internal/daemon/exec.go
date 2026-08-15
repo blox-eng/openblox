@@ -26,7 +26,7 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 	if req.Timeout != "" {
 		d, err := time.ParseDuration(req.Timeout)
 		if err != nil {
-			fail(w, fmt.Errorf("%w: timeout %q: %s", sandbox.ErrInvalid, req.Timeout, err))
+			fail(w, fmt.Errorf("%w: timeout %q: %w", sandbox.ErrInvalid, req.Timeout, err))
 			return
 		}
 		timeout = d
