@@ -153,3 +153,32 @@ func TestUserLabelsArePrefixed(t *testing.T) {
 		t.Error("user label not stored under its prefix")
 	}
 }
+
+// Info.Labels must expose only what the caller set — never openblox's own
+// bookkeeping, which carries no labelUserPfx and so must be excluded by
+// construction rather than by an exclusion list.
+func TestUserLabelsExcludesBookkeeping(t *testing.T) {
+	got := userLabels(map[string]string{
+		labelManaged:             "true",
+		labelName:                "session-1",
+		labelCreatedAt:           "2026-01-01T00:00:00Z",
+		labelIdle:                "15m0s",
+		labelMaxAge:              "2h0m0s",
+		labelDefTmo:              "1m0s",
+		labelMaxTmo:              "10m0s",
+		labelUserPfx + "profile": "code-exec",
+		labelUserPfx + "team":    "infra",
+	})
+
+	if len(got) != 2 {
+		t.Fatalf("got %d labels, want 2 — bookkeeping leaked: %+v", len(got), got)
+	}
+	if got["profile"] != "code-exec" || got["team"] != "infra" {
+		t.Errorf("stripped labels = %+v, want profile=code-exec team=infra", got)
+	}
+	for _, bookkeeping := range []string{labelManaged, labelName, labelCreatedAt, labelIdle, labelMaxAge, labelDefTmo, labelMaxTmo} {
+		if _, ok := got[bookkeeping]; ok {
+			t.Errorf("bookkeeping label %q leaked into user labels", bookkeeping)
+		}
+	}
+}

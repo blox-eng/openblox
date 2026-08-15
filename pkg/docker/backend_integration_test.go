@@ -2,6 +2,10 @@
 
 // These tests need a Docker daemon with the gVisor (runsc) runtime registered.
 // See CONTRIBUTING.md. Run with: make test-integration
+//
+// pkg/brokerclient/broker_integration_test.go re-runs some of these (open,
+// destroy) through openbloxd. That suite is hand-mirrored, not shared code —
+// keep the two in step deliberately, since nothing else will notice drift.
 package docker
 
 import (
