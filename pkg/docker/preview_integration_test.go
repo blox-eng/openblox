@@ -1,5 +1,9 @@
 //go:build integration
 
+// pkg/brokerclient/broker_integration_test.go re-runs the preview assertions
+// here through openbloxd's DialPort instead of talking to Docker directly.
+// That suite is hand-mirrored, not shared code — keep the two in step
+// deliberately, since nothing else will notice drift.
 package docker
 
 import (

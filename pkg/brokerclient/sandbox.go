@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
 	"time"
 
@@ -183,18 +184,17 @@ func (s *brokerSandbox) route(suffix string) string {
 
 // filesRoute builds the files path for an absolute in-sandbox path.
 //
-// dest's leading slash is percent-encoded (rather than stripped and
-// server-side re-added) so it survives inside the "{path...}" wildcard of
-// "/sandboxes/{name}/files/{path...}" unchanged. A literal "/files//..." —
-// what stripping-then-blindly-re-adding amounts to — collides with
-// net/http's own path-cleaning redirect for a doubled slash, which either
-// mangles the request or (worse) silently drops the leading slash so the
-// server reconstructs a *different* absolute path than the one requested.
-// Percent-encoding survives that unharmed: net/http decodes "%2F" inside a
-// wildcard segment back to "/" without treating it as a path separator, so
-// r.PathValue("path") on the server is exactly dest, unmodified — see
-// internal/daemon/exec.go, which checks path.IsAbs on that value directly
-// rather than reconstructing it from an assumption.
+// dest is percent-escaped in full (not just its leading slash) so it survives
+// inside the "{path...}" wildcard of "/sandboxes/{name}/files/{path...}"
+// byte-identical, whatever it contains. url.PathEscape escapes every "/" as
+// "%2F" along with "?", "#", spaces and anything else that would otherwise be
+// read as a path separator or query/fragment delimiter — a "?" or "#" left
+// unescaped truncates dest at the mux before it ever reaches the wildcard,
+// silently writing or reading the wrong file rather than failing loudly. The
+// wildcard decodes every "%XX" back on the way in, so r.PathValue("path") on
+// the server is exactly dest, unmodified — see internal/daemon/exec.go, which
+// checks path.IsAbs on that value directly rather than reconstructing it from
+// an assumption.
 func (s *brokerSandbox) filesRoute(dest string) string {
-	return s.route("/files/") + "%2F" + dest[1:]
+	return s.route("/files/") + url.PathEscape(dest)
 }

@@ -148,6 +148,22 @@ func (c *Client) Destroy(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/sandboxes/"+pathEscape(name), nil, nil)
 }
 
+// Profiles returns every profile's name and lifetime bounds.
+//
+// It exists for a caller running its own idle reaper: that reaper's TTL must
+// stay ordered behind the daemon's, or it can end up holding a cached handle
+// that already points at a sandbox openbloxd destroyed. Read the profile's
+// bounds here rather than assuming the caller's own configured timeout is
+// still authoritative — it stopped being so the moment lifetime became
+// daemon policy.
+func (c *Client) Profiles(ctx context.Context) ([]brokerapi.ProfileInfo, error) {
+	var out []brokerapi.ProfileInfo
+	if err := c.do(ctx, http.MethodGet, "/profiles", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // sandboxFrom builds a handle from a wire Info, keeping the resolved name so
 // Expose and Revoke — which never touch the daemon — can address the sandbox
 // without another round trip.

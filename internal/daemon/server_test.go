@@ -17,8 +17,12 @@ type errStub string
 func (e errStub) Error() string { return string(e) }
 
 // These two tests exercise decode and fail directly through a throwaway mux,
-// not through Server.Handler(): handleCreate is a Task 5 stub, so routing
-// through POST /sandboxes cannot yet observe either property.
+// not through Server.Handler(): both are generic properties of the two
+// helpers themselves, shared by every handler that calls them, so testing
+// them against a route-specific handler would tie a package-wide contract to
+// one route's business logic. TestUnknownFieldOnCreateIsRejected in
+// sandboxes_test.go re-asserts the same property through the real
+// POST /sandboxes route, once a route exists to assert it against.
 
 func TestUnknownFieldIsRejected(t *testing.T) {
 	mux := http.NewServeMux()

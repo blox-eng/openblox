@@ -1,9 +1,14 @@
 //go:build integration
 
-// These tests re-run pkg/docker's integration assertions through openbloxd
-// instead of talking to Docker directly, proving the broker behaves
-// identically to the library it wraps. See CONTRIBUTING.md for the gVisor
-// prerequisites. Run with: make test-integration
+// These tests re-run pkg/docker's integration assertions (mainly
+// sandbox_integration_test.go, backend_integration_test.go,
+// preview_integration_test.go and process_integration_test.go) through
+// openbloxd instead of talking to Docker directly, proving the broker
+// behaves identically to the library it wraps. See CONTRIBUTING.md for the
+// gVisor prerequisites. Run with: make test-integration
+//
+// The two suites are hand-mirrored, not shared code, so nothing will notice
+// if they drift apart — keep them in step deliberately.
 package brokerclient_test
 
 import (
@@ -428,7 +433,7 @@ func TestBrokerRefusesPolicyOptionsAgainstALiveDaemon(t *testing.T) {
 	}
 }
 
-// --- label round trip: Task 10 restored Info.Labels across the wire; this is
+// --- label round trip: Info.Labels must survive the wire unmodified; this is
 // the one test that drives a real daemon and a real client together instead
 // of asserting each side of the seam in isolation. ---
 

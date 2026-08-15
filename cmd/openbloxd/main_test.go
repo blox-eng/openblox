@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-// TestServeReturnsPromptlyOnAcceptFailure covers the regression from round 2:
-// serve() used to only select on ctx.Done(), so a Serve failure with no
-// signal in flight left it blocked forever waiting for a signal that would
-// never come. A closed listener makes Serve fail on its own immediately,
-// standing in for any Accept-loop failure — the assertion is that serve()
-// notices and returns without needing ctx to be cancelled.
+// TestServeReturnsPromptlyOnAcceptFailure covers a real regression: serve()
+// used to only select on ctx.Done(), so a Serve failure with no signal in
+// flight left it blocked forever waiting for a signal that would never come.
+// A closed listener makes Serve fail on its own immediately, standing in for
+// any Accept-loop failure — the assertion is that serve() notices and
+// returns without needing ctx to be cancelled.
 func TestServeReturnsPromptlyOnAcceptFailure(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -42,10 +42,10 @@ func TestServeReturnsPromptlyOnAcceptFailure(t *testing.T) {
 
 // TestServeShutsDownOnContextCancel exercises the other arm of the same
 // select: the signal path must still work now that serve() also races
-// against serveErr. This is a structural check that the select didn't break
-// what round 1 already proved end-to-end with a real daemon and an in-flight
-// exec (see task-9-report.md) — it has no in-flight request to drain, so it
-// is not a substitute for that evidence, only a fast regression guard.
+// against serveErr. This is a structural check that the select didn't break —
+// it has no in-flight request to drain, so draining itself is http.Server's
+// own documented Shutdown behaviour, not something this test needs to
+// reprove.
 func TestServeShutsDownOnContextCancel(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

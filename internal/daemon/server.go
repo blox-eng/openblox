@@ -44,11 +44,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /sandboxes/{name}", s.handleDestroy)
 	mux.HandleFunc("POST /sandboxes/{name}/stop", s.handleStop)
 	mux.HandleFunc("POST /sandboxes/{name}/exec", s.handleExec)
-	// The leading "/" of an absolute file path arrives here percent-encoded
-	// ("%2F") rather than literal: a literal "/files//workspace/..." collides
-	// with net/http's own doubled-slash redirect before it ever reaches the
-	// "{path...}" wildcard. See filePath in exec.go for the decode side and
-	// brokerclient's filesRoute for where it's encoded.
+	// The file path arrives here fully percent-escaped (leading "/" included)
+	// rather than literal: an unescaped "?" or "#" would truncate the path
+	// before net/http's router ever sees it, and an unescaped doubled "/"
+	// collides with net/http's own doubled-slash redirect. The "{path...}"
+	// wildcard decodes every "%XX" back on the way in, so what lands in
+	// r.PathValue("path") is the caller's dest, unmodified. See filePath in
+	// exec.go for the decode side and brokerclient's filesRoute for where
+	// it's encoded.
 	mux.HandleFunc("PUT /sandboxes/{name}/files/{path...}", s.handleWriteFile)
 	mux.HandleFunc("GET /sandboxes/{name}/files/{path...}", s.handleReadFile)
 	mux.HandleFunc("POST /sandboxes/{name}/processes", s.handleStartProcess)

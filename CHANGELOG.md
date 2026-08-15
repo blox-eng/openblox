@@ -22,3 +22,19 @@ Releases are cut automatically from [Conventional Commits](https://www.conventio
   handler that proxies to a port inside a sandbox without giving it a network.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
+- `docker.WithRegistryAuth` for pulling from a private registry.
+- `Info.Labels`, so a caller's own bookkeeping labels round-trip through
+  `List`/`Open`.
+- `openbloxd`: a daemon that owns the Docker connection so its callers never
+  need `/var/run/docker.sock`, with per-profile isolation policy resolved
+  server-side from configuration alone.
+- `pkg/brokerclient`: a drop-in `sandbox.Backend` that talks to `openbloxd`
+  over its Unix socket, satisfying the same contract the Docker backend does.
+
+### Changed
+
+- `sandbox.Info` gained a `Labels map[string]string` field and is no longer
+  comparable. `info1 == info2` and `map[sandbox.Info]T` now fail to compile.
+  This is additive in shape but breaking in Go's comparability sense — a
+  reasonable trade pre-1.0, but callers relying on `Info` being comparable
+  need to switch to comparing the fields they care about.

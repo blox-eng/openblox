@@ -136,6 +136,14 @@ daemon itself creates the socket `0660` and chowns it to that group in `Listen`
 the full broker surface, with no per-caller distinction inside it — grant it only to
 processes that should be able to create sandboxes.
 
+`socket_group` must be the daemon user's primary group, or `Group=` must be set on the
+unit to match it. systemd creates `RuntimeDirectory` (`/run/openbloxd`) owned by the
+unit's `User`/`Group`, and with `Group=` unset that's the user's primary group — the
+shipped default happens to set `socket_group` to that same group, so it works out of the
+box. Picking a different `socket_group` without also setting `Group=` chowns the socket
+correctly but leaves it inside a directory that group cannot traverse: connections fail
+with `EACCES` and nothing about the socket's own permissions explains why.
+
 `RuntimeDirectoryMode=0750` on the unit is not tidiness — it is load-bearing. `Listen`
 creates the socket with `net.Listen`, which the umask governs, and only narrows it to
 `0660` with a subsequent `os.Chmod`. Between those two calls the socket briefly carries

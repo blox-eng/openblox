@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blox-eng/openblox/pkg/sandbox"
@@ -70,6 +71,66 @@ profiles:
 `)
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected an error: disk exceeds memory")
+	}
+}
+
+func TestLoadRejectsNegativeIdleTimeout(t *testing.T) {
+	path := writeConfig(t, `
+socket: /tmp/s.sock
+profiles:
+  p:
+    image: example.com/i@sha256:abc
+    idle_timeout: -1s
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected an error: negative idle_timeout silently disables reaping")
+	}
+	if !strings.Contains(err.Error(), "idle_timeout") {
+		t.Errorf("error %q should name the offending field", err)
+	}
+}
+
+func TestLoadRejectsNegativeMaxAge(t *testing.T) {
+	path := writeConfig(t, `
+socket: /tmp/s.sock
+profiles:
+  p:
+    image: example.com/i@sha256:abc
+    max_age: -1h
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected an error: negative max_age silently disables reaping")
+	}
+}
+
+func TestLoadRejectsNegativeMemory(t *testing.T) {
+	path := writeConfig(t, `
+socket: /tmp/s.sock
+profiles:
+  p:
+    image: example.com/i@sha256:abc
+    memory_mb: -1
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected an error: negative memory_mb is an operator typo, not a request for the library default")
+	}
+	if !strings.Contains(err.Error(), "memory_mb") {
+		t.Errorf("error %q should name the offending field", err)
+	}
+}
+
+func TestLoadRejectsNegativeCPUs(t *testing.T) {
+	path := writeConfig(t, `
+socket: /tmp/s.sock
+profiles:
+  p:
+    image: example.com/i@sha256:abc
+    cpus: -2
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected an error: negative cpus")
 	}
 }
 

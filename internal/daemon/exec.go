@@ -60,16 +60,20 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 // filePath reads the wildcard path segment as the caller's client sent it.
 //
 // It is used exactly as received, with no "/" prepended: brokerclient's
-// filesRoute percent-encodes the leading slash of an absolute path so it
-// survives the wildcard unmangled (net/http's ServeMux would otherwise
-// redirect-and-collapse a literal doubled slash), so r.PathValue("path")
+// filesRoute percent-escapes the whole path (not just its leading slash) so
+// it survives the wildcard unmangled — net/http's ServeMux would otherwise
+// collapse a literal doubled slash via redirect, or truncate at an unescaped
+// "?" or "#" before the path ever reaches the wildcard — so r.PathValue("path")
 // already equals the caller's dest. Prepending "/" here — the previous
 // behaviour — would make every request look absolute regardless of what was
 // actually sent, silently rerooting a relative path instead of refusing it.
 // The explicit path.IsAbs check below is the same rule
 // docker.dockerSandbox.WriteFile/ReadFile enforce (pkg/docker/sandbox.go),
 // applied independently of whether the caller across the socket is
-// brokerclient or something else entirely.
+// brokerclient or something else entirely. This includes "..": traversal
+// within the sandbox is permitted here, matching the library-side check in
+// pkg/docker — tightening it would need to happen on both sides at once to
+// keep the integration suite proving real parity.
 func filePath(r *http.Request) (string, error) {
 	p := r.PathValue("path")
 	if !path.IsAbs(p) {

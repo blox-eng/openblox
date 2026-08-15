@@ -133,8 +133,8 @@ func TestHostileLabelValuesDoNotReachTypedSpecFields(t *testing.T) {
 	}
 }
 
-// TestReservedProfileLabelIsRefused from the brief is not a separate test
-// here: TestCreateRejectsReservedProfileLabel in sandboxes_test.go covers the
-// same body and now asserts both the 400 and fake.created being empty — the
-// full guarantee, under the name that claims it. A second copy would only
-// invite the two to drift apart.
+// A reserved-profile-label test is not duplicated here:
+// TestCreateRejectsReservedProfileLabel in sandboxes_test.go covers the same
+// body and asserts both the 400 and fake.created being empty — the full
+// guarantee, under the name that claims it. A second copy would only invite
+// the two to drift apart.

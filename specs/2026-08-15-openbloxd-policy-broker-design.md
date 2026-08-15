@@ -19,6 +19,12 @@ verb, and `POST /containers/create` is the dangerous verb: `Binds`, `Privileged`
 Compromising a caller then buys sandboxes, which the caller can create by design,
 rather than the host.
 
+Profiles bound what a single sandbox may consume; nothing bounds how many a
+caller may create. A compromised or merely buggy caller can create sandboxes
+in a loop, and N sandboxes at up to a profile's memory ceiling each is a host
+denial-of-service even though every one of them is individually contained.
+Per-caller quota is future work, not something this design builds.
+
 ## What the field does
 
 Every system that solved this converged on admin-defined profiles that a request
@@ -288,9 +294,22 @@ Four steps, each revertible on its own.
 1. openblox ships `cmd/openbloxd` and `pkg/brokerclient` with tests. Nothing
    deployed.
 2. tekom runs openbloxd alongside the existing setup. mcpblox stays on the
-   library path.
+   library path. **This step is not a no-op.** `Backend.Reap`
+   (`pkg/docker/reap.go`) filters on `labelManaged=true` only, with no
+   profile check, so once openbloxd's reaper starts running it sweeps
+   sandboxes the library-path mcpblox created too — enforcing idle/max-age
+   bounds that nothing enforced before, which can invalidate mcpblox's
+   cached handles. Either hold off starting openbloxd's reaper until step 3,
+   or accept that mcpblox's cached-handle invalidation path gets exercised
+   a step earlier than the plan otherwise implies.
 3. tekom switches mcpblox to `brokerclient` and removes the `docker.sock` mount
-   and `group_add: 989`. Verify `execute_code` and the browser sandbox.
+   and `group_add: 989`. Every sandbox mcpblox created before this point lacks
+   the `openbloxd.profile` label, so `handleCreate` returns 409 for each —
+   correctly, since pre-broker sandboxes must not be silently adopted under a
+   profile they were never created with. Drain or destroy them as part of this
+   step, before switching mcpblox over: `docker ps --filter label=sh.openblox.managed=true`
+   lists what's left to clear. Then verify `execute_code` and the browser
+   sandbox.
 4. Soak, then enable on prod with the socket never mounted. Close blox#2672 with
    the outcome.
 

@@ -267,10 +267,10 @@ func TestCreateRejectsReservedProfileLabel(t *testing.T) {
 	}
 }
 
-// The create-path versions of these two properties: Task 4 exercised decode
-// and fail through a throwaway mux because handleCreate was still a stub.
-// Now that it is real, the same properties must hold through the actual
-// route.
+// The create-path versions of the two properties server_test.go asserts
+// against decode and fail in isolation: routed through the real
+// POST /sandboxes handler, not a throwaway mux, so they must hold end to end
+// and not just for the two helpers on their own.
 func TestUnknownFieldOnCreateIsRejected(t *testing.T) {
 	srv := newTestServer(t)
 	rec := httptest.NewRecorder()

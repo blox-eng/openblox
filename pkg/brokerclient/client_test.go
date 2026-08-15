@@ -182,6 +182,26 @@ func TestListDecodesEveryEntry(t *testing.T) {
 	}
 }
 
+func TestProfilesHitsTheDaemonRoute(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/profiles" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		respondJSON(w, http.StatusOK, []brokerapi.ProfileInfo{
+			{Name: "browser", IdleTimeout: "15m0s", MaxAge: "2h0m0s"},
+			{Name: "code-exec", IdleTimeout: "30m0s", MaxAge: "4h0m0s"},
+		})
+	})
+
+	profiles, err := c.Profiles(context.Background())
+	if err != nil {
+		t.Fatalf("Profiles: %v", err)
+	}
+	if len(profiles) != 2 || profiles[0].Name != "browser" || profiles[1].IdleTimeout != "30m0s" {
+		t.Errorf("profiles = %+v", profiles)
+	}
+}
+
 func TestDestroyIsIdempotent(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete || r.URL.Path != "/sandboxes/a" {
@@ -301,6 +321,70 @@ func TestSandboxMethodsHitTheDaemonRoutes(t *testing.T) {
 
 	if err := sb.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop: %v", err)
+	}
+}
+
+// TestFilesRouteSurvivesAdversarialPaths is why the raw-concatenation bug in
+// filesRoute went unnoticed: the integration suite only ever exercised
+// "/workspace/nested/dir/data.txt". "?" and "#" are the dangerous cases —
+// unescaped, they truncate the path before it reaches the daemon's mux, so
+// WriteFile/ReadFile silently act on a different file and still report
+// success. A space and a literal "%" cover the two ways a naive scheme
+// (encode only the leading slash, or none of it) breaks on ordinary
+// generated filenames. ".." is included deliberately: the daemon is allowed
+// to receive it intact and act on it, matching pkg/docker's own
+// path.IsAbs-only guard (see the daemon's filePath in exec.go) — this test
+// only asserts it arrives byte-identical, not that it's rejected.
+func TestFilesRouteSurvivesAdversarialPaths(t *testing.T) {
+	cases := []string{
+		"/workspace/a?b.txt",
+		"/workspace/a#b.txt",
+		"/workspace/a b.txt",
+		"/workspace/50%.txt",
+		"/workspace/日本語.txt",
+		"/workspace/../etc/passwd",
+	}
+
+	for _, dest := range cases {
+		t.Run(dest, func(t *testing.T) {
+			var gotPath string
+			mux := http.NewServeMux()
+			mux.HandleFunc("PUT /sandboxes/{name}/files/{path...}", func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.PathValue("path")
+				w.WriteHeader(http.StatusNoContent)
+			})
+			mux.HandleFunc("GET /sandboxes/{name}/files/{path...}", func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.PathValue("path")
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.WriteHeader(http.StatusOK)
+			})
+			mux.HandleFunc("POST /sandboxes", func(w http.ResponseWriter, r *http.Request) {
+				respondJSON(w, http.StatusCreated, brokerapi.Info{Name: "a", State: "running"})
+			})
+
+			c := newTestClientMux(t, mux)
+			sb, err := c.Create(context.Background(), "a", WithProfile("code-exec"))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := sb.WriteFile(context.Background(), dest, 0o644, strings.NewReader("x")); err != nil {
+				t.Fatalf("WriteFile(%q): %v", dest, err)
+			}
+			if gotPath != dest {
+				t.Errorf("WriteFile: daemon saw path %q, want %q", gotPath, dest)
+			}
+
+			gotPath = ""
+			rc, err := sb.ReadFile(context.Background(), dest)
+			if err != nil {
+				t.Fatalf("ReadFile(%q): %v", dest, err)
+			}
+			_ = rc.Close()
+			if gotPath != dest {
+				t.Errorf("ReadFile: daemon saw path %q, want %q", gotPath, dest)
+			}
+		})
 	}
 }
 

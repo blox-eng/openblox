@@ -75,10 +75,9 @@ func TestDialUpgradesAndCopiesBothWays(t *testing.T) {
 	}
 }
 
-// newTestServer's config carries two profiles ("code-exec", "browser"), not
-// the single profile the brief's sketch assumed — so this asserts against
-// what the fixture actually has: both profiles present, and sorted by name
-// so the response order is stable across calls.
+// newTestServer's config carries two profiles ("code-exec", "browser"), so
+// this asserts against what the fixture actually has: both profiles present,
+// and sorted by name so the response order is stable across calls.
 func TestProfilesReportsLifetimeBounds(t *testing.T) {
 	srv := newTestServer(t)
 	rec := httptest.NewRecorder()

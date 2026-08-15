@@ -105,6 +105,17 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// validate rejects a profile whose bounds cannot mean what they look like
+// they mean.
+//
+// A zero-valued bound here is not "unlimited" — it is "inherit the library's
+// conservative default". Options() feeds every field through WithResources
+// and WithLifetime, and both ignore a zero field rather than clearing it (see
+// pkg/sandbox/options.go), so a profile that omits idle_timeout and max_age
+// entirely — the reference config's "browser" profile does exactly this —
+// still ends up bounded by sandbox.DefaultIdleTimeout and
+// sandbox.DefaultMaxAge, not unbounded. That is what makes it safe to leave a
+// bound out of a profile at all.
 func (p Profile) validate(name string) error {
 	if p.Image == "" {
 		return fmt.Errorf("%w: profile %q has no image", sandbox.ErrInvalid, name)
@@ -113,6 +124,38 @@ func (p Profile) validate(name string) error {
 	case "", "none", "unrestricted":
 	default:
 		return fmt.Errorf("%w: profile %q has egress %q, want none or unrestricted", sandbox.ErrInvalid, name, p.Egress)
+	}
+	// Negative durations and negative resources fail for different reasons.
+	// WithLifetime treats a negative value as "disable this bound" by
+	// documented design (pkg/sandbox/options.go), so idle_timeout: -1s in a
+	// profile would silently turn off reaping for it — a real footgun, not a
+	// typo that resolves safely. WithResources instead ignores any
+	// non-positive field and falls back to the library default, so
+	// memory_mb: -1 cannot weaken isolation on its own; it is rejected here
+	// only so an operator's typo is loud rather than quietly overridden.
+	if p.CPUs < 0 {
+		return fmt.Errorf("%w: profile %q has negative cpus %v", sandbox.ErrInvalid, name, p.CPUs)
+	}
+	if p.MemoryMB < 0 {
+		return fmt.Errorf("%w: profile %q has negative memory_mb %d", sandbox.ErrInvalid, name, p.MemoryMB)
+	}
+	if p.DiskMB < 0 {
+		return fmt.Errorf("%w: profile %q has negative disk_mb %d", sandbox.ErrInvalid, name, p.DiskMB)
+	}
+	if p.MaxProcesses < 0 {
+		return fmt.Errorf("%w: profile %q has negative max_processes %d", sandbox.ErrInvalid, name, p.MaxProcesses)
+	}
+	if p.IdleTimeout < 0 {
+		return fmt.Errorf("%w: profile %q has negative idle_timeout %s, which silently disables reaping", sandbox.ErrInvalid, name, p.IdleTimeout)
+	}
+	if p.MaxAge < 0 {
+		return fmt.Errorf("%w: profile %q has negative max_age %s, which silently disables reaping", sandbox.ErrInvalid, name, p.MaxAge)
+	}
+	if p.DefaultTimeout < 0 {
+		return fmt.Errorf("%w: profile %q has negative default_timeout %s", sandbox.ErrInvalid, name, p.DefaultTimeout)
+	}
+	if p.MaxTimeout < 0 {
+		return fmt.Errorf("%w: profile %q has negative max_timeout %s", sandbox.ErrInvalid, name, p.MaxTimeout)
 	}
 	if err := sandbox.NewSpec(p.Options()...).Resources.Validate(); err != nil {
 		return fmt.Errorf("profile %q: %w", name, err)
