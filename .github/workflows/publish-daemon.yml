@@ -1,0 +1,123 @@
+name: Publish daemon
+
+# Builds the openbloxd binary and attaches it to the release for a `v*` tag.
+#
+# openbloxd is installed on a host, not pulled as an image: it holds the Docker
+# socket so the containerized callers do not have to, and running it in a
+# container with that socket mounted would put the privilege straight back where
+# this daemon exists to take it from. So the artifact is a binary and a systemd
+# unit, which is what deploy/openbloxd.service expects at
+# /usr/local/bin/openbloxd.
+#
+# Tag-triggered, matching publish-image.yml: release.yml cuts the tag from
+# conventional commits once CI is green on main, and both publish jobs hang off
+# that tag rather than off each other.
+#
+# Static (CGO_ENABLED=0) on purpose. The daemon runs on whatever the host is
+# today, and a binary that depends on the build host's libc is a support burden
+# for no benefit — it links nothing that needs cgo.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to build and attach binaries to (e.g. v0.3.0).'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-daemon-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    name: Publish openbloxd
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Uploading a release asset is a write to the release, which lives under
+      # contents. Scoped to this job rather than the workflow.
+      contents: write
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      # Resolve the ref BEFORE checkout, and refuse anything that is not a
+      # plain semver tag. A workflow_dispatch input is controlled by anyone who
+      # can trigger this workflow, and it would otherwise flow straight into
+      # `ref:` — where a crafted value selects what code this job builds and
+      # signs, while the job holds contents: write.
+      - name: Resolve and validate the tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          PUSH_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-$PUSH_TAG}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "refusing to build from ref '$TAG': not a semver release tag" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # -trimpath so the binary does not embed the runner's paths, matching
+          # the `build-daemon` make target developers use locally. The version
+          # is stamped so an operator can ask a host what it is running, and an
+          # unstamped local build stays honestly "dev".
+          CGO_ENABLED=0 GOOS=linux go build -trimpath \
+            -ldflags "-X main.version=${TAG}" \
+            -o "openbloxd-linux-${GOARCH}" ./cmd/openbloxd
+          sha256sum "openbloxd-linux-${GOARCH}" > "openbloxd-linux-${GOARCH}.sha256"
+
+      - name: Verify the binary runs
+        # A release asset that cannot execute is worse than a missing one: the
+        # install step succeeds and the daemon fails at boot on the host. Only
+        # meaningful for the native arch; the cross-built one is checked by file
+        # type instead.
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          if [ "$GOARCH" = "amd64" ]; then
+            ./"openbloxd-linux-${GOARCH}" --version
+          else
+            file "openbloxd-linux-${GOARCH}" | grep -q 'ARM aarch64'
+          fi
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" \
+            "openbloxd-linux-${GOARCH}" \
+            "openbloxd-linux-${GOARCH}.sha256" \
+            --clobber
