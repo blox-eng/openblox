@@ -23,9 +23,24 @@ import (
 	"github.com/blox-eng/openblox/pkg/docker"
 )
 
+// version is stamped at build time with -ldflags "-X main.version=<tag>".
+//
+// It defaults to "dev" rather than a plausible-looking number because an
+// unstamped binary is someone's local build, and a daemon installed on a host
+// should not claim to be a release it is not. The client and the daemon must
+// agree on the wire format, so "what is actually running here" is a question an
+// operator has to be able to answer.
+var version = "dev"
+
 func main() {
 	configPath := flag.String("config", "/etc/openbloxd/config.yaml", "path to the config file")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	if err := run(*configPath); err != nil {
 		slog.Error("openbloxd: exiting", slog.Any("error", err))
