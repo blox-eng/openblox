@@ -343,3 +343,11 @@ tenants, and is not a precedent for prod.
   A caller that skips `WithPreviews` and builds its own `preview.NewHandler`
   gets working `Expose` links but a `Revoke` that silently does nothing, for the
   reason above.
+
+- **The Transport section's claim that `SO_PEERCRED` "records the peer's uid and
+  gid for the audit log" was never implemented.** No task in the plan scheduled
+  it, and no code in `internal/daemon` reads `SO_PEERCRED` or writes an audit
+  log keyed on it. The mechanism remains available for the profile-to-identity
+  binding this section anticipates; it just isn't built. `docs/security.md`
+  describes this accurately as unused-but-available rather than repeating the
+  original claim.

@@ -126,11 +126,15 @@ resolves the path fresh on every connection and picks up the new socket.
 
 **The socket group is the entire access-control list.** There is no token and no TLS —
 a Unix socket is a kernel object with no wire to intercept, and mTLS would add a CA,
-issuance and rotation for no real gain here. `deploy/openbloxd.service` creates the
-socket `0660` and adds the group to
-`SupplementaryGroups`; anything in that group reaches the full broker surface, with no
-per-caller distinction inside it. Grant the group only to processes that should be able
-to create sandboxes.
+issuance and rotation for no real gain here. Two different groups do two different jobs
+here, and they are easy to conflate: `socket_group` in the daemon's own config file
+(`deploy/openbloxd.example.yaml`) names the group that may reach the socket — the
+daemon itself creates the socket `0660` and chowns it to that group in `Listen`
+(`internal/daemon/listener.go`), not the unit file. `SupplementaryGroups=docker` in
+`deploy/openbloxd.service` is unrelated: it grants the daemon *itself* membership of the
+`docker` group so it can reach `/var/run/docker.sock`. Anything in `socket_group` reaches
+the full broker surface, with no per-caller distinction inside it — grant it only to
+processes that should be able to create sandboxes.
 
 `RuntimeDirectoryMode=0750` on the unit is not tidiness — it is load-bearing. `Listen`
 creates the socket with `net.Listen`, which the umask governs, and only narrows it to
