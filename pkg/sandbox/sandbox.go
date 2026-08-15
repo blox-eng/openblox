@@ -103,6 +103,13 @@ type Info struct {
 	State State
 
 	CreatedAt time.Time
+
+	// Labels are the caller's own labels, as passed to WithLabel. A backend's
+	// internal bookkeeping is never included here: what appears is exactly what
+	// the caller set, so a daemon layered on top can read back its own markers
+	// (e.g. which profile a sandbox was created under) without also seeing the
+	// backend's private state.
+	Labels map[string]string
 }
 
 // Command is a program to run inside a sandbox.

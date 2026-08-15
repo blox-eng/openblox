@@ -29,7 +29,7 @@ func (b *Backend) ensureImage(ctx context.Context, ref string) error {
 		return fmt.Errorf("inspect image %q: %w", ref, err)
 	}
 
-	body, err := b.cli.ImagePull(ctx, ref, image.PullOptions{})
+	body, err := b.cli.ImagePull(ctx, ref, image.PullOptions{RegistryAuth: b.registryAuth})
 	if err != nil {
 		return fmt.Errorf("%w: pull image %q: %w", sandbox.ErrImageUnavailable, ref, err)
 	}

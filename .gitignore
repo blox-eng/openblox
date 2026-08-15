@@ -33,3 +33,6 @@ go.work.sum
 
 # mkdocs build output
 site/
+
+# make build-daemon output
+bin/

@@ -1,4 +1,4 @@
-.PHONY: all vet lint test test-integration cover tidy image image-verify
+.PHONY: all vet lint test test-integration cover tidy image image-verify build-daemon
 
 # The reference sandbox image. See image/README.md for the contract it satisfies.
 IMAGE ?= openblox-sandbox:dev
@@ -23,6 +23,9 @@ cover:
 
 tidy:
 	go mod tidy
+
+build-daemon:
+	CGO_ENABLED=0 go build -trimpath -o bin/openbloxd ./cmd/openbloxd
 
 image:
 	docker build -t $(IMAGE) image/
