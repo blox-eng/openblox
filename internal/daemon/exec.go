@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"path"
 	"time"
 
 	"github.com/blox-eng/openblox/pkg/brokerapi"
@@ -56,15 +57,41 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// filePath reads the wildcard path segment as the caller's client sent it.
+//
+// It is used exactly as received, with no "/" prepended: brokerclient's
+// filesRoute percent-encodes the leading slash of an absolute path so it
+// survives the wildcard unmangled (net/http's ServeMux would otherwise
+// redirect-and-collapse a literal doubled slash), so r.PathValue("path")
+// already equals the caller's dest. Prepending "/" here — the previous
+// behaviour — would make every request look absolute regardless of what was
+// actually sent, silently rerooting a relative path instead of refusing it.
+// The explicit path.IsAbs check below is the same rule
+// docker.dockerSandbox.WriteFile/ReadFile enforce (pkg/docker/sandbox.go),
+// applied independently of whether the caller across the socket is
+// brokerclient or something else entirely.
+func filePath(r *http.Request) (string, error) {
+	p := r.PathValue("path")
+	if !path.IsAbs(p) {
+		return "", fmt.Errorf("%w: path %q is not absolute", sandbox.ErrInvalid, p)
+	}
+	return p, nil
+}
+
 func (s *Server) handleWriteFile(w http.ResponseWriter, r *http.Request) {
 	sb, err := s.backend.Open(r.Context(), r.PathValue("name"))
 	if err != nil {
 		fail(w, err)
 		return
 	}
+	dest, err := filePath(r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
 	// Stream the body straight through: a sandbox payload can be large, and
 	// buffering it here would put the caller's file in the daemon's heap.
-	if err := sb.WriteFile(r.Context(), "/"+r.PathValue("path"), filePerm, r.Body); err != nil {
+	if err := sb.WriteFile(r.Context(), dest, filePerm, r.Body); err != nil {
 		fail(w, err)
 		return
 	}
@@ -77,7 +104,12 @@ func (s *Server) handleReadFile(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	rc, err := sb.ReadFile(r.Context(), "/"+r.PathValue("path"))
+	dest, err := filePath(r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	rc, err := sb.ReadFile(r.Context(), dest)
 	if err != nil {
 		fail(w, err)
 		return

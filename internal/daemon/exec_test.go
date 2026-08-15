@@ -50,13 +50,17 @@ func TestExecRejectsBadTimeoutString(t *testing.T) {
 	}
 }
 
+// The leading slash of an absolute path is percent-encoded on the wire (see
+// brokerclient.filesRoute) so it survives the "{path...}" wildcard instead of
+// colliding with net/http's own doubled-slash redirect. "%2Fworkspace" is
+// therefore what a well-behaved client actually sends for "/workspace".
 func TestWriteFileStreamsBodyToSandbox(t *testing.T) {
 	srv := newTestServer(t)
 	fake := srv.backend.(*fakeBackend)
 	fake.existing = map[string]string{"a": "code-exec"}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/sandboxes/a/files/workspace/main.go",
+	req := httptest.NewRequest(http.MethodPut, "/sandboxes/a/files/%2Fworkspace/main.go",
 		strings.NewReader("package main"))
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -65,5 +69,26 @@ func TestWriteFileStreamsBodyToSandbox(t *testing.T) {
 	}
 	if fake.written["/workspace/main.go"] != "package main" {
 		t.Errorf("written = %q", fake.written["/workspace/main.go"])
+	}
+}
+
+// The daemon must not depend on a well-behaved client to enforce this: a
+// caller speaking the wire protocol directly, without going through
+// brokerclient, must not be able to reach a path the library would refuse
+// either — see pkg/docker/sandbox.go's identical path.IsAbs check. Before
+// this test existed, a request like this reached sb.WriteFile with "/" blindly
+// prepended, turning an unencoded (relative-looking) wildcard segment into a
+// different absolute path instead of being refused.
+func TestWriteFileRejectsANonAbsoluteWirePath(t *testing.T) {
+	srv := newTestServer(t)
+	srv.backend.(*fakeBackend).existing = map[string]string{"a": "code-exec"}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/sandboxes/a/files/workspace/main.go",
+		strings.NewReader("package main"))
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body)
 	}
 }

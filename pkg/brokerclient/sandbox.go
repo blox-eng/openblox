@@ -6,7 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"strings"
+	"path"
 	"time"
 
 	"github.com/blox-eng/openblox/pkg/brokerapi"
@@ -55,15 +55,26 @@ func (s *brokerSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.
 	return sandbox.Result{Stdout: resp.Stdout, Stderr: resp.Stderr, ExitCode: resp.ExitCode}, nil
 }
 
-// WriteFile writes src to path inside the sandbox.
+// WriteFile writes src to dest inside the sandbox.
+//
+// dest must be absolute — the same rule docker.dockerSandbox.WriteFile
+// enforces (pkg/docker/sandbox.go). Checking it here, before the request is
+// even built, matches the library's behaviour: a relative path is refused
+// outright rather than silently reinterpreted against the wrong root. See
+// filesRoute for how the wire encoding keeps this checkable independently on
+// the daemon side too.
 //
 // mode is accepted to satisfy the interface but has no effect over the
 // broker: openbloxd writes every file 0644 regardless of what is asked
 // (internal/daemon/exec.go's filePerm), because the wire request carries no
 // mode field. That is the daemon's contract, not something this client can
 // widen.
-func (s *brokerSandbox) WriteFile(ctx context.Context, path string, _ fs.FileMode, src io.Reader) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, baseURL+s.filesRoute(path), src)
+func (s *brokerSandbox) WriteFile(ctx context.Context, dest string, _ fs.FileMode, src io.Reader) error {
+	if !path.IsAbs(dest) {
+		return fmt.Errorf("%w: path %q is not absolute", sandbox.ErrInvalid, dest)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, baseURL+s.filesRoute(dest), src)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
@@ -81,10 +92,14 @@ func (s *brokerSandbox) WriteFile(ctx context.Context, path string, _ fs.FileMod
 	return nil
 }
 
-// ReadFile opens path inside the sandbox for reading. The caller must close
-// the returned reader.
-func (s *brokerSandbox) ReadFile(ctx context.Context, path string) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+s.filesRoute(path), nil)
+// ReadFile opens dest inside the sandbox for reading. The caller must close
+// the returned reader. See WriteFile for why dest must be absolute.
+func (s *brokerSandbox) ReadFile(ctx context.Context, dest string) (io.ReadCloser, error) {
+	if !path.IsAbs(dest) {
+		return nil, fmt.Errorf("%w: path %q is not absolute", sandbox.ErrInvalid, dest)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+s.filesRoute(dest), nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -153,6 +168,11 @@ func (s *brokerSandbox) Revoke(_ context.Context, port int, token string) error 
 	if err := s.client.signer.Verify(token, s.name, port, time.Now()); err != nil {
 		return fmt.Errorf("%w: %w", sandbox.ErrInvalid, err)
 	}
+	// previewHandler is set whenever signer is (see WithPreviews): it is the
+	// same instance PreviewHandler returns, which is what makes this take
+	// effect for traffic actually being served rather than just verifying a
+	// signature and reporting success for a revocation nothing enforces.
+	s.client.previewHandler.Revoke(token)
 	return nil
 }
 
@@ -161,10 +181,20 @@ func (s *brokerSandbox) route(suffix string) string {
 	return "/sandboxes/" + pathEscape(s.name) + suffix
 }
 
-// filesRoute builds the files path for an absolute in-sandbox path. The
-// leading slash is stripped and re-added server-side (see
-// internal/daemon/exec.go), matching the wildcard route
-// "/sandboxes/{name}/files/{path...}".
-func (s *brokerSandbox) filesRoute(path string) string {
-	return s.route("/files/") + strings.TrimPrefix(path, "/")
+// filesRoute builds the files path for an absolute in-sandbox path.
+//
+// dest's leading slash is percent-encoded (rather than stripped and
+// server-side re-added) so it survives inside the "{path...}" wildcard of
+// "/sandboxes/{name}/files/{path...}" unchanged. A literal "/files//..." —
+// what stripping-then-blindly-re-adding amounts to — collides with
+// net/http's own path-cleaning redirect for a doubled slash, which either
+// mangles the request or (worse) silently drops the leading slash so the
+// server reconstructs a *different* absolute path than the one requested.
+// Percent-encoding survives that unharmed: net/http decodes "%2F" inside a
+// wildcard segment back to "/" without treating it as a path separator, so
+// r.PathValue("path") on the server is exactly dest, unmodified — see
+// internal/daemon/exec.go, which checks path.IsAbs on that value directly
+// rather than reconstructing it from an assumption.
+func (s *brokerSandbox) filesRoute(dest string) string {
+	return s.route("/files/") + "%2F" + dest[1:]
 }

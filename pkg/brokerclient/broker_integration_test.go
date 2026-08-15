@@ -303,10 +303,10 @@ func serveInSandbox(t *testing.T, sb sandbox.Sandbox, body string) {
 
 // End to end: Expose mints a credential, the handler validates it, and the
 // traffic reaches a port that has no route to it — driven through the broker
-// instead of docker.Backend directly. The Handler is built from the same key
-// passed to WithPreviews: the broker mints previews client-side (openbloxd
-// holds no signing key), so nothing about the daemon needs to know previews
-// exist for this to work.
+// instead of docker.Backend directly. c.PreviewHandler() is used rather than
+// building a second preview.NewHandler(c, signer): only the instance the
+// Client itself built is the one Revoke (below) can reach — see
+// brokerclient.WithPreviews's doc comment.
 func TestBrokerPreviewServesAnExposedPort(t *testing.T) {
 	key := previewKey(t)
 	c := startBroker(t, brokerclient.WithPreviews(key, "https://previews.test"))
@@ -331,11 +331,7 @@ func TestBrokerPreviewServesAnExposedPort(t *testing.T) {
 		t.Error("the token is embedded in the URL, where it leaks into logs and history")
 	}
 
-	signer, err := preview.NewSigner(key)
-	if err != nil {
-		t.Fatalf("NewSigner = %v", err)
-	}
-	srv := httptest.NewServer(preview.NewHandler(c, signer))
+	srv := httptest.NewServer(c.PreviewHandler())
 	defer srv.Close()
 
 	body, status := previewGet(t, srv.URL+preview.RoutePrefix+"/"+name+"/8080/index.html", p.Token)

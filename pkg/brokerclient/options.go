@@ -33,6 +33,13 @@ type Option func(*Client) error
 // Minting a preview touches Docker nowhere: it signs a name, a port and an
 // expiry. So it happens here, and the signing key lives in the one process
 // that also verifies it. The daemon holds no key.
+//
+// This also builds the Handler that PreviewHandler returns, exactly as
+// docker.WithPreviews builds one onto the Backend. Revoke calls into that
+// same instance, which is why the Handler is built here rather than left for
+// a caller to construct separately: a caller-built preview.NewHandler(c,
+// signer) would be a different object with its own revocation state that
+// Revoke could never reach.
 func WithPreviews(key []byte, baseURL string) Option {
 	return func(c *Client) error {
 		signer, err := preview.NewSigner(key)
@@ -44,6 +51,7 @@ func WithPreviews(key []byte, baseURL string) Option {
 		}
 		c.signer = signer
 		c.previewBase = baseURL
+		c.previewHandler = preview.NewHandler(c, signer)
 		return nil
 	}
 }

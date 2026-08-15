@@ -229,7 +229,10 @@ func TestSandboxMethodsHitTheDaemonRoutes(t *testing.T) {
 		respondJSON(w, http.StatusOK, brokerapi.ExecResponse{Stdout: []byte("hi"), ExitCode: 0})
 	})
 	mux.HandleFunc("PUT /sandboxes/{name}/files/{path...}", func(w http.ResponseWriter, r *http.Request) {
-		if got := r.PathValue("path"); got != "workspace/main.go" {
+		// net/http decodes the percent-encoded leading slash back into the
+		// wildcard value, so what the handler sees is the caller's original
+		// absolute path, not the wire-safe "%2Fworkspace/..." on the URL line.
+		if got := r.PathValue("path"); got != "/workspace/main.go" {
 			t.Errorf("path = %q", got)
 		}
 		var err error
@@ -240,7 +243,7 @@ func TestSandboxMethodsHitTheDaemonRoutes(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /sandboxes/{name}/files/{path...}", func(w http.ResponseWriter, r *http.Request) {
-		if got := r.PathValue("path"); got != "workspace/main.go" {
+		if got := r.PathValue("path"); got != "/workspace/main.go" {
 			t.Errorf("path = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")

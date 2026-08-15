@@ -32,11 +32,12 @@ type Client struct {
 	// outside the pooled http.Client — see dial.go.
 	socket string
 
-	// signer and previewBase are set only when WithPreviews was passed. Expose
-	// and Revoke fail cleanly when they are nil, rather than minting a URL
-	// nothing serves.
-	signer      *preview.Signer
-	previewBase string
+	// signer, previewBase and previewHandler are set only when WithPreviews
+	// was passed. Expose and Revoke fail cleanly when signer is nil, rather
+	// than minting a URL nothing serves.
+	signer         *preview.Signer
+	previewBase    string
+	previewHandler *preview.Handler
 }
 
 // New returns a Client that dials openbloxd at socketPath.
@@ -70,6 +71,21 @@ func New(socketPath string, opts ...Option) (*Client, error) {
 func (c *Client) Close() error {
 	c.http.CloseIdleConnections()
 	return nil
+}
+
+// PreviewHandler returns the HTTP handler that serves this client's previews,
+// or nil if WithPreviews was not passed. Mount it at preview.RoutePrefix —
+// mirrors docker.Backend.PreviewHandler.
+//
+// openblox does not run a server. Which address it listens on, behind what
+// TLS, and who can reach it are deployment decisions.
+//
+// The handler is built once, here, rather than by the caller: Revoke needs to
+// reach the exact instance serving traffic, and a caller-constructed handler
+// (built separately from client and signer) would be a different instance
+// with its own, never-consulted revocation state.
+func (c *Client) PreviewHandler() *preview.Handler {
+	return c.previewHandler
 }
 
 // Create returns a running sandbox for name, creating it if absent.
@@ -208,7 +224,8 @@ func errorFrom(resp *http.Response) error {
 func pathEscape(name string) string { return url.PathEscape(name) }
 
 // Compile-time proof the broker client satisfies the same contract the
-// Docker backend does, and needs no adapter to serve preview.NewHandler.
+// Docker backend does, and can dial its own previews for preview.NewHandler
+// the same way the Docker backend dials itself.
 var (
 	_ sandbox.Backend = (*Client)(nil)
 	_ sandbox.Sandbox = (*brokerSandbox)(nil)
