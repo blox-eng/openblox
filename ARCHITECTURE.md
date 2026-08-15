@@ -27,10 +27,10 @@ openblox is the wrong tool for it.
         │                                 │
         │ imports                         │ HTTP
         ▼                                 ▼
-  ┌────────────────────┐          ┌──────────────────┐
-  │  pkg/sandbox       │◄─────────│  cmd/openbloxd   │
-  │  the library       │          │  thin transport  │
-  └─────────┬──────────┘          └──────────────────┘
+  ┌────────────────────┐          ┌────────────────────┐
+  │  pkg/sandbox       │◄─────────│  cmd/openbloxd     │
+  │  the library       │          │  the policy broker │
+  └─────────┬──────────┘          └────────────────────┘
             │
             │ Backend interface
             ▼
@@ -40,9 +40,13 @@ openblox is the wrong tool for it.
   └────────────────────┘
 ```
 
-The library is the product. `openbloxd` is a transport wrapper over it and must
-never hold logic the library doesn't. If a behaviour can only be reached over
-HTTP, it's in the wrong place.
+The library is the product. `openbloxd` holds no *sandbox* behaviour the library
+doesn't — if a way to run code can only be reached over HTTP, it's in the wrong
+place. It does hold *policy*, and that is the point: the daemon exists so a
+caller can create sandboxes without holding the Docker socket, which is only
+true if the isolation policy lives on the daemon's side of the socket. Options
+such as `WithRuntime` and `WithEgress` are therefore configuration in
+`openbloxd` and are unreachable from a request.
 
 ## Core interfaces
 
@@ -212,10 +216,13 @@ would read as a broken server.
 ## Repository layout
 
 ```
-pkg/sandbox/     the library — Backend, Sandbox, options, errors
-pkg/proxy/       preview-link signing + reverse proxy
-cmd/openbloxd/   HTTP transport over the library
-internal/        anything not part of the public contract
+pkg/sandbox/       the library — Backend, Sandbox, options, errors
+pkg/preview/       preview-link signing + reverse proxy
+pkg/brokerapi/     the wire types openbloxd speaks
+pkg/brokerclient/  a Backend that reaches openbloxd instead of Docker
+cmd/openbloxd/     the policy broker
+internal/daemon/   openbloxd's internals — config, routes, policy
+deploy/            systemd unit and reference config
 ```
 
 `internal/` is load-bearing: everything outside it is API we are promising to keep.

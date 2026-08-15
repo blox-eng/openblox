@@ -326,3 +326,20 @@ was settled before this design: code execution on prod is wanted, so build the
 broker. Mounting the socket into mcpblox on prod remains rejected. The socket
 mount on tekom (tekom#143) is accepted risk for a tailnet-only box with family
 tenants, and is not a precedent for prod.
+
+## Corrections discovered during implementation
+
+- **`preview.NewHandler(client, signer)` is not sufficient for a broker-backed
+  caller.** Serving previews works fine built that way, but `Revoke` does not:
+  revocation state lives in the `Handler` instance, and a handler the caller
+  constructs separately from `brokerclient.Client` is a different instance whose
+  revocations `Expose`'s serving path never consults — a revoked token keeps
+  authenticating. `brokerclient.Client` now exposes `PreviewHandler()`, mirroring
+  `docker.Backend`, and mounts that instance rather than a caller-built one.
+
+- **`Expose` and `Revoke` require the client to own the handler**, which this
+  design did not call out. `WithPreviews` builds the `Handler` inside `New` and
+  keeps it on the `Client`; `Expose` and `Revoke` both act on that one instance.
+  A caller that skips `WithPreviews` and builds its own `preview.NewHandler`
+  gets working `Expose` links but a `Revoke` that silently does nothing, for the
+  reason above.
