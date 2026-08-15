@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/user"
 	"strconv"
-	"syscall"
 )
 
 // socketMode is owner+group read/write and nothing for others. Access to this
@@ -49,12 +48,9 @@ func Listen(socketPath, group string) (net.Listener, error) {
 	// local process can connect inside it and have its request served once the
 	// chmod lands. Narrowing the umask across the call means the socket is
 	// never permissive in the first place.
-	//
-	// The umask is process-global, which is safe here only because Listen runs
-	// once at startup before anything else creates a file. Keep it that way.
-	oldMask := syscall.Umask(0o777 &^ socketMode)
-	ln, err := net.Listen("unix", socketPath)
-	syscall.Umask(oldMask)
+	var ln net.Listener
+	var err error
+	withSocketUmask(func() { ln, err = net.Listen("unix", socketPath) })
 	if err != nil {
 		return nil, fmt.Errorf("listen on %q: %w", socketPath, err)
 	}
