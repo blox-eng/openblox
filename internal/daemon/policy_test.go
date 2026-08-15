@@ -15,7 +15,7 @@ import (
 // have called Create first. The assertion that matters is fake.created: it
 // must stay empty, proving nothing from the body ever reached the backend.
 //
-// The brief's cases are the floor. Beyond them: casing variants of a field
+// The obvious policy-field names are the floor. Beyond them: casing variants of a field
 // name (decode is case-insensitive on known fields, so an unknown field must
 // stay unknown regardless of case), a body that is syntactically valid JSON
 // but not an object, and duplicate JSON keys — encoding/json takes the last
