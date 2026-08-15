@@ -157,6 +157,13 @@ func (p Profile) validate(name string) error {
 	if p.MaxTimeout < 0 {
 		return fmt.Errorf("%w: profile %q has negative max_timeout %s", sandbox.ErrInvalid, name, p.MaxTimeout)
 	}
+	// Each bound is sane on its own but nonsense together: a default above the
+	// maximum means every exec is clamped below the default the operator
+	// configured, so the profile never once does what it says.
+	if p.MaxTimeout > 0 && p.DefaultTimeout > p.MaxTimeout {
+		return fmt.Errorf("%w: profile %q has default_timeout %s above max_timeout %s, so every command is clamped below its own default",
+			sandbox.ErrInvalid, name, p.DefaultTimeout, p.MaxTimeout)
+	}
 	if err := sandbox.NewSpec(p.Options()...).Resources.Validate(); err != nil {
 		return fmt.Errorf("profile %q: %w", name, err)
 	}

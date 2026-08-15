@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"strconv"
+	"syscall"
 )
 
 // socketMode is owner+group read/write and nothing for others. Access to this
@@ -41,13 +42,26 @@ func Listen(socketPath, group string) (net.Listener, error) {
 		}
 	}
 
+	// net.Listen derives the new socket's mode from the umask, so under the
+	// usual 022 it lands as 0755 and is reachable by everyone until the Chmod
+	// below runs. That window is not theoretical: the kernel queues
+	// connections on a listening socket before Accept is ever called, so a
+	// local process can connect inside it and have its request served once the
+	// chmod lands. Narrowing the umask across the call means the socket is
+	// never permissive in the first place.
+	//
+	// The umask is process-global, which is safe here only because Listen runs
+	// once at startup before anything else creates a file. Keep it that way.
+	oldMask := syscall.Umask(0o777 &^ socketMode)
 	ln, err := net.Listen("unix", socketPath)
+	syscall.Umask(oldMask)
 	if err != nil {
 		return nil, fmt.Errorf("listen on %q: %w", socketPath, err)
 	}
 
-	// Chmod after listen: the socket does not exist before it, and the umask
-	// would otherwise decide the mode for us.
+	// Chmod anyway: the umask can only clear bits, so this is what makes the
+	// final mode the stated one rather than whatever the umask happened to
+	// leave. It also keeps the guarantee if the umask dance above ever moves.
 	if err := os.Chmod(socketPath, socketMode); err != nil {
 		_ = ln.Close()
 		_ = os.Remove(socketPath)

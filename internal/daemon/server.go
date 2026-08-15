@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -66,8 +69,31 @@ func (s *Server) Handler() http.Handler {
 func decode[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
 	var v T
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&v); err != nil {
+
+	// Take the body as one raw value first. Decoding straight into T would
+	// accept a literal `null` — which leaves T at its zero value and reports
+	// no error, so a body carrying nothing reads as a well-formed request —
+	// and would ignore everything after the first value, so
+	// `{"name":"a","profile":"p"} {"runtime":"runc"}` would be answered 201.
+	// Both are the same fault DisallowUnknownFields exists to prevent, one
+	// level up: the caller is told it was obeyed when it was not.
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
+		fail(w, fmt.Errorf("%w: %s", sandbox.ErrInvalid, err.Error()))
+		return v, false
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		fail(w, fmt.Errorf("%w: body is null, want a JSON object", sandbox.ErrInvalid))
+		return v, false
+	}
+	if err := dec.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
+		fail(w, fmt.Errorf("%w: body has trailing data after the JSON value", sandbox.ErrInvalid))
+		return v, false
+	}
+
+	strict := json.NewDecoder(bytes.NewReader(raw))
+	strict.DisallowUnknownFields()
+	if err := strict.Decode(&v); err != nil {
 		fail(w, fmt.Errorf("%w: %s", sandbox.ErrInvalid, err.Error()))
 		return v, false
 	}

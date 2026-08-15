@@ -91,6 +91,28 @@ profiles:
 	}
 }
 
+// Each bound is individually sane, which is why per-field checks miss this:
+// only the pair is wrong. A default above the maximum means every exec is
+// clamped below the default the operator wrote, so the profile never once
+// behaves as configured.
+func TestLoadRejectsDefaultTimeoutAboveMaxTimeout(t *testing.T) {
+	path := writeConfig(t, `
+socket: /tmp/s.sock
+profiles:
+  p:
+    image: example.com/i@sha256:abc
+    default_timeout: 10m
+    max_timeout: 1m
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected an error: default_timeout above max_timeout clamps every command below its own default")
+	}
+	if !strings.Contains(err.Error(), "default_timeout") || !strings.Contains(err.Error(), "max_timeout") {
+		t.Errorf("error %q should name both offending fields", err)
+	}
+}
+
 func TestLoadRejectsNegativeMaxAge(t *testing.T) {
 	path := writeConfig(t, `
 socket: /tmp/s.sock

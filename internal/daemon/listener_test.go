@@ -28,14 +28,26 @@ func TestListenCreatesSocketWithRestrictedMode(t *testing.T) {
 
 func TestListenReplacesStaleSocket(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "openbloxd.sock")
-	// Create a stale socket by listening and immediately closing.
-	// This leaves behind the socket file.
+	// net.Listen unlinks the socket on Close by default, which would delete
+	// the very file this test needs left behind — and Listen would then take
+	// the "nothing there" path while the test still passed. Turn that off so
+	// closing really does leave a stale socket, the way an unclean shutdown
+	// does.
 	ln0, err := net.Listen("unix", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln0.Close()
-	// Now path is a socket file left behind from an unclean shutdown.
+	ln0.(*net.UnixListener).SetUnlinkOnClose(false)
+	if err := ln0.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stale socket should still exist before Listen: %v", err)
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("leftover %q is not a socket, so this exercises the wrong branch", path)
+	}
 
 	ln, err := Listen(path, "")
 	if err != nil {

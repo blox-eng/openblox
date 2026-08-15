@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/blox-eng/openblox/pkg/brokerapi"
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
 
@@ -131,6 +135,64 @@ func TestDialPortCloseWriteSignalsEndOfInput(t *testing.T) {
 	}
 }
 
+// A daemon that accepts the connection and then answers nothing must not hang
+// the caller for good. The request's context stops covering the connection the
+// moment DialContext returns — the handshake writes and reads on the bare conn
+// — so only an explicit bound applies to it, and without one this call never
+// returns.
+func TestDialPortHonoursContextDeadlineDuringHandshake(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "silent.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	var mu sync.Mutex
+	var held []net.Conn
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range held {
+			_ = c.Close()
+		}
+	})
+	// Accept, then hold the connection open and say nothing at all.
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, conn)
+			mu.Unlock()
+		}
+	}()
+
+	c, err := New(socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.DialPort(ctx, "a", 8080)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("DialPort succeeded against a daemon that never answered")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("DialPort hung well past its context deadline")
+	}
+}
+
 func TestDialPortRejectsOutOfRangePort(t *testing.T) {
 	c := newTestClient(t, nil)
 	if _, err := c.DialPort(context.Background(), "a", 0); !errors.Is(err, sandbox.ErrInvalid) {
@@ -147,7 +209,7 @@ func TestDialPortRejectsOutOfRangePort(t *testing.T) {
 // here too.
 func TestDialPortMapsDaemonError(t *testing.T) {
 	c := newTestClientMux(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "no such sandbox", "kind": "not_found"})
+		respondJSON(w, http.StatusNotFound, brokerapi.Error{Message: "no such sandbox", Kind: brokerapi.KindNotFound})
 	}))
 
 	_, err := c.DialPort(context.Background(), "missing", 8080)

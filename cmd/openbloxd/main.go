@@ -40,14 +40,21 @@ func run(configPath string) error {
 	}
 
 	var opts []docker.Option
+	// One Docker connection carries one credential, and Config.validate has
+	// already refused profiles whose registry_auth differs — so every non-nil
+	// value here is the same one, and applying it once says that plainly.
+	var auth *daemon.RegistryAuth
 	for name, p := range cfg.Profiles {
 		if !p.DigestPinned() {
 			slog.Warn("profile image is not pinned to a digest; whoever controls the registry can repoint the tag",
 				slog.String("profile", name), slog.String("image", p.Image))
 		}
-		if p.RegistryAuth != nil {
-			opts = append(opts, docker.WithRegistryAuth(p.RegistryAuth.Username, p.RegistryAuth.Password))
+		if p.RegistryAuth != nil && auth == nil {
+			auth = p.RegistryAuth
 		}
+	}
+	if auth != nil {
+		opts = append(opts, docker.WithRegistryAuth(auth.Username, auth.Password))
 	}
 
 	backend, err := docker.New(opts...)

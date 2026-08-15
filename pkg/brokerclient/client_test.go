@@ -27,7 +27,10 @@ func newTestClient(t *testing.T, handler http.HandlerFunc, opts ...Option) *Clie
 
 	if handler == nil {
 		handler = func(_ http.ResponseWriter, r *http.Request) {
-			t.Fatalf("unexpected request reached the daemon: %s %s", r.Method, r.URL.Path)
+			// Errorf, not Fatalf: this runs on the server's goroutine, where
+			// FailNow would stop only that goroutine and let the test carry on
+			// to fail somewhere unrelated instead of here.
+			t.Errorf("unexpected request reached the daemon: %s %s", r.Method, r.URL.Path)
 		}
 	}
 	return newTestClientMux(t, handler, opts...)

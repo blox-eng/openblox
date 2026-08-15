@@ -9,9 +9,7 @@ package docker
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -106,12 +104,15 @@ func WithRegistryAuth(username, password string) Option {
 		if username == "" {
 			return fmt.Errorf("%w: registry username is empty", sandbox.ErrInvalid)
 		}
-		//nolint:gosec // marshalling the credential is the point: Docker's pull API requires this exact base64 AuthConfig blob. It's used only as the X-Registry-Auth header (pkg/docker/image.go) — never in a sandbox label or an error string (see TestRegistryAuthEncodesAsDockerExpects).
-		blob, err := json.Marshal(registry.AuthConfig{Username: username, Password: password})
+		// Docker's own encoder, rather than a hand-rolled marshal-and-base64:
+		// the X-Registry-Auth header's exact encoding is the daemon's to
+		// define, and borrowing it means a change there cannot silently
+		// desync from us (see TestRegistryAuthEncodesAsDockerExpects).
+		blob, err := registry.EncodeAuthConfig(registry.AuthConfig{Username: username, Password: password})
 		if err != nil {
 			return fmt.Errorf("encode registry auth: %w", err)
 		}
-		b.registryAuth = base64.URLEncoding.EncodeToString(blob)
+		b.registryAuth = blob
 		return nil
 	}
 }

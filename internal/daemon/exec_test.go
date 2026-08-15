@@ -1,12 +1,43 @@
 package daemon
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+// A read that dies partway must not read as a complete file. The status is
+// already on the wire and cannot be retracted, so the only honest signal left
+// is to drop the connection: returning normally would let the server frame
+// what was written as a well-formed 200, and the caller would store a
+// truncated file believing it whole.
+func TestReadFileAbortsRatherThanReturningATruncatedBody(t *testing.T) {
+	srv := newTestServer(t)
+	fake := srv.backend.(*fakeBackend)
+	fake.existing = map[string]string{"a": "code-exec"}
+	fake.readFileMidStreamErr = errors.New("sandbox stream died")
+
+	// A real server, not a recorder: the abort is net/http closing the
+	// connection, which only a real client can observe.
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/sandboxes/a/files/%2Fwork%2Ff.txt")
+	if err != nil {
+		// The connection died before a full response arrived, which is itself
+		// the guarantee under test.
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if _, err := io.ReadAll(resp.Body); err == nil {
+		t.Fatal("read the whole body without error, so a truncated file was served as a complete one")
+	}
+}
 
 func TestExecPassesArgvAndTimeout(t *testing.T) {
 	srv := newTestServer(t)

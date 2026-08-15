@@ -80,8 +80,12 @@ does not carry it.
 
 ## Transport
 
-A Unix socket, and nothing else, in v1. Authentication is filesystem permissions;
-`SO_PEERCRED` records the peer's uid and gid for the audit log.
+A Unix socket, and nothing else, in v1. Authentication is filesystem permissions:
+membership of the socket's group is the whole ACL. `SO_PEERCRED` is the seam
+where a future version would record the peer's uid and gid for an audit log and
+bind a profile to an identity — **it is not implemented**, and no code in
+`internal/daemon` reads peer credentials or writes such a log today. See the
+correction at the end of this document.
 
 mTLS would add nothing here at real cost. A Unix socket is a kernel object with
 no wire to intercept, and mTLS brings a CA, issuance and rotation — expired

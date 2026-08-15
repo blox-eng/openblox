@@ -61,6 +61,13 @@ func (s *Server) handleDial(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer wg.Done()
 		_, _ = io.Copy(downstream, upstream)
+		// Closing here is what ends the other direction. That copy blocks
+		// reading the client connection and only learns upstream is gone on
+		// its next write, so a client that goes quiet after its sandbox dies
+		// would pin both goroutines and their descriptors for the life of the
+		// process. Nothing bounds that wait: hijacked streams are past every
+		// timeout the server sets.
+		_ = downstream.Close()
 	}()
 	wg.Wait()
 }

@@ -49,6 +49,14 @@ func TestNoRequestFieldReachesTheSpec(t *testing.T) {
 		`"code-exec"`,
 		`null`,
 
+		// A second JSON value trailing a valid request. json.Decoder reads one
+		// value and stops, so the trailing object never reaches a field — but
+		// answering 201 would tell a caller who appended it that it had been
+		// obeyed, which is exactly the lie a silently-ignored unknown field
+		// is. The leading object here is otherwise valid, so this case fails
+		// loudly if trailing data is ignored: the sandbox gets created.
+		`{"name":"a","profile":"code-exec"} {"runtime":"runc"}`,
+
 		// Duplicate "profile" key: json.Decoder keeps the last occurrence.
 		// The value actually used for policy resolution must be the one
 		// validated — an attacker naming a real profile first and a bogus

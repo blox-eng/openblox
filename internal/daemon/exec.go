@@ -124,8 +124,15 @@ func (s *Server) handleReadFile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	// An error partway through cannot change the status: it is already sent.
 	// Log it and drop the connection rather than append a lie to the body.
+	//
+	// Returning normally would not drop it — the server frames what was
+	// written as a complete response, so the caller reads 200 OK and a
+	// truncated file with nothing to distinguish it from the whole one.
+	// ErrAbortHandler closes the connection without a stack trace, which the
+	// caller sees as the unexpected EOF it is.
 	if _, err := io.Copy(w, rc); err != nil {
 		slog.Warn("openbloxd: read-file stream truncated", slog.Any("error", err))
+		panic(http.ErrAbortHandler)
 	}
 }
 

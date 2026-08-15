@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/blox-eng/openblox/pkg/brokerapi"
 	"github.com/blox-eng/openblox/pkg/sandbox"
@@ -27,15 +28,29 @@ func (c *Client) DialPort(ctx context.Context, name string, port int) (net.Conn,
 		return nil, fmt.Errorf("dial openbloxd: %w", err)
 	}
 
+	// ctx stops covering the connection the moment DialContext returns: the
+	// handshake below writes and reads on the bare conn, where the request's
+	// context is inert. A daemon that accepts and then never answers would
+	// block the caller forever, and cancellation would go unnoticed. Bound it
+	// explicitly, and release the bound before handing the stream back — the
+	// stream is long-lived by design and must not inherit a handshake
+	// deadline.
+	if dl, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(dl)
+	}
+	stopOnCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		fmt.Sprintf("%s/sandboxes/%s/dial/%d", baseURL, pathEscape(name), port), nil)
 	if err != nil {
+		stopOnCancel()
 		_ = conn.Close()
 		return nil, err
 	}
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", brokerapi.UpgradeProto)
 	if err := req.Write(conn); err != nil {
+		stopOnCancel()
 		_ = conn.Close()
 		return nil, fmt.Errorf("dial port %d in %q: %w", port, name, err)
 	}
@@ -47,15 +62,23 @@ func (c *Client) DialPort(ctx context.Context, name string, port int) (net.Conn,
 	// the response body and the connection before returning.
 	resp, err := http.ReadResponse(br, req)
 	if err != nil {
+		stopOnCancel()
 		_ = conn.Close()
 		return nil, fmt.Errorf("dial port %d in %q: %w", port, name, err)
 	}
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		err := errorFrom(resp)
+		stopOnCancel()
 		_ = resp.Body.Close()
 		_ = conn.Close()
 		return nil, err
 	}
+
+	// The handshake is over, so release both of its bounds: the stream is
+	// long-lived and must not carry a deadline set for the handshake, nor be
+	// closed out from under its owner when ctx is later cancelled.
+	stopOnCancel()
+	_ = conn.SetDeadline(time.Time{})
 
 	// http.ReadResponse buffers ahead of the 101 line, so bytes the daemon
 	// sent immediately behind it may already be sitting in br. Reading from

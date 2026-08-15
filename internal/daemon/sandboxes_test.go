@@ -44,9 +44,22 @@ func (f *fakeSandbox) WriteFile(_ context.Context, path string, _ fs.FileMode, s
 }
 
 func (f *fakeSandbox) ReadFile(_ context.Context, _ string) (io.ReadCloser, error) {
+	if f.backend.readFileMidStreamErr != nil {
+		// Some bytes, then a failure: the shape where the status line is
+		// already sent and cannot be taken back.
+		return io.NopCloser(io.MultiReader(
+			strings.NewReader("partial"),
+			errReader{f.backend.readFileMidStreamErr},
+		)), nil
+	}
 	// Return a reader with some test content
 	return io.NopCloser(strings.NewReader("file content")), nil
 }
+
+// errReader fails every read, standing in for a stream that dies partway.
+type errReader struct{ err error }
+
+func (e errReader) Read([]byte) (int, error) { return 0, e.err }
 
 func (f *fakeSandbox) StartProcess(_ context.Context, _ string, _ sandbox.Command) error {
 	return nil
@@ -76,6 +89,11 @@ type fakeBackend struct {
 	// Exec, WriteFile, ReadFile, and StartProcess test fields
 	lastCommand sandbox.Command
 	written     map[string]string // path -> content
+
+	// readFileMidStreamErr makes ReadFile hand back a reader that yields a few
+	// bytes and then fails, so a test can exercise the path where the 200 is
+	// already on the wire.
+	readFileMidStreamErr error
 
 	// conn is what DialPort hands back, standing in for the relay a real
 	// backend would open over the runtime's exec channel.
