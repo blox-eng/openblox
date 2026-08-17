@@ -1,5 +1,10 @@
 //go:build integration
 
+// pkg/brokerclient/broker_integration_test.go re-runs a chunk of these same
+// assertions (exec, files, processes) through openbloxd instead of talking to
+// Docker directly. The two suites are hand-mirrored rather than shared code,
+// so a change here that isn't reflected there will not be caught by anything
+// — keep them in step deliberately.
 package docker
 
 import (

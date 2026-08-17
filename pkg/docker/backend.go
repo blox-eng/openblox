@@ -12,11 +12,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 
 	"github.com/blox-eng/openblox/pkg/sandbox"
@@ -62,6 +64,10 @@ type Backend struct {
 	// previews is nil unless WithPreviews was passed, in which case Expose
 	// reports that rather than minting a URL nothing serves.
 	previews *previews
+
+	// registryAuth is the base64url X-Registry-Auth value used when pulling.
+	// Empty means anonymous, which is what openblox did before this existed.
+	registryAuth string
 }
 
 // Option configures a Backend at construction.
@@ -86,6 +92,30 @@ func New(opts ...Option) (*Backend, error) {
 
 // Close releases the Docker client. Running sandboxes are left alone.
 func (b *Backend) Close() error { return b.cli.Close() }
+
+// WithRegistryAuth authenticates image pulls.
+//
+// Without it a private image must already be present in the local store,
+// because openblox pulls anonymously. Credentials given here stay in this
+// process: they are sent to the daemon on pull and never recorded on the
+// sandbox, whose labels are visible to anything with daemon access.
+func WithRegistryAuth(username, password string) Option {
+	return func(b *Backend) error {
+		if username == "" {
+			return fmt.Errorf("%w: registry username is empty", sandbox.ErrInvalid)
+		}
+		// Docker's own encoder, rather than a hand-rolled marshal-and-base64:
+		// the X-Registry-Auth header's exact encoding is the daemon's to
+		// define, and borrowing it means a change there cannot silently
+		// desync from us (see TestRegistryAuthEncodesAsDockerExpects).
+		blob, err := registry.EncodeAuthConfig(registry.AuthConfig{Username: username, Password: password})
+		if err != nil {
+			return fmt.Errorf("encode registry auth: %w", err)
+		}
+		b.registryAuth = blob
+		return nil
+	}
+}
 
 // Create returns a running sandbox for name, creating it if absent.
 func (b *Backend) Create(ctx context.Context, name string, opts ...sandbox.CreateOption) (sandbox.Sandbox, error) {
@@ -173,6 +203,7 @@ func (b *Backend) List(ctx context.Context) ([]sandbox.Info, error) {
 			Image:     c.Image,
 			State:     stateFromStatus(c.State),
 			CreatedAt: parseTimeLabel(c.Labels[labelCreatedAt]),
+			Labels:    userLabels(c.Labels),
 		})
 	}
 	return out, nil
@@ -314,6 +345,24 @@ func parseDurationLabel(v string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+// userLabels extracts the caller's own labels from a container's full label
+// set, stripping labelUserPfx. openblox's own bookkeeping labels (managed,
+// name, created-at, the timeout labels) carry no such prefix and are excluded
+// by construction, not by an exclusion list — so a new bookkeeping label added
+// later cannot leak in here by accident.
+func userLabels(labels map[string]string) map[string]string {
+	var out map[string]string
+	for k, v := range labels {
+		if name, ok := strings.CutPrefix(k, labelUserPfx); ok {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[name] = v
+		}
+	}
+	return out
 }
 
 func parseTimeLabel(v string) time.Time {

@@ -270,6 +270,7 @@ func infoFrom(id string, labels map[string]string, image string, state *containe
 		Image:     image,
 		State:     stateFromStatus(status),
 		CreatedAt: parseTimeLabel(labels[labelCreatedAt]),
+		Labels:    userLabels(labels),
 	}
 }
 

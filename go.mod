@@ -5,6 +5,7 @@ go 1.25.13
 require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/docker/docker v28.5.2+incompatible
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

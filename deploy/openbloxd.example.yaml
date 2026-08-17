@@ -1,0 +1,39 @@
+# openbloxd reference configuration.
+#
+# Everything that could weaken a sandbox's isolation is here and nowhere else.
+# No request field maps to any of it: a request naming one is rejected.
+
+socket: /run/openbloxd/openbloxd.sock
+# The group that may reach the socket. This is the whole access control list:
+# membership grants sandbox creation.
+socket_group: openbloxd
+reap_interval: 1m
+
+profiles:
+  code-exec:
+    # Pin a digest. A tag can be repointed by whoever controls the registry,
+    # and the image is the sandbox's entire userland.
+    image: ghcr.io/blox-eng/blox-sandbox@sha256:CHANGEME
+    runtime: runsc          # gVisor. Anything else trades away the isolation.
+    egress: none            # No interface at all: no resolver, no route.
+    user: "1000:1000"
+    cpus: 2
+    memory_mb: 2048
+    disk_mb: 1024           # tmpfs, drawn from memory; must not exceed it.
+    max_processes: 256      # Without this a fork bomb exhausts host PIDs.
+    idle_timeout: 30m
+    max_age: 4h
+    default_timeout: 60s
+    max_timeout: 10m
+
+  browser:
+    image: ghcr.io/blox-eng/blox-browser@sha256:CHANGEME
+    runtime: runsc
+    egress: none
+    user: "1000:1000"
+    cpus: 2
+    memory_mb: 4096
+    disk_mb: 2048
+    max_processes: 256
+    idle_timeout: 30m
+    max_age: 4h

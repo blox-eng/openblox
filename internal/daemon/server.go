@@ -1,0 +1,125 @@
+package daemon
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+
+	"github.com/blox-eng/openblox/pkg/brokerapi"
+	"github.com/blox-eng/openblox/pkg/sandbox"
+)
+
+// Backend is what the daemon needs from a provisioner: the library contract
+// plus the two methods outside it that the broker exposes.
+type Backend interface {
+	sandbox.Backend
+	DialPort(ctx context.Context, name string, port int) (net.Conn, error)
+	Reap(ctx context.Context) ([]string, error)
+}
+
+// Server routes broker requests onto a Backend under a fixed policy.
+type Server struct {
+	backend Backend
+	cfg     *Config
+}
+
+// New returns a Server. It does not listen; see Listen and Handler.
+func New(backend Backend, cfg *Config) *Server {
+	return &Server{backend: backend, cfg: cfg}
+}
+
+// Handler returns the route table.
+//
+// No path carries a version prefix: the daemon and its client ship together and
+// speak over a local socket, so there is no independently versioned consumer to
+// protect. A header can version this later without a guess baked into a path.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /sandboxes", s.handleCreate)
+	mux.HandleFunc("GET /sandboxes", s.handleList)
+	mux.HandleFunc("GET /sandboxes/{name}", s.handleGet)
+	mux.HandleFunc("DELETE /sandboxes/{name}", s.handleDestroy)
+	mux.HandleFunc("POST /sandboxes/{name}/stop", s.handleStop)
+	mux.HandleFunc("POST /sandboxes/{name}/exec", s.handleExec)
+	// The file path arrives here fully percent-escaped (leading "/" included)
+	// rather than literal: an unescaped "?" or "#" would truncate the path
+	// before net/http's router ever sees it, and an unescaped doubled "/"
+	// collides with net/http's own doubled-slash redirect. The "{path...}"
+	// wildcard decodes every "%XX" back on the way in, so what lands in
+	// r.PathValue("path") is the caller's dest, unmodified. See filePath in
+	// exec.go for the decode side and brokerclient's filesRoute for where
+	// it's encoded.
+	mux.HandleFunc("PUT /sandboxes/{name}/files/{path...}", s.handleWriteFile)
+	mux.HandleFunc("GET /sandboxes/{name}/files/{path...}", s.handleReadFile)
+	mux.HandleFunc("POST /sandboxes/{name}/processes", s.handleStartProcess)
+	mux.HandleFunc("GET /sandboxes/{name}/dial/{port}", s.handleDial)
+	mux.HandleFunc("GET /profiles", s.handleProfiles)
+	return mux
+}
+
+// decode reads a strict JSON body. An unknown field is a 400 and not an
+// ignored field: silently accepting one is how a request field that must not
+// exist comes back, because the caller looks like it is being obeyed.
+func decode[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
+	var v T
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+
+	// Take the body as one raw value first. Decoding straight into T would
+	// accept a literal `null` — which leaves T at its zero value and reports
+	// no error, so a body carrying nothing reads as a well-formed request —
+	// and would ignore everything after the first value, so
+	// `{"name":"a","profile":"p"} {"runtime":"runc"}` would be answered 201.
+	// Both are the same fault DisallowUnknownFields exists to prevent, one
+	// level up: the caller is told it was obeyed when it was not.
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
+		fail(w, fmt.Errorf("%w: %s", sandbox.ErrInvalid, err.Error()))
+		return v, false
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		fail(w, fmt.Errorf("%w: body is null, want a JSON object", sandbox.ErrInvalid))
+		return v, false
+	}
+	if err := dec.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
+		fail(w, fmt.Errorf("%w: body has trailing data after the JSON value", sandbox.ErrInvalid))
+		return v, false
+	}
+
+	strict := json.NewDecoder(bytes.NewReader(raw))
+	strict.DisallowUnknownFields()
+	if err := strict.Decode(&v); err != nil {
+		fail(w, fmt.Errorf("%w: %s", sandbox.ErrInvalid, err.Error()))
+		return v, false
+	}
+	return v, true
+}
+
+// respond writes a JSON body with the given status.
+func respond(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if body != nil {
+		_ = json.NewEncoder(w).Encode(body)
+	}
+}
+
+// fail classifies err and answers with it.
+//
+// An unrecognised error is logged in full and reported as a bare "internal
+// error". The detail would describe the host's internals to whoever is holding
+// the socket, which is the same discipline preview.proxyError follows.
+func fail(w http.ResponseWriter, err error) {
+	kind, status := brokerapi.KindOf(err)
+	message := err.Error()
+	if kind == brokerapi.KindInternal {
+		slog.Error("openbloxd request failed", slog.Any("error", err))
+		message = "internal error"
+	}
+	respond(w, status, brokerapi.Error{Message: message, Kind: kind})
+}

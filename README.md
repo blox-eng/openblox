@@ -122,15 +122,18 @@ vulnerabilities. The integration suite runs there too, against a real gVisor
 daemon on a hosted runner — including the adversarial cases that try to break
 the resource caps.
 
-Honest about the gaps: using openblox today means giving your service access to
-the Docker socket, which is root-equivalent on the host; closing that is
-[#2](https://github.com/blox-eng/openblox/issues/2), the most consequential open
-issue. The [open issues](https://github.com/blox-eng/openblox/issues) are the
-honest roadmap.
+Honest about the gaps: importing the library still means giving your service
+access to the Docker socket, which is root-equivalent on the host. `openbloxd`
+closes that — a daemon that owns the socket and exposes only openblox's own
+surface, policy fixed daemon-side and not settable per request — see
+[Security](https://openblox.sh/security/#deploying-the-policy-broker-openbloxd).
+The [open issues](https://github.com/blox-eng/openblox/issues) are the honest
+roadmap for what's left.
 
 Written for [Blox](https://blox.bg), where it is the only sandbox backend and
-replaced a hosted platform. Its own production rollout is gated on #2. The API
-is unstable pre-1.0 — expect breaking changes on minor versions. No support SLA.
+replaced a hosted platform. Its own production rollout is gated on migrating its
+callers off the Docker socket and onto `openbloxd`. The API is unstable
+pre-1.0 — expect breaking changes on minor versions. No support SLA.
 
 ## Contributing
 
