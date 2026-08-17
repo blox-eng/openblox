@@ -16,6 +16,19 @@ RuntimeDirectory=openbloxd
 # umask gives it. This runtime directory mode is what gates access during
 # that window, so do not loosen it.
 RuntimeDirectoryMode=0750
+# Keep the runtime directory across restarts. Without this, systemd removes
+# /run/openbloxd when the unit stops and creates a fresh one on start — same
+# path, new inode. A client that bind-mounts the DIRECTORY into a container
+# (the documented way to survive the socket itself being recreated) stays
+# pinned to the old inode, which is now orphaned and empty, so every call
+# fails with ENOENT until that client is restarted too. Restarting the broker
+# must not require restarting its callers.
+#
+# One-time migration: a client whose container started while the daemon was
+# running WITHOUT this setting is still pinned to the old inode, so it needs a
+# single restart after this unit is installed. Restarts are transparent from
+# then on.
+RuntimeDirectoryPreserve=yes
 Restart=on-failure
 
 NoNewPrivileges=true
