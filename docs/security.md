@@ -108,6 +108,26 @@ else on the box has to. A caller talks to it over a Unix socket instead, using
 `pkg/brokerclient`, which implements the same `Backend` interface `pkg/docker` does —
 switching to it is a constructor change, not a rewrite.
 
+**Install it on the host, not as a container.** Running `openbloxd` in a container with
+`docker.sock` mounted puts the privilege straight back where the daemon exists to take
+it from. Each release attaches the binary for `amd64` and `arm64`, alongside the systemd
+unit and an example config:
+
+```sh
+# Pick your arch; verify before trusting it.
+curl -fsSLO https://github.com/blox-eng/openblox/releases/latest/download/openbloxd-linux-amd64
+curl -fsSLO https://github.com/blox-eng/openblox/releases/latest/download/openbloxd-linux-amd64.sha256
+sha256sum -c openbloxd-linux-amd64.sha256
+
+sudo install -m 0755 openbloxd-linux-amd64 /usr/local/bin/openbloxd
+openbloxd --version      # must print the release tag, not "dev"
+```
+
+`--version` reporting `dev` means the binary is somebody's local build rather than a
+release asset. That distinction matters because the client and daemon have to agree on
+the wire format, so "what is actually running on this host" needs an answer you can
+trust.
+
 **Profiles are the whole policy surface.** Every setting that could weaken isolation —
 image, runtime, egress, resource caps, lifetime — is chosen by profile name in the
 daemon's config file (`deploy/openbloxd.example.yaml`), not by the request. `Create`

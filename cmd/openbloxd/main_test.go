@@ -71,3 +71,14 @@ func TestServeShutsDownOnContextCancel(t *testing.T) {
 		t.Fatal("serve() did not return after ctx cancellation")
 	}
 }
+
+// TestVersionDefaultsToDev pins the invariant the `version` doc comment argues
+// for: an in-tree build must never look like a release. The only thing allowed to
+// change this value is -ldflags at release time, so if a refactor ever stamps it
+// in the tree — or someone edits the default to a plausible-looking number —
+// this fails rather than letting a local build claim a version it does not have.
+func TestVersionDefaultsToDev(t *testing.T) {
+	if version != "dev" {
+		t.Errorf("version = %q in an unstamped build, want %q", version, "dev")
+	}
+}

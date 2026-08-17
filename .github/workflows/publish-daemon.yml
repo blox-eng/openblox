@@ -5,9 +5,9 @@ name: Publish daemon
 # openbloxd is installed on a host, not pulled as an image: it holds the Docker
 # socket so the containerized callers do not have to, and running it in a
 # container with that socket mounted would put the privilege straight back where
-# this daemon exists to take it from. So the artifact is a binary and a systemd
-# unit, which is what deploy/openbloxd.service expects at
-# /usr/local/bin/openbloxd.
+# this daemon exists to take it from. So the artifact is a binary, which is what
+# deploy/openbloxd.service expects at /usr/local/bin/openbloxd, plus the unit and
+# example config so an operator gets all three versioned together.
 #
 # Tag-triggered, matching publish-image.yml: release.yml cuts the tag from
 # conventional commits once CI is green on main, and both publish jobs hang off
@@ -31,7 +31,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-daemon-${{ github.ref }}
+  # Key on the tag being published, not the triggering ref. Every
+  # workflow_dispatch shares refs/heads/main, so github.ref would serialize
+  # unrelated tags while letting a dispatch and a tag push for the SAME tag run
+  # concurrently — exactly backwards.
+  group: publish-daemon-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 defaults:
@@ -48,6 +52,11 @@ jobs:
       # contents. Scoped to this job rather than the workflow.
       contents: write
     strategy:
+      # Never cancel the sibling arch. A cancelled leg leaves the release holding
+      # one architecture and silently missing the other — the same
+      # partially-published failure this workflow exists to end, just harder to
+      # spot than shipping nothing.
+      fail-fast: false
       matrix:
         goarch: [amd64, arm64]
     steps:
@@ -95,17 +104,31 @@ jobs:
             -o "openbloxd-linux-${GOARCH}" ./cmd/openbloxd
           sha256sum "openbloxd-linux-${GOARCH}" > "openbloxd-linux-${GOARCH}.sha256"
 
-      - name: Verify the binary runs
+      - name: Verify the binary runs and reports its version
         # A release asset that cannot execute is worse than a missing one: the
-        # install step succeeds and the daemon fails at boot on the host. Only
-        # meaningful for the native arch; the cross-built one is checked by file
-        # type instead.
+        # install step succeeds and the daemon fails at boot on the host.
+        #
+        # Assert the STAMP, not merely that the flag runs. If -X main.version
+        # ever stops landing — the var is renamed, moved out of main, or the
+        # ldflags get dropped in a refactor — the binary prints "dev", and
+        # `--version` alone would still exit 0. A release asset claiming to be
+        # someone's local build is precisely what the "dev" default exists to
+        # make visible, so let it fail here instead.
+        #
+        # The arm64 leg cannot execute on this runner, so it checks the
+        # architecture only. That is weaker, and deliberately not dressed up as
+        # more: the stamping logic is arch-independent, so amd64 covers it.
         env:
           GOARCH: ${{ matrix.goarch }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
           if [ "$GOARCH" = "amd64" ]; then
-            ./"openbloxd-linux-${GOARCH}" --version
+            got="$(./"openbloxd-linux-${GOARCH}" --version)"
+            if [ "$got" != "$TAG" ]; then
+              echo "version stamp is '$got', expected '$TAG'" >&2
+              exit 1
+            fi
           else
             file "openbloxd-linux-${GOARCH}" | grep -q 'ARM aarch64'
           fi
@@ -113,11 +136,51 @@ jobs:
       - name: Attach to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.tag.outputs.tag }}
           GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
+
+          # `gh release upload` needs the release OBJECT, not just the tag ref,
+          # and does not create one. Two ways that bites: a hand-pushed tag has
+          # no release at all, and on the normal path go-semantic-release creates
+          # the tag ref and the release as separate API calls — this job's trigger
+          # fires on the first. The build usually outlasts that gap, but "usually"
+          # is the wrong property for the release path.
+          #
+          # Wait rather than create: creating it here would race the sibling
+          # matrix leg for who creates it.
+          for _ in $(seq 1 12); do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 10
+          done
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "no release object for tag '$TAG' after 120s — refusing to guess" >&2
+            exit 1
+          fi
+
+          # The two legs upload disjoint filenames, so they cannot collide;
+          # --clobber is here to make a re-dispatch idempotent rather than an
+          # error on an asset that already exists.
           gh release upload "$TAG" \
             "openbloxd-linux-${GOARCH}" \
             "openbloxd-linux-${GOARCH}.sha256" \
+            --clobber
+
+      - name: Attach the unit and example config
+        # One arch only — these are arch-independent, and both legs uploading
+        # them would have the two races --clobber cannot help with.
+        if: matrix.goarch == 'amd64'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" \
+            deploy/openbloxd.service \
+            deploy/openbloxd.example.yaml \
             --clobber

@@ -2,14 +2,17 @@ name: Release
 
 # Tags a semver release from conventional commits once CI is green on main.
 #
-# For a Go module a tag *is* the release — there is no registry to publish to,
-# so this stays useful while the repository is private: consumers can require a
-# real version instead of a commit pseudo-version. No goreleaser hook yet; there
-# are no binaries to ship until cmd/openbloxd exists.
+# For a Go module a tag *is* the release for library consumers — there is no
+# registry to publish to, so they can require a real version instead of a commit
+# pseudo-version.
 #
-# The tag is not inert, though: publish-image.yml watches `v*` and builds the
-# matching sandbox image from it. That makes the token this job pushes with load
-# bearing — see the note on it below.
+# The tag is not inert, and this job does not do the publishing. Two workflows
+# watch `v*` and hang off the tag rather than off each other:
+#   publish-image.yml   builds the sandbox image
+#   publish-daemon.yml  builds and attaches the openbloxd binaries
+# That makes the token this job pushes with load bearing — see the note on it
+# below. It also means a tag cut without those workflows firing is a release that
+# ships nothing, which is how v0.3.0 came to have no assets.
 on:
   workflow_run:
     workflows: [CI]

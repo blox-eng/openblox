@@ -1887,7 +1887,7 @@ profiles:
   code-exec:
     # Pin a digest. A tag can be repointed by whoever controls the registry,
     # and the image is the sandbox's entire userland.
-    image: ghcr.io/blox-eng/blox-sandbox@sha256:CHANGEME
+    image: ghcr.io/blox-eng/openblox-sandbox@sha256:CHANGEME
     runtime: runsc          # gVisor. Anything else trades away the isolation.
     egress: none            # No interface at all: no resolver, no route.
     user: "1000:1000"
@@ -1901,7 +1901,7 @@ profiles:
     max_timeout: 10m
 
   browser:
-    image: ghcr.io/blox-eng/blox-browser@sha256:CHANGEME
+    image: ghcr.io/example/headless-browser@sha256:CHANGEME
     runtime: runsc
     egress: none
     user: "1000:1000"
