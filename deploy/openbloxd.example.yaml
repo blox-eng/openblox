@@ -27,6 +27,7 @@ profiles:
     max_timeout: 10m
 
   browser:
+    # No reference browser image is published; supply your own.
     image: ghcr.io/example/headless-browser@sha256:CHANGEME
     runtime: runsc
     egress: none
