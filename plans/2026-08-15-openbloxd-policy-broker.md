@@ -2583,7 +2583,7 @@ git commit -m "docs: openbloxd owns policy, and the deployment that follows"
 
 ## Follow-up, outside this plan
 
-The the caller migration is a change to a different repository and gets its own plan. In outline: swap `docker.New` for `brokerclient.New`; delete `Image`, `Runtime`, `CPUs`, `MemoryBytes`, `DiskBytes`, `IdleTimeout`, `MaxAge` and `AllowEgress` from `OpenbloxConfig`; delete `resolveSandboxImage()` and `defaultSandboxImage`; repoint the reaper-first check at `GET /profiles`; and in the deployment's compose remove the `docker.sock` mount and `the docker group`, adding `/run/openbloxd` and the openbloxd gid.
+Migrating a caller onto the broker is a change to a different repository and gets its own plan there. In outline: swap the `docker` backend for `brokerclient`; delete every isolation-relevant field (image, runtime, CPU, memory, disk, idle timeout, max age, egress) from the caller's sandbox config; delete its image-resolution helpers; repoint any reaper-first check at `GET /profiles`; and in the caller's container config drop the `docker.sock` mount and docker group membership, mounting the openbloxd socket directory and joining its group instead.
 
 ## Self-Review
 

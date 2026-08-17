@@ -56,7 +56,7 @@ Daytona's split, not its runner API.
 ## Architecture
 
 ```
-  the caller (container, uid 1001)          openbloxd (host)
+  caller (container, uid 1001)           openbloxd (host)
   ┌──────────────────────────┐           ┌────────────────────────┐
   │ brokerclient             │──socket──►│ policy: profiles only  │
   │   (implements Backend)   │           │ pkg/sandbox + docker   │
@@ -205,12 +205,12 @@ Per-command `Timeout` remains a request field. The daemon clamps it to the
 profile's `max_timeout` through the library's existing `ResolveTimeout`, so a
 caller can only narrow it.
 
-`GET /profiles` exists for one reason. the caller enforces a reaper-first invariant:
-openblox's idle timeout must exceed the manager's `IdleTTL`, or a cached handle
-points at a destroyed sandbox. It checks this today by reading its own
-`openblox.idle_timeout_minutes`, a key that stops being authoritative once the
-daemon owns lifetime. Without this endpoint the check silently becomes a check on
-nothing.
+`GET /profiles` exists for one reason. A caller that caches sandbox handles
+enforces a reaper-first invariant: openblox's idle timeout must exceed the
+caller's own handle TTL, or a cached handle points at a destroyed sandbox. A
+library-path caller checks that against its own idle-timeout config, a value that
+stops being authoritative once the daemon owns lifetime. Without this endpoint
+the check silently becomes a check on nothing.
 
 ## Previews
 
@@ -279,43 +279,43 @@ value reached the resolved `Spec`.
 Unit tests cover socket permission refusal, strict decoding, profile resolution
 and the client's policy-option rejection.
 
-## What this changes in the caller
+## What this changes for a caller
 
-`OpenbloxConfig` loses `Image`, `Runtime`, `CPUs`, `MemoryBytes`, `DiskBytes`,
-`IdleTimeout`, `MaxAge` and `AllowEgress`. Every one becomes profile
-configuration. It keeps `PreviewSigningKey` and `PreviewBaseURL`, which are
-genuinely its own.
+A caller's own sandbox config loses every isolation-relevant field — image,
+runtime, CPU, memory, disk, idle timeout, max age, egress. Each one becomes
+profile configuration in the daemon. Fields that are genuinely the caller's, such
+as preview signing material, stay where they are.
 
-`resolveSandboxImage()` and `defaultSandboxImage` go away, because which image a
-sandbox runs stops being the caller's business. That retires the pin-drift guard in
-a downstream commit, which stays load-bearing until this migration lands and then
-becomes moot: the end state removes the class of bug rather than guarding it.
+Image-pinning logic on the caller side goes away too, because which image a
+sandbox runs stops being the caller's business. Any guard a caller maintains
+against image-pin drift stays load-bearing until it migrates, and is then moot:
+the end state removes that class of bug rather than guarding against it.
 
 ## Rollout
 
-Four steps, each revertible on its own.
+Four steps, each revertible on its own. This is the shape a deployment follows;
+the specifics belong to whatever repository owns the deployment.
 
 1. openblox ships `cmd/openbloxd` and `pkg/brokerclient` with tests. Nothing
    deployed.
-2. the deployment runs openbloxd alongside the existing setup. the caller stays on the
-   library path. **This step is not a no-op.** `Backend.Reap`
-   (`pkg/docker/reap.go`) filters on `labelManaged=true` only, with no
-   profile check, so once openbloxd's reaper starts running it sweeps
-   sandboxes the library-path the caller created too — enforcing idle/max-age
-   bounds that nothing enforced before, which can invalidate the caller's
-   cached handles. Either hold off starting openbloxd's reaper until step 3,
-   or accept that the caller's cached-handle invalidation path gets exercised
-   a step earlier than the plan otherwise implies.
-3. the deployment switches the caller to `brokerclient` and removes the `docker.sock` mount
-   and `the docker group`. Every sandbox the caller created before this point lacks
-   the `openbloxd.profile` label, so `handleCreate` returns 409 for each —
-   correctly, since pre-broker sandboxes must not be silently adopted under a
-   profile they were never created with. Drain or destroy them as part of this
-   step, before switching the caller over: `docker ps --filter label=sh.openblox.managed=true`
-   lists what's left to clear. Then verify `execute_code` and the browser
+2. openbloxd runs on the host alongside the existing setup, with the caller still
+   on the library path. **This step is not a no-op.** `Backend.Reap`
+   (`pkg/docker/reap.go`) filters on `labelManaged=true` only, with no profile
+   check, so once openbloxd's reaper starts running it also sweeps sandboxes the
+   library-path caller created — enforcing idle/max-age bounds that nothing
+   enforced before, which can invalidate that caller's cached handles. Either
+   hold off starting openbloxd's reaper until step 3, or accept that the
+   cached-handle invalidation path gets exercised a step earlier than this plan
+   otherwise implies.
+3. The caller switches to `brokerclient` and drops its `docker.sock` mount and
+   docker group membership. Every sandbox created before this point lacks the
+   `openbloxd.profile` label, so `handleCreate` returns 409 for each — correctly,
+   since pre-broker sandboxes must not be silently adopted under a profile they
+   were never created with. Drain or destroy them as part of this step, before
+   switching the caller over: `docker ps --filter label=sh.openblox.managed=true`
+   lists what is left to clear. Then verify code execution and the browser
    sandbox.
-4. Soak, then enable on prod with the socket never mounted. Close an internal tracking issue with
-   the outcome.
+4. Soak, then roll out with the socket never mounted.
 
 The library path stays selectable by configuration for one release, so step 3
 reverts without a rebuild.
@@ -343,12 +343,11 @@ what a broker is for.
 
 ## Decision record
 
-The counter-argument in the tracking task — prod has never invoked
-`execute_code`, so the honest resolution might be to leave prod off permanently —
-was settled before this design: code execution on prod is wanted, so build the
-broker. Mounting the socket into the caller on prod remains rejected. The socket
-mount on the deployment (an internal tracking issue) is accepted risk for a private, non-internet-facing box with a small trusted set of
-tenants, and is not a precedent for prod.
+One counter-argument was considered and rejected: if a deployment never invokes
+sandboxed code execution, the cheapest resolution is to leave the feature off
+rather than build a broker for it. That settles the other way whenever code
+execution is actually wanted — and it is, so the broker gets built. Mounting the
+Docker socket into a containerized caller is not an accepted alternative.
 
 ## Corrections discovered during implementation
 
