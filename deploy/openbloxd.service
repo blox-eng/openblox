@@ -23,6 +23,11 @@ RuntimeDirectoryMode=0750
 # pinned to the old inode, which is now orphaned and empty, so every call
 # fails with ENOENT until that client is restarted too. Restarting the broker
 # must not require restarting its callers.
+#
+# One-time migration: a client whose container started while the daemon was
+# running WITHOUT this setting is still pinned to the old inode, so it needs a
+# single restart after this unit is installed. Restarts are transparent from
+# then on.
 RuntimeDirectoryPreserve=yes
 Restart=on-failure
 
