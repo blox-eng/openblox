@@ -13,9 +13,9 @@ name: Publish daemon
 # conventional commits once CI is green on main, and both publish jobs hang off
 # that tag rather than off each other.
 #
-# Static (CGO_ENABLED=0) on purpose. The daemon runs on whatever the host is
-# today, and a binary that depends on the build host's libc is a support burden
-# for no benefit — it links nothing that needs cgo.
+# Static (CGO_ENABLED=0) on purpose. The daemon runs on whatever host an operator
+# installs it on, and a binary that depends on the build host's libc is a support
+# burden for no benefit — it links nothing that needs cgo.
 
 on:
   push:
