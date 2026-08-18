@@ -22,9 +22,9 @@ import (
 // a well-formed URL to build a request from.
 const baseURL = "http://openbloxd"
 
-// Client reaches openbloxd over its Unix socket. It satisfies sandbox.Backend
-// so it can stand in for a Docker-backed one without the caller changing any
-// other code.
+// Client reaches openbloxd over a Unix socket or a mutual-TLS network
+// connection. It satisfies sandbox.Backend so it can stand in for a
+// Docker-backed one without the caller changing any other code.
 type Client struct {
 	http *http.Client
 

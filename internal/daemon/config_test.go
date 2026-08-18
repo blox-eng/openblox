@@ -285,6 +285,10 @@ listen:
     client_ca_file: /ca
     allowed_client_cns: ["sandbox-caller"]
 `, "address"},
+		"no tls block": {`
+listen:
+  address: "127.0.0.1:9443"
+`, "cert_file"},
 		"address is not host:port": {`
 listen:
   address: "127.0.0.1"

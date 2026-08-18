@@ -180,7 +180,9 @@ func TestRemoteAcceptedRequestGetsExactlyTheProfilePolicy(t *testing.T) {
 	got := fake.created["a"]
 	want := sandbox.NewSpec(srv.cfg.Profiles["code-exec"].Options()...)
 	if got.Runtime != want.Runtime || got.Egress != want.Egress ||
-		got.User != want.User || got.Resources != want.Resources || got.Image != want.Image {
+		got.User != want.User || got.Resources != want.Resources || got.Image != want.Image ||
+		got.Lifetime != want.Lifetime || got.DefaultTimeout != want.DefaultTimeout ||
+		got.MaxTimeout != want.MaxTimeout {
 		t.Errorf("spec = %+v, want the profile's %+v", got, want)
 	}
 }

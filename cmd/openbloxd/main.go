@@ -130,12 +130,16 @@ func run(configPath string) error {
 	// connection, even though that peer is local.
 	httpSrv := &http.Server{Handler: daemon.WithCaller(srv.Handler()), ReadHeaderTimeout: 10 * time.Second}
 
+	socket := "off"
+	if cfg.Socket != "" {
+		socket = cfg.Socket
+	}
 	network := "off"
 	if cfg.Listen != nil {
 		network = cfg.Listen.Address
 	}
 	slog.Info("openbloxd listening",
-		slog.String("socket", cfg.Socket),
+		slog.String("socket", socket),
 		slog.String("network", network),
 		slog.Int("profiles", len(cfg.Profiles)))
 	return serve(ctx, httpSrv, lns...)

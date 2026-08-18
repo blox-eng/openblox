@@ -196,7 +196,7 @@ func TestIsWildcardHost(t *testing.T) {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd /home/blox-master/dev/openblox-32-remote-transport && go test ./internal/daemon/ -run 'TestLoadAcceptsListen|TestLoadRejects|TestIsWildcardHost' -v`
+Run: `go test ./internal/daemon/ -run 'TestLoadAcceptsListen|TestLoadRejects|TestIsWildcardHost' -v`
 Expected: FAIL — compile error, `cfg.Listen` undefined and `ListenConfig` undefined.
 
 - [ ] **Step 3: Add the types**
@@ -1849,8 +1849,8 @@ Expected: no diff. This work is stdlib-only.
 
 - [ ] **Step 4: Audit the diff for anything deployment-specific**
 
-Run: `git diff origin/main -- . | grep -inE 'mcpblox|tekom|prod|tailscale|tailnet|[0-9]{1,3}(\.[0-9]{1,3}){3}'`
-Expected: only `127.0.0.1` from the neutral examples. Anything else is a leak of a specific deployment into a public repository and must be replaced with a neutral placeholder.
+Run: `git diff origin/main -- . | grep -inE '[0-9]{1,3}(\.[0-9]{1,3}){3}'`
+Expected: only `127.0.0.1` (and a documented `0.0.0.0` example). Also manually scan the diff against your own organisation's internal service names, deployment names, hostnames, and VPN/overlay-network products — none belong in this public repository. Anything found is a leak of deployment-specific detail and must be replaced with a neutral placeholder.
 
 - [ ] **Step 5: Open the PR**
 

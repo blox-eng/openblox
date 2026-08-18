@@ -81,9 +81,11 @@ func newPKI(t *testing.T) (*testpki.PKI, TLSFiles) {
 		CertFile: certFile,
 		KeyFile:  keyFile,
 		CAFile:   p.CAFile,
-		// The daemon's certificate names "openbloxd", but the test dials
-		// 127.0.0.1 — so the name to verify has to be given explicitly. This
-		// is exactly the case ServerName exists for.
+		// Set explicitly, not because it's required here — the test
+		// certificate's IPAddresses SAN covers 127.0.0.1, so an empty
+		// ServerName would verify fine too. This exercises the override
+		// documented on TLSFiles.ServerName, for deployments that dial the
+		// daemon by an address its certificate doesn't name.
 		ServerName: "openbloxd",
 	}
 }

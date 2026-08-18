@@ -80,9 +80,9 @@ func clientTLS(t *testing.T, p *testpki.PKI, cn string) *tls.Config {
 	return cfg
 }
 
-// serveOnce accepts on ln and answers every request with 200 "ok", so a test
+// serveHTTP accepts on ln and answers every request with 200 "ok", so a test
 // can assert whether a client got through the handshake at all.
-func serveOnce(t *testing.T, ln net.Listener) {
+func serveHTTP(t *testing.T, ln net.Listener) {
 	t.Helper()
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "ok")
@@ -116,7 +116,7 @@ func TestListenTLSAcceptsAnAllowedCommonName(t *testing.T) {
 		t.Fatalf("ListenTLS: %v", err)
 	}
 	defer func() { _ = ln.Close() }()
-	serveOnce(t, ln)
+	serveHTTP(t, ln)
 
 	got, err := get(t, ln.Addr().String(), clientTLS(t, pki, "sandbox-caller"))
 	if err != nil {
@@ -137,7 +137,7 @@ func TestListenTLSRejectsUnlistedCommonName(t *testing.T) {
 		t.Fatalf("ListenTLS: %v", err)
 	}
 	defer func() { _ = ln.Close() }()
-	serveOnce(t, ln)
+	serveHTTP(t, ln)
 
 	if _, err := get(t, ln.Addr().String(), clientTLS(t, pki, "someone-else")); err == nil {
 		t.Fatal("a certificate with an unlisted common name was accepted")
@@ -152,7 +152,7 @@ func TestListenTLSRejectsForeignCA(t *testing.T) {
 		t.Fatalf("ListenTLS: %v", err)
 	}
 	defer func() { _ = ln.Close() }()
-	serveOnce(t, ln)
+	serveHTTP(t, ln)
 
 	// Right name, wrong CA. Trust our real CA for the server leg so the only
 	// thing under test is the client certificate.
@@ -170,7 +170,7 @@ func TestListenTLSRejectsNoClientCertificate(t *testing.T) {
 		t.Fatalf("ListenTLS: %v", err)
 	}
 	defer func() { _ = ln.Close() }()
-	serveOnce(t, ln)
+	serveHTTP(t, ln)
 
 	cfg := &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pki.Pool(), ServerName: "openbloxd"}
 	if _, err := get(t, ln.Addr().String(), cfg); err == nil {
@@ -252,8 +252,9 @@ func TestCheckAllowedClientCN(t *testing.T) {
 //
 // Confirmed by reverting to VerifyPeerCertificate in a scratch copy of
 // tlsConfigFor and re-running: this test goes red (VerifyConnection == nil),
-// while every other test in the package still passes. See the fix report
-// for the transcript.
+// while every other test in the package still passes — because
+// VerifyPeerCertificate is simply never invoked on a resumed session, so a
+// resumed connection sailed through with no allowlist check running at all.
 func TestTLSConfigWiresAllowlistIntoVerifyConnection(t *testing.T) {
 	pki := newPKI(t)
 	tlsCfg, err := tlsConfigFor(listenConfigFor(pki, "127.0.0.1:0", "sandbox-caller"))
@@ -265,6 +266,9 @@ func TestTLSConfigWiresAllowlistIntoVerifyConnection(t *testing.T) {
 	}
 	if tlsCfg.VerifyPeerCertificate != nil {
 		t.Error("VerifyPeerCertificate is set — Go skips this callback on a resumed session, so the allowlist must not depend on it")
+	}
+	if tlsCfg.MinVersion != tls.VersionTLS13 {
+		t.Errorf("MinVersion = %v, want tls.VersionTLS13", tlsCfg.MinVersion)
 	}
 }
 
@@ -286,7 +290,7 @@ func TestListenTLSResumedConnectionStillReachesTheGate(t *testing.T) {
 		t.Fatalf("ListenTLS: %v", err)
 	}
 	defer func() { _ = ln.Close() }()
-	serveOnce(t, ln)
+	serveHTTP(t, ln)
 
 	clientCfg := clientTLS(t, pki, "sandbox-caller")
 	clientCfg.ClientSessionCache = tls.NewLRUClientSessionCache(4)
@@ -371,7 +375,7 @@ func TestVerifyConnectionRejectsAResumedSessionOnceItsCNIsRevoked(t *testing.T) 
 	}
 	tlsLn := tls.NewListener(ln, serverCfg)
 	defer func() { _ = tlsLn.Close() }()
-	serveOnce(t, tlsLn)
+	serveHTTP(t, tlsLn)
 
 	clientCfg := clientTLS(t, pki, "sandbox-caller")
 	clientCfg.ClientSessionCache = tls.NewLRUClientSessionCache(4)

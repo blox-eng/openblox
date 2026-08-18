@@ -29,13 +29,22 @@ Releases are cut automatically from [Conventional Commits](https://www.conventio
   need `/var/run/docker.sock`, with per-profile isolation policy resolved
   server-side from configuration alone.
 - `pkg/brokerclient`: a drop-in `sandbox.Backend` that talks to `openbloxd`
-  over its Unix socket, satisfying the same contract the Docker backend does.
+  over a Unix socket, satisfying the same contract the Docker backend does.
 - `openbloxd`: `max_sandboxes` per profile, bounding how many sandboxes exist
   at once — the one resource dimension a profile did not otherwise cover.
   Exceeding it returns `429` with the new `at_capacity` error kind
   (`brokerapi.ErrAtCapacity`), distinct from a malformed request because the
   request is valid and may succeed once the reaper frees a slot. Unset means
   unlimited, so existing deployments are unchanged.
+- `openbloxd`: an optional `listen` block for a mutual-TLS network listener,
+  alongside (or instead of) the Unix socket — `socket` is now optional once
+  `listen` is set. Every caller presents a client certificate; only Common
+  Names on the configured allowlist are accepted, so a shared or mis-issued
+  CA cannot silently grant access. The caller's verified CN is recorded on
+  every request the daemon handles.
+- `pkg/brokerclient`: `NewRemote` and `TLSFiles`, so a caller can reach
+  `openbloxd` over the network with the same `sandbox.Backend` contract the
+  Unix-socket client satisfies.
 
 ### Changed
 

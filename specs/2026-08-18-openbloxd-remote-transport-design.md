@@ -94,9 +94,17 @@ issued. That is the common way an mTLS deployment ends up weaker than the token
 it replaced. The allowlist makes a CA mis-issuance survivable, and it makes the
 set of permitted callers something an operator can read in one place.
 
-Both gates run during the TLS handshake, via `VerifyPeerCertificate`, so a
+Both gates run during the TLS handshake, via `VerifyConnection`, so a
 rejected caller never reaches the request router at all. The daemon logs the
 rejected CN; the client sees a TLS alert.
+
+`VerifyConnection` is used rather than `VerifyPeerCertificate` deliberately:
+Go does not invoke `VerifyPeerCertificate` on a resumed TLS session — the
+peer's certificates come back from cached session state and that callback is
+skipped — so an allowlist check living there would stop being enforced for a
+resumed caller even after its CN was removed from the allowlist.
+`VerifyConnection` runs on every connection, fresh or resumed, so the check
+applies without exception.
 
 ## Configuration
 

@@ -1,4 +1,5 @@
-// Package brokerclient reaches openbloxd over its Unix socket.
+// Package brokerclient reaches openbloxd over a Unix socket or a mutual-TLS
+// network connection.
 //
 // Its Client satisfies sandbox.Backend and its handle satisfies
 // sandbox.Sandbox, so a caller swaps one constructor and stops needing
