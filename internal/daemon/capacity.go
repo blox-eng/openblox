@@ -39,6 +39,12 @@ type capacity struct {
 // A limit of zero means unlimited, so a deployment that never configures one is
 // unchanged. In that case there is nothing to serialise and no backend call to
 // make.
+//
+// For a profile that IS capped, the check holds a lock across a backend List,
+// so concurrent creates serialise for the duration of one list call. That is
+// deliberate: the alternative is a count that several requests pass at once,
+// which is the exact burst the cap exists to stop. It bounds the check, not the
+// create — the sandbox itself is built outside the lock.
 func (c *capacity) reserve(ctx context.Context, s *Server, profile string, limit int) (release func(), err error) {
 	if limit <= 0 {
 		return func() {}, nil

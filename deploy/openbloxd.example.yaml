@@ -30,7 +30,12 @@ profiles:
     # memory_mb approximately, and roughly 1.4x the configured figure has been
     # observed resident before the kill lands. A refused create returns 429 with
     # kind "at_capacity", so a caller can tell it from a malformed request.
-    max_sandboxes: 32
+    #
+    # The cap is PER PROFILE, so a host must cover the SUM across profiles at
+    # once, not the largest one. The two profiles below are illustrative, not a
+    # recommended pair: 8 x 2048 and 4 x 4096, at ~1.4x, is already ~45 GiB of
+    # worst-case commitment. Pick numbers your host can actually hold.
+    max_sandboxes: 8
     idle_timeout: 30m
     max_age: 4h
     default_timeout: 60s
@@ -48,7 +53,7 @@ profiles:
     max_processes: 256
     # Counted per profile, not globally: browser sandboxes cost more memory
     # each, so they get their own smaller ceiling rather than competing for
-    # code-exec's.
-    max_sandboxes: 8
+    # code-exec's. Remember the host must cover both profiles at once.
+    max_sandboxes: 4
     idle_timeout: 30m
     max_age: 4h
