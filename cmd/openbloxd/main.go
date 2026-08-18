@@ -100,6 +100,14 @@ func run(configPath string) error {
 		}
 		ln, err := daemon.ListenTLS(*cfg.Listen)
 		if err != nil {
+			// Nothing has been handed to a server yet, so this is the only
+			// chance to close what's already open: leaving the socket listener
+			// alive here means its fd outlives us without net's unlink-on-close
+			// ever running, so the socket file survives the process — a down
+			// daemon would then answer ECONNREFUSED instead of ENOENT.
+			for _, l := range lns {
+				_ = l.Close()
+			}
 			return err
 		}
 		lns = append(lns, ln)
@@ -133,7 +141,7 @@ func run(configPath string) error {
 	return serve(ctx, httpSrv, lns...)
 }
 
-// serve runs httpSrv on ln until ctx is cancelled or Serve fails on its own.
+// serve runs httpSrv on lns until ctx is cancelled or a Serve call fails on its own.
 //
 // A Serve failure with no signal must return promptly rather than wait on
 // ctx.Done(), which may never fire: Restart=on-failure in the unit only
