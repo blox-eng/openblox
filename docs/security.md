@@ -282,6 +282,13 @@ openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
 
 Keep `ca.key` off both machines once the certificates are issued.
 
+`server.crt`/`server.key` and `ca.crt` stay on the daemon's host, as
+`cert_file`, `key_file` and `client_ca_file`; the CN `sandbox-caller` is what
+goes in `allowed_client_cns`. `client.crt`/`client.key` are the only pair
+that leaves the daemon's host at all — they travel to the caller, which
+configures its own TLS client with them and with `ca.crt` to verify the
+server.
+
 ## Reporting a vulnerability
 
 See [SECURITY.md](https://github.com/blox-eng/openblox/blob/main/SECURITY.md). Please do
