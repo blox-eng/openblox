@@ -117,6 +117,11 @@ func (p *PKI) WriteClient(cn string) (certFile, keyFile string, err error) {
 
 // ServerTLS is the daemon-side config a test listener needs: this authority's
 // keypair, requiring and verifying a client certificate from it.
+//
+// It deliberately carries no common-name allowlist — it exists to stand up a
+// plain TLS listener for transport-level tests, not to exercise access
+// control. It is not a substitute for ListenTLS: anything asserting on
+// allowlist behaviour must use ListenTLS.
 func (p *PKI) ServerTLS() (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(p.CertFile, p.KeyFile)
 	if err != nil {

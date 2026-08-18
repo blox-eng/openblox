@@ -3,6 +3,7 @@ package daemon
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -50,6 +51,15 @@ func ListenTLS(cfg ListenConfig) (net.Listener, error) {
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    pool,
 		VerifyPeerCertificate: func(_ [][]byte, chains [][]*x509.Certificate) error {
+			// Unreachable today: RequireAndVerifyClientCert guarantees chains
+			// is populated before this callback runs. The guard exists so a
+			// future downgrade to RequireAnyClientCert (which permits an
+			// unverified certificate, leaving chains empty) fails loudly as a
+			// rejection instead of panicking on chains[0][0] — a panic
+			// net/http's conn.serve recovers and silently swallows.
+			if len(chains) == 0 || len(chains[0]) == 0 {
+				return errors.New("no verified client certificate chain")
+			}
 			// RequireAndVerifyClientCert has already built and verified a
 			// chain by the time this runs, so chains[0][0] is the leaf.
 			cn := chains[0][0].Subject.CommonName
