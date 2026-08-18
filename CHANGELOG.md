@@ -30,6 +30,12 @@ Releases are cut automatically from [Conventional Commits](https://www.conventio
   server-side from configuration alone.
 - `pkg/brokerclient`: a drop-in `sandbox.Backend` that talks to `openbloxd`
   over its Unix socket, satisfying the same contract the Docker backend does.
+- `openbloxd`: `max_sandboxes` per profile, bounding how many sandboxes exist
+  at once — the one resource dimension a profile did not otherwise cover.
+  Exceeding it returns `429` with the new `at_capacity` error kind
+  (`brokerapi.ErrAtCapacity`), distinct from a malformed request because the
+  request is valid and may succeed once the reaper frees a slot. Unset means
+  unlimited, so existing deployments are unchanged.
 
 ### Changed
 

@@ -54,6 +54,13 @@ Non-root by default (`1000:1000`), read-only root filesystem, and only `/tmp`,
 CPU, memory, scratch disk and PID count are capped per sandbox. Scratch is tmpfs and is
 drawn from the memory budget, so a sandbox cannot fill the host's disk by writing files.
 
+Those bound one sandbox. `openbloxd` additionally bounds how many exist at once, per
+profile, through `max_sandboxes` — without it a caller looping on create exhausts host
+memory while every individual sandbox stays inside its policy. Size a host against
+`memory_mb` × `max_sandboxes` **with headroom**: the runtime enforces `memory_mb`
+approximately rather than exactly, and roughly 1.4× the configured figure has been
+observed resident before the kill lands.
+
 ### Bounded lifetime
 
 Every sandbox has an idle timeout and a max age, enforced by a reaper.

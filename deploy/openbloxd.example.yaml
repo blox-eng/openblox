@@ -21,6 +21,16 @@ profiles:
     memory_mb: 2048
     disk_mb: 1024           # tmpfs, drawn from memory; must not exceed it.
     max_processes: 256      # Without this a fork bomb exhausts host PIDs.
+    # How many sandboxes this profile may hold at once. Every other bound here
+    # limits ONE sandbox; this is the only one that limits how many exist, and
+    # without it a caller looping on create exhausts host memory without ever
+    # violating a policy. Omit for unlimited.
+    #
+    # Size it as memory_mb x this number, with headroom: the runtime enforces
+    # memory_mb approximately, and roughly 1.4x the configured figure has been
+    # observed resident before the kill lands. A refused create returns 429 with
+    # kind "at_capacity", so a caller can tell it from a malformed request.
+    max_sandboxes: 32
     idle_timeout: 30m
     max_age: 4h
     default_timeout: 60s
@@ -36,5 +46,9 @@ profiles:
     memory_mb: 4096
     disk_mb: 2048
     max_processes: 256
+    # Counted per profile, not globally: browser sandboxes cost more memory
+    # each, so they get their own smaller ceiling rather than competing for
+    # code-exec's.
+    max_sandboxes: 8
     idle_timeout: 30m
     max_age: 4h

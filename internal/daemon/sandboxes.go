@@ -33,15 +33,31 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// be handed back as though it satisfied this request. Backend.Create returns
 	// the live sandbox when the name exists, so the check has to happen here,
 	// ahead of that call.
+	var exists bool
 	if existing, err := s.backend.Open(r.Context(), req.Name); err == nil {
 		if got := existing.Info().Labels[labelProfile]; got != req.Profile {
 			fail(w, fmt.Errorf("%w: %q exists under profile %q, requested %q",
 				brokerapi.ErrProfileConflict, req.Name, got, req.Profile))
 			return
 		}
+		exists = true
 	} else if !errors.Is(err, sandbox.ErrNotFound) {
 		fail(w, err)
 		return
+	}
+
+	// Only a NEW name consumes a slot. A sandbox that already exists is already
+	// counted, so re-creating it — the session-affinity path a caller takes to
+	// reuse its own warm sandbox — must not be refused. Charging it again would
+	// starve exactly the callers already inside the cap, and only once the host
+	// was busy enough for the cap to bind.
+	if !exists {
+		release, err := s.cap.reserve(r.Context(), s, req.Profile, profile.MaxSandboxes)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		defer release()
 	}
 
 	// Profile options first, caller options second — and the caller's are only

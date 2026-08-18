@@ -33,6 +33,7 @@ type Profile struct {
 	MemoryMB       int64         `yaml:"memory_mb"`
 	DiskMB         int64         `yaml:"disk_mb"`
 	MaxProcesses   int           `yaml:"max_processes"`
+	MaxSandboxes   int           `yaml:"max_sandboxes"`
 	IdleTimeout    time.Duration `yaml:"idle_timeout"`
 	MaxAge         time.Duration `yaml:"max_age"`
 	DefaultTimeout time.Duration `yaml:"default_timeout"`
@@ -144,6 +145,12 @@ func (p Profile) validate(name string) error {
 	}
 	if p.MaxProcesses < 0 {
 		return fmt.Errorf("%w: profile %q has negative max_processes %d", sandbox.ErrInvalid, name, p.MaxProcesses)
+	}
+	// Zero means unlimited, which is what an unset cap has always meant. A
+	// negative value would read the same way while being a typo, and "the cap
+	// silently did not apply" is the one outcome this setting exists to prevent.
+	if p.MaxSandboxes < 0 {
+		return fmt.Errorf("%w: profile %q has negative max_sandboxes %d; omit it for unlimited", sandbox.ErrInvalid, name, p.MaxSandboxes)
 	}
 	if p.IdleTimeout < 0 {
 		return fmt.Errorf("%w: profile %q has negative idle_timeout %s, which silently disables reaping", sandbox.ErrInvalid, name, p.IdleTimeout)

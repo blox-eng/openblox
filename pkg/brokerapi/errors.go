@@ -16,8 +16,16 @@ const (
 	KindTimeout            = "timeout"
 	KindRuntimeUnavailable = "runtime_unavailable"
 	KindImageUnavailable   = "image_unavailable"
+	KindAtCapacity         = "at_capacity"
 	KindInternal           = "internal"
 )
+
+// ErrAtCapacity means the profile already holds as many sandboxes as its
+// max_sandboxes allows. It is deliberately distinct from ErrInvalid: the
+// request is well formed and may well succeed later, once the reaper or an
+// explicit Destroy frees a slot. A caller that cannot tell those apart either
+// retries a malformed request forever or gives up on a temporary refusal.
+var ErrAtCapacity = errors.New("profile is at its concurrent sandbox limit")
 
 // ErrProfileConflict means the named sandbox exists under a different profile.
 // Returning the live sandbox instead would hand the caller a policy it did not
@@ -38,6 +46,8 @@ func KindOf(err error) (string, int) {
 		return KindInvalid, http.StatusBadRequest
 	case errors.Is(err, ErrProfileConflict):
 		return KindConflict, http.StatusConflict
+	case errors.Is(err, ErrAtCapacity):
+		return KindAtCapacity, http.StatusTooManyRequests
 	case errors.Is(err, sandbox.ErrTimeout):
 		return KindTimeout, http.StatusGatewayTimeout
 	case errors.Is(err, sandbox.ErrRuntimeUnavailable):
@@ -59,6 +69,8 @@ func ErrorFor(kind string) error {
 		return sandbox.ErrInvalid
 	case KindConflict:
 		return ErrProfileConflict
+	case KindAtCapacity:
+		return ErrAtCapacity
 	case KindTimeout:
 		return sandbox.ErrTimeout
 	case KindRuntimeUnavailable:
