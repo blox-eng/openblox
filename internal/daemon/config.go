@@ -160,7 +160,7 @@ func (l *ListenConfig) validate() error {
 		return fmt.Errorf("%w: listen.address is empty; a bind address has no default", sandbox.ErrInvalid)
 	}
 	if _, _, err := net.SplitHostPort(l.Address); err != nil {
-		return fmt.Errorf("%w: listen.address %q is not host:port: %s", sandbox.ErrInvalid, l.Address, err)
+		return fmt.Errorf("%w: listen.address %q is not host:port: %w", sandbox.ErrInvalid, l.Address, err)
 	}
 	switch {
 	case l.TLS.CertFile == "":

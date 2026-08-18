@@ -50,28 +50,21 @@ func ListenTLS(cfg ListenConfig) (net.Listener, error) {
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    pool,
-		VerifyPeerCertificate: func(_ [][]byte, chains [][]*x509.Certificate) error {
-			// Unreachable today: RequireAndVerifyClientCert guarantees chains
-			// is populated before this callback runs. The guard exists so a
-			// future downgrade to RequireAnyClientCert (which permits an
-			// unverified certificate, leaving chains empty) fails loudly as a
-			// rejection instead of panicking on chains[0][0] — a panic
-			// net/http's conn.serve recovers and silently swallows.
-			if len(chains) == 0 || len(chains[0]) == 0 {
-				return errors.New("no verified client certificate chain")
-			}
-			// RequireAndVerifyClientCert has already built and verified a
-			// chain by the time this runs, so chains[0][0] is the leaf.
-			cn := chains[0][0].Subject.CommonName
-			if _, ok := allowed[cn]; !ok {
-				// Logged because the client only sees a TLS alert, and an
-				// operator debugging a rejected caller has nothing else to
-				// go on.
-				slog.Warn("rejected client certificate: common name is not allowed",
-					slog.String("common_name", cn))
-				return fmt.Errorf("client certificate common name %q is not allowed", cn)
-			}
-			return nil
+		// The allowlist gate lives in VerifyConnection, not
+		// VerifyPeerCertificate. Go does not invoke VerifyPeerCertificate on
+		// a resumed TLS session — the peer's certificates are restored from
+		// cached session state and the custom callback is skipped — so a
+		// check that lived only there would stop being enforced, per
+		// connection, for as long as a caller's session ticket stayed valid,
+		// even after its CN was removed from the allowlist. VerifyConnection
+		// runs on every connection, fresh or resumed (see
+		// handshake_server_tls13.go, both the PSK-resumption branch and the
+		// full-handshake branch call it), and on resumption
+		// ConnectionState.VerifiedChains is repopulated from the session
+		// ticket's saved chains rather than left empty, so the same check
+		// applies without change.
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			return checkAllowedClientCN(allowed, cs.VerifiedChains)
 		},
 	}
 
@@ -80,4 +73,33 @@ func ListenTLS(cfg ListenConfig) (net.Listener, error) {
 		return nil, fmt.Errorf("listen on %q: %w", cfg.Address, err)
 	}
 	return tls.NewListener(ln, tlsCfg), nil
+}
+
+// checkAllowedClientCN is the daemon's second gate: even a certificate that
+// chains to the configured CA is rejected unless its leaf Common Name is on
+// the allowlist. It is a free function, not a closure inlined at the call
+// site, so ListenTLS has exactly one place to wire it in and a test can
+// exercise it directly without standing up a TLS listener.
+func checkAllowedClientCN(allowed map[string]struct{}, chains [][]*x509.Certificate) error {
+	// Unreachable today via ListenTLS's own config: RequireAndVerifyClientCert
+	// guarantees chains is populated before either VerifyConnection or
+	// VerifyPeerCertificate runs. The guard exists so a future downgrade to
+	// RequireAnyClientCert (which permits an unverified certificate, leaving
+	// chains empty) fails loudly as a rejection instead of panicking on
+	// chains[0][0] — a panic net/http's conn.serve recovers and silently
+	// swallows.
+	if len(chains) == 0 || len(chains[0]) == 0 {
+		return errors.New("no verified client certificate chain")
+	}
+	// RequireAndVerifyClientCert has already built and verified a chain by
+	// the time this runs, so chains[0][0] is the leaf.
+	cn := chains[0][0].Subject.CommonName
+	if _, ok := allowed[cn]; !ok {
+		// Logged because the client only sees a TLS alert, and an operator
+		// debugging a rejected caller has nothing else to go on.
+		slog.Warn("rejected client certificate: common name is not allowed",
+			slog.String("common_name", cn))
+		return fmt.Errorf("client certificate common name %q is not allowed", cn)
+	}
+	return nil
 }

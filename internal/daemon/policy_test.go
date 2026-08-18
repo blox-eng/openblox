@@ -56,6 +56,9 @@ func transports() []transport {
 			name: "tls",
 			post: func(t *testing.T, srv *Server, body string) (int, string) {
 				t.Helper()
+				//nolint:bodyclose // the body is closed by the deferred close
+				// two lines below; bodyclose can't trace resp through
+				// newTLSPoster's returned closure back to this call site.
 				resp, err := newTLSPoster(t, srv)(body)
 				if err != nil {
 					t.Fatalf("post over tls: %v", err)
@@ -161,6 +164,9 @@ func TestRemoteAcceptedRequestGetsExactlyTheProfilePolicy(t *testing.T) {
 	srv := newTestServer(t)
 	fake := srv.backend.(*fakeBackend)
 
+	//nolint:bodyclose // the body is closed by the deferred close two lines
+	// below; bodyclose can't trace resp through newTLSPoster's returned
+	// closure back to this call site.
 	resp, err := newTLSPoster(t, srv)(`{"name":"a","profile":"code-exec"}`)
 	if err != nil {
 		t.Fatalf("post over tls: %v", err)
