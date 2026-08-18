@@ -9,6 +9,27 @@ socket: /run/openbloxd/openbloxd.sock
 socket_group: openbloxd
 reap_interval: 1m
 
+# A network listener, so the daemon can run on a host of its own. OPTIONAL and
+# off by default: omit this block entirely and the daemon serves only the Unix
+# socket above, which stays the recommended arrangement wherever the caller and
+# the daemon share a host.
+#
+# Nothing here has a default. A daemon that started listening on a network
+# interface because a key was omitted is the failure this block exists to
+# avoid, so every field below is required once `listen` is present.
+#listen:
+#  address: "127.0.0.1:9443"
+#  tls:
+#    cert_file: /etc/openbloxd/tls/server.crt
+#    key_file: /etc/openbloxd/tls/server.key
+#    # The CA that signs callers. It must sign NOTHING else: with certificate
+#    # verification alone, this CA is the entire access control list.
+#    client_ca_file: /etc/openbloxd/tls/clients-ca.crt
+#    # The second gate, and the reason a CA mis-issuance is survivable. Only a
+#    # certificate whose Common Name is listed here is accepted. Revoking a
+#    # caller means removing its name and restarting: there is no CRL or OCSP.
+#    allowed_client_cns: ["sandbox-caller"]
+
 profiles:
   code-exec:
     # Pin a digest. A tag can be repointed by whoever controls the registry,

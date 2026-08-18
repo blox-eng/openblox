@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -17,8 +18,42 @@ import (
 type Config struct {
 	Socket       string             `yaml:"socket"`
 	SocketGroup  string             `yaml:"socket_group"`
+	Listen       *ListenConfig      `yaml:"listen"`
 	ReapInterval time.Duration      `yaml:"reap_interval"`
 	Profiles     map[string]Profile `yaml:"profiles"`
+}
+
+// ListenConfig is the network listener. Absent means the daemon serves only
+// its Unix socket, which stays the default and the recommended arrangement
+// wherever caller and daemon share a host.
+type ListenConfig struct {
+	Address string    `yaml:"address"`
+	TLS     TLSConfig `yaml:"tls"`
+}
+
+// TLSConfig is the daemon's half of the mTLS credential, plus the allowlist
+// that stops the CA from being the whole access control list.
+type TLSConfig struct {
+	CertFile         string   `yaml:"cert_file"`
+	KeyFile          string   `yaml:"key_file"`
+	ClientCAFile     string   `yaml:"client_ca_file"`
+	AllowedClientCNs []string `yaml:"allowed_client_cns"`
+}
+
+// IsWildcardHost reports whether the address binds every interface. That is a
+// legitimate choice for a daemon whose network namespace is already the
+// boundary, and a serious mistake otherwise — so it is warned about at boot
+// rather than refused.
+func (l ListenConfig) IsWildcardHost() bool {
+	host, _, err := net.SplitHostPort(l.Address)
+	if err != nil {
+		return false
+	}
+	if host == "" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsUnspecified()
 }
 
 // Profile is one named isolation policy. Every field here is deliberately
@@ -73,8 +108,16 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c.Socket == "" {
-		return fmt.Errorf("%w: socket path is empty", sandbox.ErrInvalid)
+	// The socket may be omitted only when a network listener replaces it.
+	// Neither one set is a daemon that starts, binds nothing and answers
+	// nothing — indistinguishable from a working one until a caller times out.
+	if c.Socket == "" && c.Listen == nil {
+		return fmt.Errorf("%w: neither socket nor listen is set; the daemon would accept nothing", sandbox.ErrInvalid)
+	}
+	if c.Listen != nil {
+		if err := c.Listen.validate(); err != nil {
+			return err
+		}
 	}
 	if len(c.Profiles) == 0 {
 		return fmt.Errorf("%w: no profiles configured; the daemon would accept nothing", sandbox.ErrInvalid)
@@ -102,6 +145,32 @@ func (c *Config) validate() error {
 			return fmt.Errorf("%w: profiles %q and %q specify different registry_auth, but one Docker connection carries one credential",
 				sandbox.ErrInvalid, authName, name)
 		}
+	}
+	return nil
+}
+
+// validate refuses a listen block that is not completely specified.
+//
+// Nothing here defaults. A daemon that starts listening on a network interface
+// because a key was omitted is the failure this block exists to avoid, and a
+// listener that accepted any certificate its CA ever signed would make the CA
+// the entire access control list.
+func (l *ListenConfig) validate() error {
+	if l.Address == "" {
+		return fmt.Errorf("%w: listen.address is empty; a bind address has no default", sandbox.ErrInvalid)
+	}
+	if _, _, err := net.SplitHostPort(l.Address); err != nil {
+		return fmt.Errorf("%w: listen.address %q is not host:port: %s", sandbox.ErrInvalid, l.Address, err)
+	}
+	switch {
+	case l.TLS.CertFile == "":
+		return fmt.Errorf("%w: listen.tls.cert_file is empty", sandbox.ErrInvalid)
+	case l.TLS.KeyFile == "":
+		return fmt.Errorf("%w: listen.tls.key_file is empty", sandbox.ErrInvalid)
+	case l.TLS.ClientCAFile == "":
+		return fmt.Errorf("%w: listen.tls.client_ca_file is empty; without it any client certificate would be accepted", sandbox.ErrInvalid)
+	case len(l.TLS.AllowedClientCNs) == 0:
+		return fmt.Errorf("%w: listen.tls.allowed_client_cns is empty; the CA alone must not be the access control list", sandbox.ErrInvalid)
 	}
 	return nil
 }
