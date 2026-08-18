@@ -8,10 +8,42 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/blox-eng/openblox/internal/testpki"
 )
+
+// syncAllowlist is a CN allowlist a test can mutate from one goroutine while
+// a server goroutine's VerifyConnection reads it from another, without a
+// data race. Plain map access here would happen to be safe in practice — the
+// TLS handshake completing establishes enough ordering — but "happens to be
+// safe by timing" is exactly the kind of thing -race exists to stop
+// depending on, so this test earns its correctness by construction instead.
+type syncAllowlist struct {
+	mu      sync.Mutex
+	allowed map[string]struct{}
+}
+
+func newSyncAllowlist(cns ...string) *syncAllowlist {
+	m := make(map[string]struct{}, len(cns))
+	for _, cn := range cns {
+		m[cn] = struct{}{}
+	}
+	return &syncAllowlist{allowed: m}
+}
+
+func (a *syncAllowlist) check(chains [][]*x509.Certificate) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return checkAllowedClientCN(a.allowed, chains)
+}
+
+func (a *syncAllowlist) revoke(cn string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.allowed, cn)
+}
 
 // newPKI builds a throwaway authority in the test's own temp directory.
 func newPKI(t *testing.T) *testpki.PKI {
@@ -205,6 +237,37 @@ func TestCheckAllowedClientCN(t *testing.T) {
 	})
 }
 
+// TestTLSConfigWiresAllowlistIntoVerifyConnection looks like a tautology —
+// it just asserts a struct field is set — and that is exactly why it earns
+// its place: it is the only test in this package that fails if someone
+// "simplifies" the allowlist check back onto VerifyPeerCertificate. Every
+// other test here would still pass against that regression, because none of
+// them observes a resumed connection being rejected by production wiring —
+// TestCheckAllowedClientCN calls the check function directly regardless of
+// which TLS callback it's wired into, and
+// TestListenTLSResumedConnectionStillReachesTheGate only asserts the resumed
+// connection is *accepted*, which vulnerable wiring satisfies too
+// (VerifyPeerCertificate just never runs on resumption, so nothing rejects
+// it). This test is the one place the wiring choice itself is pinned down.
+//
+// Confirmed by reverting to VerifyPeerCertificate in a scratch copy of
+// tlsConfigFor and re-running: this test goes red (VerifyConnection == nil),
+// while every other test in the package still passes. See the fix report
+// for the transcript.
+func TestTLSConfigWiresAllowlistIntoVerifyConnection(t *testing.T) {
+	pki := newPKI(t)
+	tlsCfg, err := tlsConfigFor(listenConfigFor(pki, "127.0.0.1:0", "sandbox-caller"))
+	if err != nil {
+		t.Fatalf("tlsConfigFor: %v", err)
+	}
+	if tlsCfg.VerifyConnection == nil {
+		t.Error("VerifyConnection is nil — the allowlist has no callback invoked on a resumed session")
+	}
+	if tlsCfg.VerifyPeerCertificate != nil {
+		t.Error("VerifyPeerCertificate is set — Go skips this callback on a resumed session, so the allowlist must not depend on it")
+	}
+}
+
 // TestListenTLSResumedConnectionStillReachesTheGate proves the wiring is
 // live end to end through the real listener: with a shared
 // ClientSessionCache, a second connection to the same ListenTLS listener
@@ -291,14 +354,14 @@ func TestVerifyConnectionRejectsAResumedSessionOnceItsCNIsRevoked(t *testing.T) 
 		t.Fatalf("LoadX509KeyPair: %v", err)
 	}
 
-	allowed := map[string]struct{}{"sandbox-caller": {}}
+	allowed := newSyncAllowlist("sandbox-caller")
 	serverCfg := &tls.Config{
 		MinVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    pki.Pool(),
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			return checkAllowedClientCN(allowed, cs.VerifiedChains)
+			return allowed.check(cs.VerifiedChains)
 		},
 	}
 
@@ -321,7 +384,7 @@ func TestVerifyConnectionRejectsAResumedSessionOnceItsCNIsRevoked(t *testing.T) 
 
 	// Revoke, without restarting the listener — a live VerifyConnection is
 	// the only thing standing between the resumed connection and acceptance.
-	delete(allowed, "sandbox-caller")
+	allowed.revoke("sandbox-caller")
 
 	// Dial manually rather than through http.Client for this half: if the
 	// server's VerifyConnection rejects the connection, there is no

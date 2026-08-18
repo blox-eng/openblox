@@ -26,6 +26,28 @@ import (
 // Rejecting during the handshake rather than in a middleware means a caller
 // that fails either gate never reaches the request router at all.
 func ListenTLS(cfg ListenConfig) (net.Listener, error) {
+	tlsCfg, err := tlsConfigFor(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	ln, err := net.Listen("tcp", cfg.Address)
+	if err != nil {
+		return nil, fmt.Errorf("listen on %q: %w", cfg.Address, err)
+	}
+	return tls.NewListener(ln, tlsCfg), nil
+}
+
+// tlsConfigFor builds the tls.Config carrying both of ListenTLS's gates. It
+// is its own function, not inlined into ListenTLS, so a test can assert
+// directly on which callback the allowlist got wired into — VerifyConnection
+// versus VerifyPeerCertificate — without standing up a listener. That
+// assertion is what pins the production wiring: it is the only thing in this
+// package that would fail if someone "simplified" the allowlist check back
+// onto VerifyPeerCertificate, which every other test here would still pass
+// against, since they only ever exercise checkAllowedClientCN's own
+// correctness or a fresh (non-resumed) handshake.
+func tlsConfigFor(cfg ListenConfig) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("load server keypair: %w", err)
@@ -45,7 +67,7 @@ func ListenTLS(cfg ListenConfig) (net.Listener, error) {
 		allowed[cn] = struct{}{}
 	}
 
-	tlsCfg := &tls.Config{
+	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
@@ -66,13 +88,7 @@ func ListenTLS(cfg ListenConfig) (net.Listener, error) {
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			return checkAllowedClientCN(allowed, cs.VerifiedChains)
 		},
-	}
-
-	ln, err := net.Listen("tcp", cfg.Address)
-	if err != nil {
-		return nil, fmt.Errorf("listen on %q: %w", cfg.Address, err)
-	}
-	return tls.NewListener(ln, tlsCfg), nil
+	}, nil
 }
 
 // checkAllowedClientCN is the daemon's second gate: even a certificate that
