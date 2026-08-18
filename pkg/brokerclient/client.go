@@ -17,9 +17,9 @@ import (
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
 
-// baseURL is a placeholder: every request is dialled straight to socketPath
-// regardless of what host or scheme the URL names. It exists only because
-// net/http requires a well-formed URL to build a request from.
+// baseURL is a placeholder: every request is dialled by c.dial regardless of
+// what host or scheme the URL names. It exists only because net/http requires
+// a well-formed URL to build a request from.
 const baseURL = "http://openbloxd"
 
 // Client reaches openbloxd over its Unix socket. It satisfies sandbox.Backend
@@ -28,9 +28,13 @@ const baseURL = "http://openbloxd"
 type Client struct {
 	http *http.Client
 
-	// socket is redialled directly by DialPort, which needs a raw connection
-	// outside the pooled http.Client — see dial.go.
-	socket string
+	// target is the socket path or the network address, for error messages.
+	target string
+
+	// dial opens one connection to the daemon. It is the only place either
+	// transport is chosen, so the pooled HTTP client and DialPort's raw
+	// stream cannot diverge on which one they use.
+	dial func(ctx context.Context) (net.Conn, error)
 
 	// signer, previewBase and previewHandler are set only when WithPreviews
 	// was passed. Expose and Revoke fail cleanly when signer is nil, rather
@@ -45,16 +49,21 @@ func New(socketPath string, opts ...Option) (*Client, error) {
 	if socketPath == "" {
 		return nil, fmt.Errorf("%w: socket path is empty", sandbox.ErrInvalid)
 	}
-	c := &Client{
-		socket: socketPath,
-		http: &http.Client{
-			Transport: &http.Transport{
-				// The address net/http computed is discarded: there is exactly one
-				// place this client ever talks to, and it is not on the network.
-				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					var d net.Dialer
-					return d.DialContext(ctx, "unix", socketPath)
-				},
+	return newClient(socketPath, func(ctx context.Context) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "unix", socketPath)
+	}, opts...)
+}
+
+// newClient wires a dialler into a Client and applies its options.
+func newClient(target string, dial func(context.Context) (net.Conn, error), opts ...Option) (*Client, error) {
+	c := &Client{target: target, dial: dial}
+	c.http = &http.Client{
+		Transport: &http.Transport{
+			// The address net/http computed is discarded: there is exactly
+			// one place this client ever talks to, and c.dial knows it.
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return c.dial(ctx)
 			},
 		},
 	}

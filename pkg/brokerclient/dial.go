@@ -23,7 +23,7 @@ func (c *Client) DialPort(ctx context.Context, name string, port int) (net.Conn,
 	}
 
 	var d net.Dialer
-	conn, err := d.DialContext(ctx, "unix", c.socket)
+	conn, err := d.DialContext(ctx, "unix", c.target)
 	if err != nil {
 		return nil, fmt.Errorf("dial openbloxd: %w", err)
 	}
