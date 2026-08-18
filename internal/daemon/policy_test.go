@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,54 @@ import (
 
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
+
+// postSandboxes sends body to POST /sandboxes and returns the status code.
+// The two implementations are the whole point: one goes straight to the
+// handler, the other crosses a real authenticated TLS connection.
+type transport struct {
+	name string
+	post func(t *testing.T, srv *Server, body string) int
+}
+
+func transports() []transport {
+	return []transport{
+		{
+			name: "direct",
+			post: func(t *testing.T, srv *Server, body string) int {
+				t.Helper()
+				rec := httptest.NewRecorder()
+				WithCaller(srv.Handler()).ServeHTTP(rec,
+					httptest.NewRequest(http.MethodPost, "/sandboxes", strings.NewReader(body)))
+				return rec.Code
+			},
+		},
+		{
+			name: "tls",
+			post: func(t *testing.T, srv *Server, body string) int {
+				t.Helper()
+				pki := newPKI(t)
+				ln, err := ListenTLS(listenConfigFor(pki, "127.0.0.1:0", "sandbox-caller"))
+				if err != nil {
+					t.Fatalf("ListenTLS: %v", err)
+				}
+				httpSrv := &http.Server{Handler: WithCaller(srv.Handler())}
+				go func() { _ = httpSrv.Serve(ln) }()
+				t.Cleanup(func() { _ = httpSrv.Close() })
+
+				c := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS(t, pki, "sandbox-caller")}}
+				defer c.CloseIdleConnections()
+				resp, err := c.Post("https://"+ln.Addr().String()+"/sandboxes",
+					"application/json", strings.NewReader(body))
+				if err != nil {
+					t.Fatalf("post over tls: %v", err)
+				}
+				defer func() { _ = resp.Body.Close() }()
+				_, _ = io.Copy(io.Discard, resp.Body)
+				return resp.StatusCode
+			},
+		},
+	}
+}
 
 // TestNoRequestFieldReachesTheSpec attacks handleCreate with bodies that name
 // every field a hostile caller might hope weakens isolation. Asserting a 4xx
@@ -73,21 +122,61 @@ func TestNoRequestFieldReachesTheSpec(t *testing.T) {
 		// carries that assertion too, so the two do not depend on each other.
 		`{"name":"a","profile":"code-exec","labels":{"x":"1"},"labels":{"openbloxd.profile":"pwned"}}`,
 	}
-	for _, body := range bodies {
-		t.Run(body, func(t *testing.T) {
-			srv := newTestServer(t)
-			fake := srv.backend.(*fakeBackend)
+	for _, tr := range transports() {
+		for _, body := range bodies {
+			t.Run(tr.name+"/"+body, func(t *testing.T) {
+				srv := newTestServer(t)
+				fake := srv.backend.(*fakeBackend)
 
-			rec := httptest.NewRecorder()
-			srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/sandboxes", strings.NewReader(body)))
+				code := tr.post(t, srv, body)
+				if code < 400 || code > 499 {
+					t.Fatalf("status = %d, want 4xx", code)
+				}
+				// The assertion that matters: a handler can reject a request
+				// and still have called Create first. Nothing from the body
+				// may have reached the backend, over either transport.
+				if len(fake.created) != 0 {
+					t.Fatalf("a rejected request created a sandbox: %+v", fake.created)
+				}
+			})
+		}
+	}
+}
 
-			if rec.Code < 400 || rec.Code > 499 {
-				t.Fatalf("status = %d, want 4xx, body %s", rec.Code, rec.Body.String())
-			}
-			if len(fake.created) != 0 {
-				t.Fatalf("a rejected request created a sandbox: %+v", fake.created)
-			}
-		})
+// The mirror of TestNoRequestFieldReachesTheSpec: a request that IS accepted
+// over the network must land on the profile's policy and nothing else. A
+// transport that quietly widened a Spec would pass the rejection table above
+// while still being broken.
+func TestRemoteAcceptedRequestGetsExactlyTheProfilePolicy(t *testing.T) {
+	srv := newTestServer(t)
+	fake := srv.backend.(*fakeBackend)
+
+	pki := newPKI(t)
+	ln, err := ListenTLS(listenConfigFor(pki, "127.0.0.1:0", "sandbox-caller"))
+	if err != nil {
+		t.Fatalf("ListenTLS: %v", err)
+	}
+	httpSrv := &http.Server{Handler: WithCaller(srv.Handler())}
+	go func() { _ = httpSrv.Serve(ln) }()
+	t.Cleanup(func() { _ = httpSrv.Close() })
+
+	c := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS(t, pki, "sandbox-caller")}}
+	defer c.CloseIdleConnections()
+	resp, err := c.Post("https://"+ln.Addr().String()+"/sandboxes", "application/json",
+		strings.NewReader(`{"name":"a","profile":"code-exec"}`))
+	if err != nil {
+		t.Fatalf("post over tls: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", resp.StatusCode)
+	}
+
+	got := fake.created["a"]
+	want := sandbox.NewSpec(srv.cfg.Profiles["code-exec"].Options()...)
+	if got.Runtime != want.Runtime || got.Egress != want.Egress ||
+		got.User != want.User || got.Resources != want.Resources || got.Image != want.Image {
+		t.Errorf("spec = %+v, want the profile's %+v", got, want)
 	}
 }
 
