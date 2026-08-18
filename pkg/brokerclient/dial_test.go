@@ -264,11 +264,31 @@ func TestDialPortOverTLSSupportsCloseWrite(t *testing.T) {
 	if err := cw.CloseWrite(); err != nil {
 		t.Fatalf("CloseWrite: %v", err)
 	}
-	got, err := io.ReadAll(conn)
-	if err != nil {
-		t.Fatalf("read: %v", err)
+
+	// A CloseWrite that silently no-ops (returns nil without half-closing)
+	// would still pass the assertion above, but the daemon stub's io.Copy
+	// would never see EOF and this read would block forever. Bound it, like
+	// TestDialPortCloseWriteSignalsEndOfInput does, so that regression fails
+	// the test instead of hanging it.
+	type readResult struct {
+		got []byte
+		err error
 	}
-	if string(got) != "ping" {
-		t.Errorf("echo = %q, want ping", got)
+	readDone := make(chan readResult, 1)
+	go func() {
+		got, err := io.ReadAll(conn)
+		readDone <- readResult{got: got, err: err}
+	}()
+
+	select {
+	case r := <-readDone:
+		if r.err != nil {
+			t.Fatalf("read: %v", r.err)
+		}
+		if string(r.got) != "ping" {
+			t.Errorf("echo = %q, want ping", r.got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("read after CloseWrite never returned; CloseWrite did not half-close the connection")
 	}
 }

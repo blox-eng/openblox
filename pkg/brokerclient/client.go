@@ -217,7 +217,7 @@ func (c *Client) do(ctx context.Context, method, path string, reqBody, respBody 
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("openbloxd: request failed: %w", err)
+		return fmt.Errorf("openbloxd (%s): request failed: %w", c.target, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
