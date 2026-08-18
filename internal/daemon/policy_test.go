@@ -10,49 +10,59 @@ import (
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
 
-// postSandboxes sends body to POST /sandboxes and returns the status code.
-// The two implementations are the whole point: one goes straight to the
-// handler, the other crosses a real authenticated TLS connection.
+// transport sends a POST /sandboxes body and reports the status code and
+// response body. The two implementations are the whole point: one goes
+// straight to the handler, the other crosses a real authenticated TLS
+// connection.
 type transport struct {
 	name string
-	post func(t *testing.T, srv *Server, body string) int
+	post func(t *testing.T, srv *Server, body string) (code int, respBody string)
+}
+
+// newTLSPoster starts srv behind a real TLS listener authenticated for CN
+// "sandbox-caller" and returns a closure that POSTs body to /sandboxes over
+// it. Listener, server and client are all torn down via t.Cleanup.
+func newTLSPoster(t *testing.T, srv *Server) func(body string) (*http.Response, error) {
+	t.Helper()
+	pki := newPKI(t)
+	ln, err := ListenTLS(listenConfigFor(pki, "127.0.0.1:0", "sandbox-caller"))
+	if err != nil {
+		t.Fatalf("ListenTLS: %v", err)
+	}
+	httpSrv := &http.Server{Handler: WithCaller(srv.Handler())}
+	go func() { _ = httpSrv.Serve(ln) }()
+	t.Cleanup(func() { _ = httpSrv.Close() })
+
+	c := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS(t, pki, "sandbox-caller")}}
+	t.Cleanup(c.CloseIdleConnections)
+	return func(body string) (*http.Response, error) {
+		return c.Post("https://"+ln.Addr().String()+"/sandboxes", "application/json", strings.NewReader(body))
+	}
 }
 
 func transports() []transport {
 	return []transport{
 		{
 			name: "direct",
-			post: func(t *testing.T, srv *Server, body string) int {
+			post: func(t *testing.T, srv *Server, body string) (int, string) {
 				t.Helper()
 				rec := httptest.NewRecorder()
 				WithCaller(srv.Handler()).ServeHTTP(rec,
 					httptest.NewRequest(http.MethodPost, "/sandboxes", strings.NewReader(body)))
-				return rec.Code
+				return rec.Code, rec.Body.String()
 			},
 		},
 		{
 			name: "tls",
-			post: func(t *testing.T, srv *Server, body string) int {
+			post: func(t *testing.T, srv *Server, body string) (int, string) {
 				t.Helper()
-				pki := newPKI(t)
-				ln, err := ListenTLS(listenConfigFor(pki, "127.0.0.1:0", "sandbox-caller"))
-				if err != nil {
-					t.Fatalf("ListenTLS: %v", err)
-				}
-				httpSrv := &http.Server{Handler: WithCaller(srv.Handler())}
-				go func() { _ = httpSrv.Serve(ln) }()
-				t.Cleanup(func() { _ = httpSrv.Close() })
-
-				c := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS(t, pki, "sandbox-caller")}}
-				defer c.CloseIdleConnections()
-				resp, err := c.Post("https://"+ln.Addr().String()+"/sandboxes",
-					"application/json", strings.NewReader(body))
+				resp, err := newTLSPoster(t, srv)(body)
 				if err != nil {
 					t.Fatalf("post over tls: %v", err)
 				}
 				defer func() { _ = resp.Body.Close() }()
-				_, _ = io.Copy(io.Discard, resp.Body)
-				return resp.StatusCode
+				b, _ := io.ReadAll(resp.Body)
+				return resp.StatusCode, string(b)
 			},
 		},
 	}
@@ -128,9 +138,9 @@ func TestNoRequestFieldReachesTheSpec(t *testing.T) {
 				srv := newTestServer(t)
 				fake := srv.backend.(*fakeBackend)
 
-				code := tr.post(t, srv, body)
+				code, respBody := tr.post(t, srv, body)
 				if code < 400 || code > 499 {
-					t.Fatalf("status = %d, want 4xx", code)
+					t.Fatalf("status = %d, want 4xx, body %s", code, respBody)
 				}
 				// The assertion that matters: a handler can reject a request
 				// and still have called Create first. Nothing from the body
@@ -151,23 +161,12 @@ func TestRemoteAcceptedRequestGetsExactlyTheProfilePolicy(t *testing.T) {
 	srv := newTestServer(t)
 	fake := srv.backend.(*fakeBackend)
 
-	pki := newPKI(t)
-	ln, err := ListenTLS(listenConfigFor(pki, "127.0.0.1:0", "sandbox-caller"))
-	if err != nil {
-		t.Fatalf("ListenTLS: %v", err)
-	}
-	httpSrv := &http.Server{Handler: WithCaller(srv.Handler())}
-	go func() { _ = httpSrv.Serve(ln) }()
-	t.Cleanup(func() { _ = httpSrv.Close() })
-
-	c := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS(t, pki, "sandbox-caller")}}
-	defer c.CloseIdleConnections()
-	resp, err := c.Post("https://"+ln.Addr().String()+"/sandboxes", "application/json",
-		strings.NewReader(`{"name":"a","profile":"code-exec"}`))
+	resp, err := newTLSPoster(t, srv)(`{"name":"a","profile":"code-exec"}`)
 	if err != nil {
 		t.Fatalf("post over tls: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("status = %d, want 201", resp.StatusCode)
 	}
