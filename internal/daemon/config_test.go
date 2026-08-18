@@ -347,10 +347,10 @@ profiles:
 
 func TestIsWildcardHost(t *testing.T) {
 	cases := map[string]bool{
-		"127.0.0.1:9443": false,
-		"0.0.0.0:9443":   true,
-		":9443":          true,
-		"[::]:9443":      true,
+		"127.0.0.1:9443":   false,
+		"0.0.0.0:9443":     true,
+		":9443":            true,
+		"[::]:9443":        true,
 		"example.com:9443": false,
 	}
 	for addr, want := range cases {
