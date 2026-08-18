@@ -1,10 +1,13 @@
 package brokerclient
 
 import (
+	"crypto/tls"
 	"errors"
+	"net"
 	"strings"
 	"testing"
 
+	"github.com/blox-eng/openblox/internal/testpki"
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
 
@@ -60,4 +63,41 @@ func TestNewStillTakesOnlyASocketPath(t *testing.T) {
 	if c.dial == nil {
 		t.Error("dial is nil; New must install a dialler")
 	}
+}
+
+// newPKI builds a throwaway authority plus a client keypair on disk, and
+// returns the TLSFiles a Client is constructed from.
+func newPKI(t *testing.T) (*testpki.PKI, TLSFiles) {
+	t.Helper()
+	p, err := testpki.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("testpki.New: %v", err)
+	}
+	certFile, keyFile, err := p.WriteClient("sandbox-caller")
+	if err != nil {
+		t.Fatalf("WriteClient: %v", err)
+	}
+	return p, TLSFiles{
+		CertFile: certFile,
+		KeyFile:  keyFile,
+		CAFile:   p.CAFile,
+		// The daemon's certificate names "openbloxd", but the test dials
+		// 127.0.0.1 — so the name to verify has to be given explicitly. This
+		// is exactly the case ServerName exists for.
+		ServerName: "openbloxd",
+	}
+}
+
+// listen starts a TLS listener that requires a client certificate from p.
+func listen(t *testing.T, p *testpki.PKI) net.Listener {
+	t.Helper()
+	cfg, err := p.ServerTLS()
+	if err != nil {
+		t.Fatalf("ServerTLS: %v", err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tls.NewListener(ln, cfg)
 }

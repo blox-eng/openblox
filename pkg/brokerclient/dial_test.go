@@ -1,6 +1,7 @@
 package brokerclient
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io"
@@ -215,5 +216,59 @@ func TestDialPortMapsDaemonError(t *testing.T) {
 	_, err := c.DialPort(context.Background(), "missing", 8080)
 	if !errors.Is(err, sandbox.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+// CloseWrite is reached through a type assertion on net.Conn, so a change of
+// transport can break it silently: net/http asserts for it on request bodies,
+// and without it a proxied request carrying a body never completes. *tls.Conn
+// has the method, and this pins that.
+func TestDialPortOverTLSSupportsCloseWrite(t *testing.T) {
+	pki, files := newPKI(t)
+	ln := listen(t, pki)
+	t.Cleanup(func() { _ = ln.Close() })
+
+	// A daemon stub that answers the upgrade and then echoes.
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		br := bufio.NewReader(conn)
+		if _, err := http.ReadRequest(br); err != nil {
+			return
+		}
+		_, _ = io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\n"+
+			"Connection: Upgrade\r\nUpgrade: "+brokerapi.UpgradeProto+"\r\n\r\n")
+		_, _ = io.Copy(conn, br)
+	}()
+
+	c, err := NewRemote(ln.Addr().String(), files)
+	if err != nil {
+		t.Fatalf("NewRemote: %v", err)
+	}
+	conn, err := c.DialPort(context.Background(), "a", 8080)
+	if err != nil {
+		t.Fatalf("DialPort: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	if _, err := io.WriteString(conn, "ping"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cw, ok := conn.(interface{ CloseWrite() error })
+	if !ok {
+		t.Fatal("the dialled connection does not support CloseWrite")
+	}
+	if err := cw.CloseWrite(); err != nil {
+		t.Fatalf("CloseWrite: %v", err)
+	}
+	got, err := io.ReadAll(conn)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != "ping" {
+		t.Errorf("echo = %q, want ping", got)
 	}
 }
