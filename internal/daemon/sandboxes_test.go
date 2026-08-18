@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/blox-eng/openblox/pkg/brokerapi"
@@ -98,17 +99,39 @@ type fakeBackend struct {
 	// conn is what DialPort hands back, standing in for the relay a real
 	// backend would open over the runtime's exec channel.
 	conn net.Conn
+
+	// createBlock holds every Create until it is closed, so a test can park
+	// several requests inside Create at once and observe what the capacity
+	// check does before any of them has registered a sandbox.
+	createBlock chan struct{}
+
+	// mu guards the maps against the concurrent requests those tests make.
+	mu sync.Mutex
 }
 
 func (f *fakeBackend) Create(_ context.Context, name string, opts ...sandbox.CreateOption) (sandbox.Sandbox, error) {
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
+	if f.createBlock != nil {
+		<-f.createBlock
+	}
 	spec := sandbox.NewSpec(opts...)
+	f.mu.Lock()
 	if f.created == nil {
 		f.created = map[string]sandbox.Spec{}
 	}
 	f.created[name] = spec
+	// A real backend reports what it created through List, and the capacity
+	// count reads List: a fake that forgot would make the cap look like it
+	// holds when it does not.
+	if f.existing == nil {
+		f.existing = map[string]string{}
+	}
+	if _, ok := f.existing[name]; !ok {
+		f.existing[name] = spec.Labels[labelProfile]
+	}
+	f.mu.Unlock()
 
 	labels := spec.Labels
 	if f.createWinsUnderProfile != "" {
@@ -118,7 +141,9 @@ func (f *fakeBackend) Create(_ context.Context, name string, opts ...sandbox.Cre
 }
 
 func (f *fakeBackend) Open(_ context.Context, name string) (sandbox.Sandbox, error) {
+	f.mu.Lock()
 	profile, ok := f.existing[name]
+	f.mu.Unlock()
 	if !ok {
 		return nil, sandbox.ErrNotFound
 	}
@@ -130,6 +155,8 @@ func (f *fakeBackend) Open(_ context.Context, name string) (sandbox.Sandbox, err
 }
 
 func (f *fakeBackend) List(context.Context) ([]sandbox.Info, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	out := make([]sandbox.Info, 0, len(f.existing))
 	for name, profile := range f.existing {
 		out = append(out, sandbox.Info{Name: name, Labels: map[string]string{labelProfile: profile}})

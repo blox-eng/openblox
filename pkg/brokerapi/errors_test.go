@@ -20,6 +20,8 @@ func TestKindOfRoundTrips(t *testing.T) {
 		{fmt.Errorf("%w: nope", sandbox.ErrTimeout), KindTimeout, http.StatusGatewayTimeout},
 		{fmt.Errorf("%w: nope", sandbox.ErrRuntimeUnavailable), KindRuntimeUnavailable, http.StatusServiceUnavailable},
 		{fmt.Errorf("%w: nope", sandbox.ErrImageUnavailable), KindImageUnavailable, http.StatusServiceUnavailable},
+		{fmt.Errorf("%w: nope", ErrProfileConflict), KindConflict, http.StatusConflict},
+		{fmt.Errorf("%w: nope", ErrAtCapacity), KindAtCapacity, http.StatusTooManyRequests},
 		{errors.New("boom"), KindInternal, http.StatusInternalServerError},
 	}
 	for _, c := range cases {
@@ -46,6 +48,10 @@ func sentinelFor(t *testing.T, kind string) error {
 		return sandbox.ErrRuntimeUnavailable
 	case KindImageUnavailable:
 		return sandbox.ErrImageUnavailable
+	case KindConflict:
+		return ErrProfileConflict
+	case KindAtCapacity:
+		return ErrAtCapacity
 	default:
 		return ErrInternal
 	}

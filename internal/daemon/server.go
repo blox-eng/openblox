@@ -27,6 +27,7 @@ type Backend interface {
 type Server struct {
 	backend Backend
 	cfg     *Config
+	cap     capacity
 }
 
 // New returns a Server. It does not listen; see Listen and Handler.
