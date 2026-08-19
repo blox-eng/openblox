@@ -330,6 +330,15 @@ listen:
     key_file: /k
     client_ca_file: /ca
 `, "allowed_client_cns"},
+		"empty allowed_client_cns entry": {`
+listen:
+  address: "127.0.0.1:9443"
+  tls:
+    cert_file: /c
+    key_file: /k
+    client_ca_file: /ca
+    allowed_client_cns: [""]
+`, "empty name"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

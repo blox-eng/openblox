@@ -172,6 +172,15 @@ func (l *ListenConfig) validate() error {
 	case len(l.TLS.AllowedClientCNs) == 0:
 		return fmt.Errorf("%w: listen.tls.allowed_client_cns is empty; the CA alone must not be the access control list", sandbox.ErrInvalid)
 	}
+	// An empty entry is not an empty list, and a dangling YAML list item makes
+	// one easily. It would admit every certificate the CA signs that carries
+	// no common name at all — the second gate silently degraded back into the
+	// first, which is the exact failure the allowlist exists to prevent.
+	for _, cn := range l.TLS.AllowedClientCNs {
+		if cn == "" {
+			return fmt.Errorf("%w: listen.tls.allowed_client_cns contains an empty name; it would admit every certificate the CA signs without a common name", sandbox.ErrInvalid)
+		}
+	}
 	return nil
 }
 
