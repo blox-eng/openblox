@@ -153,7 +153,9 @@ resolves the path fresh on every connection and picks up the new socket.
 
 **The socket group is the entire access-control list.** There is no token and no TLS —
 a Unix socket is a kernel object with no wire to intercept, and mTLS would add a CA,
-issuance and rotation for no real gain here. Two different groups do two different jobs
+issuance and rotation for no real gain here. That calculus only holds while caller and
+daemon share a host; see [Remote transport](#remote-transport) below for the network
+case, where a CA is unavoidable and buys something real. Two different groups do two different jobs
 here, and they are easy to conflate: `socket_group` in the daemon's own config file
 (`deploy/openbloxd.example.yaml`) names the group that may reach the socket — the
 daemon itself creates the socket `0660` and chowns it to that group in `Listen`
@@ -183,6 +185,109 @@ openbloxd does not act on it today, but the identity is there to key a future pe
 audit trail or profile-to-identity binding off of. Under user-namespace remapping,
 that's the *remapped* uid — the one the kernel sees on the socket, not the uid the
 process believes it's running as inside its container.
+
+## Remote transport
+
+openbloxd serves a Unix socket by default, and that remains the recommended
+arrangement wherever the caller and the daemon share a host. The optional
+`listen` block (`internal/daemon/config.go`) adds a network listener so the
+daemon can run on a machine of its own — because gVisor contains escape, not
+contention, and sandboxes otherwise compete for CPU, memory bandwidth and disk
+IO with whatever runs beside them.
+
+A network listener requires mutual TLS. There is no unauthenticated network
+mode and there is no way to configure one: every field of `listen.tls` is
+required, and `Load` refuses to start the daemon if any is missing.
+
+### What authenticates a caller
+
+Two gates, both during the TLS handshake in `ListenTLS`
+(`internal/daemon/listener_tls.go`):
+
+1. The client certificate must chain to `listen.tls.client_ca_file`.
+2. Its Common Name must appear in `listen.tls.allowed_client_cns`.
+
+The second is not redundant. With verification alone **the CA is the entire
+access control list** — any certificate it ever signs is accepted. Use a CA
+that signs nothing else, and treat the allowlist as the thing that makes a
+mis-issuance survivable.
+
+### What this does not protect against
+
+**mTLS authenticates the process holding the key, not its intent.** A caller
+that has been compromised is a *valid* caller: it holds the certificate.
+Authentication contributes nothing to that case.
+
+That case is the one openbloxd exists for, and the credential is not what
+answers it. The guarantee is the same one the rest of this page describes: a
+compromised caller gains sandboxes bounded by a profile, never the host, and
+that bound is enforced daemon-side and unreachable from a request — see
+[Profiles are the whole policy surface](#deploying-the-policy-broker-openbloxd)
+above. Nothing about arriving over the network relaxes that. `openbloxd`
+serves both listeners from the one handler
+(`cmd/openbloxd/main.go`), and `internal/daemon/policy_test.go` asserts every
+hostile request body rejected over both transports rather than leaving that
+as a convention.
+
+**A private network is a real mitigation and a poor sole control.** Running
+the daemon on a VPN or a private subnet meaningfully reduces exposure and is
+recommended. It is not a substitute for the credential: it authenticates a
+route rather than a peer, and it fails open the moment anything else on that
+network is compromised.
+
+**Confidentiality in transit is TLS's alone.** Exec output, file reads and
+dialled streams all cross the network now, with no application-layer
+encryption beneath.
+
+### Revocation
+
+There is none beyond configuration. Go checks neither CRL nor OCSP by default,
+and openbloxd runs neither.
+
+**To revoke a caller: remove its Common Name from `allowed_client_cns` and
+restart the daemon.** `RuntimeDirectoryPreserve=yes` in the shipped unit
+(`deploy/openbloxd.service`) is what makes that restart transparent to
+clients mounting the socket directory, as described above.
+
+This is a limitation, not a design feature. It is workable for a small,
+enumerated set of callers and would not be workable at a scale where
+certificates are issued automatically — anything issuing certificates
+automatically should revoke them automatically too.
+
+### Issuing the certificates
+
+openbloxd is not a certificate authority and does not want to be. A minimal
+private CA, sufficient for one daemon and one caller (bash/zsh — `<(...)`
+process substitution is not POSIX `sh`):
+
+```bash
+# A CA that signs nothing else.
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
+  -keyout ca.key -out ca.crt -subj "/CN=openbloxd-ca"
+
+# The daemon's certificate. The SAN must match the address callers dial.
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -keyout server.key -out server.csr -subj "/CN=openbloxd"
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -days 825 -out server.crt \
+  -extfile <(printf "subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth")
+
+# One caller. The CN is what goes in allowed_client_cns.
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -keyout client.key -out client.csr -subj "/CN=sandbox-caller"
+openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -days 825 -out client.crt \
+  -extfile <(printf "extendedKeyUsage=clientAuth")
+```
+
+Keep `ca.key` off both machines once the certificates are issued.
+
+`server.crt`/`server.key` and `ca.crt` stay on the daemon's host, as
+`cert_file`, `key_file` and `client_ca_file`; the CN `sandbox-caller` is what
+goes in `allowed_client_cns`. `client.crt`/`client.key` are the only pair
+that leaves the daemon's host at all — they travel to the caller, which
+configures its own TLS client with them and with `ca.crt` to verify the
+server.
 
 ## Reporting a vulnerability
 

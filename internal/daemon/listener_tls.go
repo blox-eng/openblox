@@ -1,0 +1,121 @@
+package daemon
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+
+	"github.com/blox-eng/openblox/pkg/sandbox"
+)
+
+// ListenTLS creates the network listener the daemon serves on.
+//
+// Two gates, both during the handshake. The client certificate must chain to
+// the configured CA, and its Common Name must be on the allowlist.
+//
+// The second gate is not belt-and-braces. With verification alone the CA is
+// the whole access control list, so a CA shared with anything else silently
+// grants sandbox creation to whatever that other thing issued. The allowlist
+// is what makes a CA mis-issuance survivable, and what makes the set of
+// permitted callers something an operator can read in one place.
+//
+// Rejecting during the handshake rather than in a middleware means a caller
+// that fails either gate never reaches the request router at all.
+func ListenTLS(cfg ListenConfig) (net.Listener, error) {
+	tlsCfg, err := tlsConfigFor(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	ln, err := net.Listen("tcp", cfg.Address)
+	if err != nil {
+		return nil, fmt.Errorf("listen on %q: %w", cfg.Address, err)
+	}
+	return tls.NewListener(ln, tlsCfg), nil
+}
+
+// tlsConfigFor builds the tls.Config carrying both of ListenTLS's gates. It
+// is its own function, not inlined into ListenTLS, so a test can assert
+// directly on which callback the allowlist got wired into — VerifyConnection
+// versus VerifyPeerCertificate — without standing up a listener. That
+// assertion is what pins the production wiring: it is the only thing in this
+// package that would fail if someone "simplified" the allowlist check back
+// onto VerifyPeerCertificate, which every other test here would still pass
+// against, since they only ever exercise checkAllowedClientCN's own
+// correctness or a fresh (non-resumed) handshake.
+func tlsConfigFor(cfg ListenConfig) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load server keypair: %w", err)
+	}
+
+	caPEM, err := os.ReadFile(cfg.TLS.ClientCAFile) //nolint:gosec // the operator's own config path, not request input
+	if err != nil {
+		return nil, fmt.Errorf("read client CA %q: %w", cfg.TLS.ClientCAFile, err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("%w: client CA %q contains no certificate", sandbox.ErrInvalid, cfg.TLS.ClientCAFile)
+	}
+
+	allowed := make(map[string]struct{}, len(cfg.TLS.AllowedClientCNs))
+	for _, cn := range cfg.TLS.AllowedClientCNs {
+		allowed[cn] = struct{}{}
+	}
+
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    pool,
+		// The allowlist gate lives in VerifyConnection, not
+		// VerifyPeerCertificate. Go does not invoke VerifyPeerCertificate on
+		// a resumed TLS session — the peer's certificates are restored from
+		// cached session state and the custom callback is skipped — so a
+		// check that lived only there would stop being enforced, per
+		// connection, for as long as a caller's session ticket stayed valid,
+		// even after its CN was removed from the allowlist. VerifyConnection
+		// runs on every connection, fresh or resumed (see
+		// handshake_server_tls13.go, both the PSK-resumption branch and the
+		// full-handshake branch call it), and on resumption
+		// ConnectionState.VerifiedChains is repopulated from the session
+		// ticket's saved chains rather than left empty, so the same check
+		// applies without change.
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			return checkAllowedClientCN(allowed, cs.VerifiedChains)
+		},
+	}, nil
+}
+
+// checkAllowedClientCN is the daemon's second gate: even a certificate that
+// chains to the configured CA is rejected unless its leaf Common Name is on
+// the allowlist. It is a free function, not a closure inlined at the call
+// site, so ListenTLS has exactly one place to wire it in and a test can
+// exercise it directly without standing up a TLS listener.
+func checkAllowedClientCN(allowed map[string]struct{}, chains [][]*x509.Certificate) error {
+	// Unreachable today via ListenTLS's own config: RequireAndVerifyClientCert
+	// guarantees chains is populated before either VerifyConnection or
+	// VerifyPeerCertificate runs. The guard exists so a future downgrade to
+	// RequireAnyClientCert (which permits an unverified certificate, leaving
+	// chains empty) fails loudly as a rejection instead of panicking on
+	// chains[0][0] — a panic net/http's conn.serve recovers and silently
+	// swallows.
+	if len(chains) == 0 || len(chains[0]) == 0 {
+		return errors.New("no verified client certificate chain")
+	}
+	// RequireAndVerifyClientCert has already built and verified a chain by
+	// the time this runs, so chains[0][0] is the leaf.
+	cn := chains[0][0].Subject.CommonName
+	if _, ok := allowed[cn]; !ok {
+		// Logged because the client only sees a TLS alert, and an operator
+		// debugging a rejected caller has nothing else to go on.
+		slog.Warn("rejected client certificate: common name is not allowed",
+			slog.String("common_name", cn))
+		return fmt.Errorf("client certificate common name %q is not allowed", cn)
+	}
+	return nil
+}

@@ -22,10 +22,9 @@ func (c *Client) DialPort(ctx context.Context, name string, port int) (net.Conn,
 		return nil, fmt.Errorf("%w: port %d is out of range", sandbox.ErrInvalid, port)
 	}
 
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "unix", c.socket)
+	conn, err := c.dial(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("dial openbloxd: %w", err)
+		return nil, fmt.Errorf("dial openbloxd (%s): %w", c.target, err)
 	}
 
 	// ctx stops covering the connection the moment DialContext returns: the

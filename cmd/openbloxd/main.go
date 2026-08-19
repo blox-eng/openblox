@@ -78,9 +78,39 @@ func run(configPath string) error {
 	}
 	defer func() { _ = backend.Close() }()
 
-	ln, err := daemon.Listen(cfg.Socket, cfg.SocketGroup)
-	if err != nil {
-		return err
+	// One handler, two listeners. There is no second route table that could
+	// drift from the first, which is what makes "policy is unreachable
+	// regardless of transport" a property of the design rather than a rule
+	// somebody has to remember.
+	var lns []net.Listener
+	if cfg.Socket != "" {
+		ln, err := daemon.Listen(cfg.Socket, cfg.SocketGroup)
+		if err != nil {
+			return err
+		}
+		lns = append(lns, ln)
+	}
+	if cfg.Listen != nil {
+		if cfg.Listen.IsWildcardHost() {
+			// Legitimate for a daemon whose network namespace is already the
+			// boundary, and a serious mistake otherwise. The difference is
+			// invisible in the config file, so say it out loud at boot.
+			slog.Warn("listen.address binds every interface; the daemon is reachable from any network this host is on",
+				slog.String("address", cfg.Listen.Address))
+		}
+		ln, err := daemon.ListenTLS(*cfg.Listen)
+		if err != nil {
+			// Nothing has been handed to a server yet, so this is the only
+			// chance to close what's already open: leaving the socket listener
+			// alive here means its fd outlives us without net's unlink-on-close
+			// ever running, so the socket file survives the process — a down
+			// daemon would then answer ECONNREFUSED instead of ENOENT.
+			for _, l := range lns {
+				_ = l.Close()
+			}
+			return err
+		}
+		lns = append(lns, ln)
 	}
 
 	srv := daemon.New(backend, cfg)
@@ -98,21 +128,34 @@ func run(configPath string) error {
 	// or a long-lived dialled stream. It closes a real Slowloris hole (a peer
 	// that trickles headers forever) on the socket that holds the Docker
 	// connection, even though that peer is local.
-	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	httpSrv := &http.Server{Handler: daemon.WithCaller(srv.Handler()), ReadHeaderTimeout: 10 * time.Second}
 
-	slog.Info("openbloxd listening", slog.String("socket", cfg.Socket), slog.Int("profiles", len(cfg.Profiles)))
-	return serve(ctx, httpSrv, ln)
+	socket := "off"
+	if cfg.Socket != "" {
+		socket = cfg.Socket
+	}
+	network := "off"
+	if cfg.Listen != nil {
+		network = cfg.Listen.Address
+	}
+	slog.Info("openbloxd listening",
+		slog.String("socket", socket),
+		slog.String("network", network),
+		slog.Int("profiles", len(cfg.Profiles)))
+	return serve(ctx, httpSrv, lns...)
 }
 
-// serve runs httpSrv on ln until ctx is cancelled or Serve fails on its own.
+// serve runs httpSrv on lns until ctx is cancelled or a Serve call fails on its own.
 //
 // A Serve failure with no signal must return promptly rather than wait on
 // ctx.Done(), which may never fire: Restart=on-failure in the unit only
 // triggers if the process actually exits, and a process that hangs after
 // Serve dies looks "active (running)" to systemd while accepting nothing.
-func serve(ctx context.Context, httpSrv *http.Server, ln net.Listener) error {
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- httpSrv.Serve(ln) }()
+func serve(ctx context.Context, httpSrv *http.Server, lns ...net.Listener) error {
+	serveErr := make(chan error, len(lns))
+	for _, ln := range lns {
+		go func() { serveErr <- httpSrv.Serve(ln) }()
+	}
 
 	select {
 	case err := <-serveErr:
@@ -138,8 +181,14 @@ func serve(ctx context.Context, httpSrv *http.Server, ln net.Listener) error {
 		slog.Warn("openbloxd: graceful shutdown did not complete in time", slog.Any("error", err))
 	}
 
-	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("serve: %w", err)
+	// Shutdown closes every listener, so each Serve returns. Drain them all:
+	// leaving one undrained would leak its goroutine, and returning on the
+	// first would hide a real failure behind another listener's ErrServerClosed.
+	var firstErr error
+	for range lns {
+		if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) && firstErr == nil {
+			firstErr = fmt.Errorf("serve: %w", err)
+		}
 	}
-	return nil
+	return firstErr
 }
