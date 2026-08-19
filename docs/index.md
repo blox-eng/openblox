@@ -39,6 +39,29 @@ kernel with the host.
 openblox takes the third option: a substrate small enough to read in an afternoon, that
 you run yourself, with isolation supplied by gVisor rather than by hope.
 
+## Where this sits
+
+openblox is the layer *below* a sandbox platform, not a smaller one.
+
+```
+  your scheduler, your tenancy, your API    ← yours to build, if you ever need it
+  ──────────────────────────────────────
+  openblox                                  ← isolation, done correctly
+  ──────────────────────────────────────
+  Docker + gVisor                           ← the boundary itself
+```
+
+!!! quote "The rule"
+    **How a sandbox is isolated is openblox's problem.
+    Which sandbox runs where is yours.**
+
+Egress, capabilities, filesystem, resource caps, lifetime, runtime: openblox's.
+Placement, queueing, tenancy, metering, snapshots: not openblox's, and not planned.
+Build those on top when something actually asks for them. That is what a lower layer
+is for, and it is why there is no control plane to adopt first.
+
+The comparison is `libvirt`, not OpenStack.
+
 ## What you get
 
 <div class="grid cards" markdown>
@@ -72,6 +95,9 @@ you run yourself, with isolation supplied by gVisor rather than by hope.
 - **Not a snapshot/fork/resume engine.** Stop and re-create from a baked image.
 - **Not a substitute for a threat model.** Read the [security model](security.md) and
   decide whether its guarantees match your workload.
+
+The first two are the rule above, applied: they are placement, not isolation. They
+are not gaps waiting to be filled.
 
 ## Next
 

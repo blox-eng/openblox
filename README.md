@@ -59,6 +59,30 @@ openblox takes the third option: a substrate small enough to read in an
 afternoon, that you run yourself, with isolation supplied by gVisor rather than
 by hope.
 
+## Where this sits
+
+openblox is the layer *below* a sandbox platform, not a smaller one.
+
+```
+  your scheduler, your tenancy, your API    ← yours to build, if you ever need it
+  ──────────────────────────────────────
+  openblox                                  ← isolation, done correctly
+  ──────────────────────────────────────
+  Docker + gVisor                           ← the boundary itself
+```
+
+One rule decides what belongs here:
+
+> **How a sandbox is isolated is openblox's problem.
+> Which sandbox runs where is yours.**
+
+Egress, capabilities, filesystem, resource caps, lifetime, runtime: openblox's.
+Placement, queueing, tenancy, metering, snapshots: not openblox's, and not
+planned. Build those on top when something actually asks for them. That is what
+a lower layer is for, and it is why there is no control plane to adopt first.
+
+The comparison is `libvirt`, not OpenStack.
+
 ## Secure by default
 
 The zero value of every option is the safe one. A sandbox created with no
@@ -81,6 +105,16 @@ If the host cannot provide the requested isolation, `Create` fails with
 sandbox that is quietly less isolated than you asked for is worse than no
 sandbox, because you keep trusting it.
 
+**Two levels of the same guarantee.** In the library, *your* code chooses: the
+defaults are safe, and every relaxation is explicit and greppable at the call
+site. Through [`openbloxd`](https://openblox.sh/security/#deploying-the-policy-broker-openbloxd)
+the choice stops being the caller's at all — profiles live in the daemon's
+config file and no request can reach them. A caller names a profile. It cannot
+name an image, a runtime, a user, an egress policy, or a resource cap.
+
+That is the difference between weakening being **visible** and weakening being
+**unreachable**, and it is the whole reason the daemon exists.
+
 ## What you get
 
 | | |
@@ -93,13 +127,18 @@ sandbox, because you keep trusting it.
 
 ## What it is not
 
+The first three follow from the rule above — they are placement, not isolation.
+The fourth is a trade made on purpose.
+
 - **Not multi-tenant.** No organizations, auth, billing, or metering. Tenancy is
   the caller's concern.
 - **Not a fleet.** One host, one daemon.
 - **No snapshot, fork, or pause/resume.** Stop and re-create from a baked image.
 - **Not the fastest.** Correctness and containment over cold-start latency.
 
-Those are deliberate. See [ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning.
+None of these are gaps waiting to be filled. They are the boundary that keeps
+openblox small enough to be worth reading, and requests to cross it get declined
+on that basis. See [ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning.
 
 ## Install
 
