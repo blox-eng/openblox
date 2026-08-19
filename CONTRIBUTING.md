@@ -1,5 +1,22 @@
 # Contributing
 
+## Scope
+
+Read this before proposing a feature. One rule decides what belongs in openblox:
+
+> **How a sandbox is isolated is openblox's problem.
+> Which sandbox runs where is yours.**
+
+Isolation is in scope: runtimes, egress policy, filesystem, users, capabilities,
+resource caps, lifetime bounds. Placement is not: scheduling, multi-node, tenancy,
+metering, snapshot/resume, an API server, a database.
+
+openblox is the layer below a sandbox platform. Anything on the placement side is
+something you can build on top, and keeping it out is what keeps this small enough
+to audit. A PR that crosses the rule will be declined on that basis, however good
+it is — so please open an issue before writing one. [ARCHITECTURE.md](ARCHITECTURE.md)
+has the reasoning.
+
 ## Setup
 
 ```bash
