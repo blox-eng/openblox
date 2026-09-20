@@ -204,6 +204,11 @@ jobs:
             docker run --rm --platform "$platform" --entrypoint /bin/sh "$ref" -c \
               'command -v bash && command -v python3 && command -v nc && [ "$(id -u)" -ne 0 ]'
             echo "contract holds for $ref on $platform"
+            # The local image store keys by digest, and an index digest can hold
+            # only one platform's manifest at a time: pulling the second over
+            # the first fails with "cannot overwrite digest" (exit 125) before
+            # the check ever runs. Drop it so the next platform pulls clean.
+            docker rmi -f "$ref" >/dev/null 2>&1 || true
           done
           gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-image.yml"
