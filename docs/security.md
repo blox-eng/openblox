@@ -142,7 +142,7 @@ it from. Each release attaches the binary for `amd64` and `arm64`, alongside the
 unit and an example config:
 
 ```sh
-VERSION=v0.6.0; ARCH=amd64     # pin a version; do not install "latest"
+VERSION=v0.6.1; ARCH=amd64     # pin a version; do not install "latest"
 gh release download "$VERSION" -R blox-eng/openblox \
   -p "openbloxd-linux-$ARCH" -p "openbloxd-linux-$ARCH.sha256"
 sha256sum -c "openbloxd-linux-$ARCH.sha256"        # integrity
