@@ -77,6 +77,15 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ### Added
 
+- `openbloxd`: an optional `listen` block for a mutual-TLS network listener,
+  alongside (or instead of) the Unix socket — `socket` is now optional once
+  `listen` is set. Every caller presents a client certificate; only Common
+  Names on the configured allowlist are accepted, so a shared or mis-issued
+  CA cannot silently grant access. The caller's verified CN is recorded on
+  every request the daemon handles.
+- `pkg/brokerclient`: `NewRemote` and `TLSFiles`, so a caller can reach
+  `openbloxd` over the network with the same `sandbox.Backend` contract the
+  Unix-socket client satisfies.
 - `Result.Truncated`, `sandbox.MaxOutputBytes`, and `truncated` on the
   `openbloxd` exec response.
 - `Spec.Validate`, called by `Create` before anything is created.
