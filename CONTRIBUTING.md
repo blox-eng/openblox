@@ -25,9 +25,16 @@ registered as the `runsc` runtime:
 make test-integration
 ```
 
-CI compiles them on every PR but cannot run them — hosted runners are not
-gVisor-capable. A test that no longer builds is a test nobody runs, so keep them
-compiling even when you cannot execute them locally.
+CI runs them on every PR, on hosted amd64 and arm64 runners with gVisor
+installed — including the adversarial suite in
+`pkg/docker/adversarial_integration_test.go`. If you cannot run them locally,
+at least keep them compiling (`go vet -tags integration ./...`) and let CI run
+them.
+
+A security-relevant change should come with an adversarial test that fails
+without it. Phrase the attack so the test fails closed: print a marker only when
+the attack *succeeds*, and assert the marker is absent — so a probe that silently
+fails to run can never read as containment.
 
 ## Conventional commits
 
@@ -49,7 +56,8 @@ A `feat` bumps the minor version, a `fix` the patch. Breaking changes need a
 - One concern per PR.
 - Tests for behaviour you add or change.
 - Godoc on every exported symbol — this is a library, and the doc comment is the API.
-- CI must be green: vet, lint, race tests, integration compile.
+- CI must be green: vet, lint, race tests, vulnerability scan, and the gVisor
+  integration suites.
 
 ## Changing security defaults
 

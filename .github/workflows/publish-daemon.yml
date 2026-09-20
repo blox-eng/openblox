@@ -13,6 +13,12 @@ name: Publish daemon
 # conventional commits once CI is green on main, and both publish jobs hang off
 # that tag rather than off each other.
 #
+# Each binary ships with a CycloneDX SBOM read from the binary's own build info,
+# and with GitHub artifact attestations for both: Sigstore-signed statements,
+# tied to this workflow and the tagged commit, that a user checks with
+# `gh attestation verify`. The build is reproducible — see RELEASING.md — so
+# the attestation is not the only way to tie a binary to its source.
+#
 # Static (CGO_ENABLED=0) on purpose. The daemon runs on whatever host an operator
 # installs it on, and a binary that depends on the build host's libc is a support
 # burden for no benefit — it links nothing that needs cgo.
@@ -20,22 +26,20 @@ name: Publish daemon
 on:
   push:
     tags: ['v*']
+  # To re-publish a tag whose run failed, dispatch ON the tag:
+  #   gh workflow run publish-daemon.yml --ref v1.2.3
+  # Not on main with the tag as an input: the attestations record the ref and
+  # commit the run was started from, so a run started on main would sign a
+  # statement naming main as the source of a binary built from the tag.
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Existing release tag to build and attach binaries to (e.g. v0.3.0).'
-        type: string
-        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  # Key on the tag being published, not the triggering ref. Every
-  # workflow_dispatch shares refs/heads/main, so github.ref would serialize
-  # unrelated tags while letting a dispatch and a tag push for the SAME tag run
-  # concurrently — exactly backwards.
-  group: publish-daemon-${{ inputs.tag || github.ref_name }}
+  # One run per tag: a dispatch and a tag push for the same tag must not race
+  # each other's uploads.
+  group: publish-daemon-${{ github.ref_name }}
   cancel-in-progress: false
 
 defaults:
@@ -51,6 +55,12 @@ jobs:
       # Uploading a release asset is a write to the release, which lives under
       # contents. Scoped to this job rather than the workflow.
       contents: write
+      # Signing an attestation: an OIDC token proves to Sigstore that THIS
+      # workflow, at THIS commit, made the statement.
+      id-token: write
+      attestations: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     strategy:
       # Never cancel the sibling arch. A cancelled leg leaves the release holding
       # one architecture and silently missing the other — the same
@@ -60,34 +70,33 @@ jobs:
       matrix:
         goarch: [amd64, arm64]
     steps:
-      # Resolve the ref BEFORE checkout, and refuse anything that is not a
-      # plain semver tag. A workflow_dispatch input is controlled by anyone who
-      # can trigger this workflow, and it would otherwise flow straight into
-      # `ref:` — where a crafted value selects what code this job builds and
-      # signs, while the job holds contents: write.
+      # Refuse anything but a plain semver tag BEFORE checkout. This job builds,
+      # signs and uploads with contents: write, so a dispatch on a branch must
+      # not get as far as building it.
       - name: Resolve and validate the tag
         id: tag
         env:
-          INPUT_TAG: ${{ inputs.tag }}
-          PUSH_TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          TAG="${INPUT_TAG:-$PUSH_TAG}"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "refusing to build from ref '$TAG': not a semver release tag" >&2
+          if [ "$REF_TYPE" != tag ] || [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "refusing to build from $REF_TYPE '$TAG': dispatch this workflow on a semver release tag" >&2
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ steps.tag.outputs.tag }}
           persist-credentials: false
 
+      # No cache: a release artifact must not depend on cache contents written
+      # by earlier runs. Modules are verified against go.sum either way; the
+      # build cache's compiled objects would not be.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
 
       - name: Build
         env:
@@ -133,6 +142,35 @@ jobs:
             file "openbloxd-linux-${GOARCH}" | grep -q 'ARM aarch64'
           fi
 
+      # From the binary, not the module graph: the SBOM lists what was linked
+      # in, not what go.mod happens to require. Pinned through the Go checksum
+      # database like any module; v1.10.0 is the newest that builds with
+      # go.mod's Go.
+      - name: Generate the SBOM
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # env -u, not a `GOARCH= ` prefix: the tool itself must build for the
+          # runner, while the arguments below still name the target arch. The
+          # prefix form expresses that too, but reads as the mistake shellcheck
+          # takes it for (SC2097/SC2098).
+          env -u GOARCH go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0 \
+            bin -json -version "$TAG" \
+            -output "openbloxd-linux-${GOARCH}.cdx.json" "openbloxd-linux-${GOARCH}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: openbloxd-linux-${{ matrix.goarch }}
+
+      - name: Attest the SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: openbloxd-linux-${{ matrix.goarch }}
+          sbom-path: openbloxd-linux-${{ matrix.goarch }}.cdx.json
+
       - name: Attach to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -168,6 +206,7 @@ jobs:
           gh release upload "$TAG" \
             "openbloxd-linux-${GOARCH}" \
             "openbloxd-linux-${GOARCH}.sha256" \
+            "openbloxd-linux-${GOARCH}.cdx.json" \
             --clobber
 
       - name: Attach the unit and example config
@@ -184,3 +223,51 @@ jobs:
             deploy/openbloxd.service \
             deploy/openbloxd.example.yaml \
             --clobber
+
+  # Verify the release the way a user would, from the published assets, on a
+  # machine of each architecture — so the arm64 binary is executed, not merely
+  # inspected, and the verification commands in the docs are proven to work
+  # against a real release on every tag.
+  verify:
+    name: Verify published openbloxd (${{ matrix.goarch }})
+    needs: publish
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # gh attestation verify reads the attestations API with this token. Without
+      # it the verification fails after the assets are already public — the one
+      # moment the check exists to cover.
+      attestations: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            runner: ubuntu-latest
+          - goarch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Download, verify, and run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.publish.outputs.tag }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          bin="openbloxd-linux-${GOARCH}"
+          gh release download "$TAG" -p "$bin" -p "$bin.sha256" -p "$bin.cdx.json"
+          sha256sum -c "$bin.sha256"
+          gh attestation verify "$bin" --repo "$GH_REPO" \
+            --signer-workflow "$GH_REPO/.github/workflows/publish-daemon.yml" \
+            --source-ref "refs/tags/$TAG"
+          gh attestation verify "$bin" --repo "$GH_REPO" \
+            --predicate-type https://cyclonedx.org/bom
+          chmod +x "$bin"
+          got="$(./"$bin" --version)"
+          if [ "$got" != "$TAG" ]; then
+            echo "version stamp is '$got', expected '$TAG'" >&2
+            exit 1
+          fi
+          echo "verified $bin $TAG on $(uname -m)"

@@ -1,7 +1,9 @@
 # Security model
 
 openblox exists to run code you do not trust. This page states what it isolates, how,
-and — as importantly — what it does **not** claim.
+and — as importantly — what it does **not** claim. The complete threat model, with the
+test behind each claim, is
+[THREAT_MODEL.md](https://github.com/blox-eng/openblox/blob/main/THREAT_MODEL.md).
 
 ## The threat model
 
@@ -47,12 +49,19 @@ with nothing to configure and nothing to forget.
 ### Least privilege inside
 
 Non-root by default (`1000:1000`), read-only root filesystem, and only `/tmp`,
-`/workspace` and openblox's own state directory writable — all mounted `noexec`.
+`/workspace` and openblox's own state directory writable — all mounted `noexec` and
+`nosuid`. `Create` refuses root, group 0, user *names* and a bare uid: each would be resolved
+inside the untrusted image, which could map it to uid 0 or group 0.
 
 ### Bounded resources
 
-CPU, memory, scratch disk and PID count are capped per sandbox. Scratch is tmpfs and is
-drawn from the memory budget, so a sandbox cannot fill the host's disk by writing files.
+CPU, memory, scratch disk and PID count are capped per sandbox, and swap is disabled so
+the memory cap is not doubled by the host's swap. Scratch is tmpfs and is drawn from the
+memory budget, so a sandbox cannot fill the host's disk by writing files.
+
+Output is bounded too: `Exec` keeps at most 16 MiB of each of stdout and stderr and sets
+`Result.Truncated` when it discards the rest. Without that, a sandbox printing until its
+timeout could exhaust the memory of the caller — or of `openbloxd`.
 
 Those bound one sandbox. `openbloxd` additionally bounds how many exist at once, per
 profile, through `max_sandboxes` — without it a caller looping on create exhausts host
@@ -63,7 +72,14 @@ observed resident before the kill lands.
 
 ### Bounded lifetime
 
-Every sandbox has an idle timeout and a max age, enforced by a reaper.
+A command that exceeds its timeout, or whose caller cancels or disconnects, is killed
+together with its process group. That stops runaway code; it does not stop code that is
+trying to survive — a process that calls `setsid` leaves the group. Such a process stays
+inside the sandbox's CPU and process caps until the sandbox ends, so `Destroy` a sandbox
+when work must certainly stop.
+
+Every sandbox has an idle timeout and a max age, enforced by a reaper — which, in
+direct library mode, runs only if your process calls `Reap`.
 
 The idle timestamp lives on a root-owned tmpfs while the sandbox runs unprivileged, and
 is written by the host's clock through a privileged exec. **The guest can read it but
@@ -81,7 +97,12 @@ cooperation from the guest at all.
   and slow its neighbours. Capacity planning is yours.
 - **Preview revocation is best-effort.** Verification is a local HMAC check consulting no
   shared state, so a revocation only holds in the process that recorded it. Expiry is
-  the guarantee — keep TTLs short.
+  the bound that always holds — keep TTLs short.
+- **Preview content is the sandbox's.** Serve previews from an origin that shares no
+  cookies or storage with your application, or a malicious preview page can act as
+  your application in the user's browser.
+- **No tenant boundary between callers.** Everyone who can reach `openbloxd`'s socket
+  can reach every sandbox by name.
 
 ## The caller is the weak link
 
@@ -121,14 +142,21 @@ it from. Each release attaches the binary for `amd64` and `arm64`, alongside the
 unit and an example config:
 
 ```sh
-# Pick your arch; verify before trusting it.
-curl -fsSLO https://github.com/blox-eng/openblox/releases/latest/download/openbloxd-linux-amd64
-curl -fsSLO https://github.com/blox-eng/openblox/releases/latest/download/openbloxd-linux-amd64.sha256
-sha256sum -c openbloxd-linux-amd64.sha256
+VERSION=v0.6.1; ARCH=amd64     # pin a version; do not install "latest"
+gh release download "$VERSION" -R blox-eng/openblox \
+  -p "openbloxd-linux-$ARCH" -p "openbloxd-linux-$ARCH.sha256"
+sha256sum -c "openbloxd-linux-$ARCH.sha256"        # integrity
+gh attestation verify "openbloxd-linux-$ARCH" -R blox-eng/openblox \
+  --signer-workflow blox-eng/openblox/.github/workflows/publish-daemon.yml \
+  --source-ref "refs/tags/$VERSION"                 # built by this repo's CI, from this tag
 
-sudo install -m 0755 openbloxd-linux-amd64 /usr/local/bin/openbloxd
+sudo install -m 0755 "openbloxd-linux-$ARCH" /usr/local/bin/openbloxd
 openbloxd --version      # must print the release tag, not "dev"
 ```
+
+A checksum downloaded from the same place as the binary proves only that the download
+was not corrupted; the attestation proves who built it and from what. The full
+procedure is in [Running in production](production.md#deploying-openbloxd).
 
 `--version` reporting `dev` means the binary is somebody's local build rather than a
 release asset. That distinction matters because the client and daemon have to agree on

@@ -16,8 +16,19 @@ cd "$(dirname "$0")/../.."
 ALLOWLIST=".github/vuln-allowlist.txt"
 
 echo "running govulncheck..."
-# Do not let a non-zero exit kill the script; the findings are the output we want.
-json="$(govulncheck -format json ./... 2>/dev/null || true)"
+# In JSON mode govulncheck exits 0 whether or not it finds anything, so a
+# non-zero exit means the scan itself failed — no network, a build error, a
+# broken install. That must fail the gate: an empty result from a scan that
+# never ran would otherwise read as "no vulnerabilities".
+if ! json="$(govulncheck -format json ./...)"; then
+  echo "FAIL: govulncheck did not complete" >&2
+  exit 1
+fi
+# And prove it actually scanned: a completed run always reports its config.
+if [[ "$json" != *'"scanner_version"'* ]]; then
+  echo "FAIL: govulncheck produced no scan result" >&2
+  exit 1
+fi
 
 reachable="$(printf '%s' "$json" | python3 -c '
 import sys, json

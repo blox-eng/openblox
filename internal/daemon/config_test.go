@@ -372,3 +372,33 @@ func TestIsWildcardHost(t *testing.T) {
 		}
 	}
 }
+
+// A profile is the daemon's whole policy, so the library's refusal to run as
+// root must hold here at load time too — not first at create, on a live host.
+func TestLoadRejectsRootUser(t *testing.T) {
+	path := writeConfig(t, `
+socket: /tmp/s.sock
+profiles:
+  p:
+    image: example.com/i@sha256:abc
+    user: "0:0"
+`)
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "root") {
+		t.Fatalf("Load = %v, want a refusal naming root", err)
+	}
+}
+
+// time.NewTicker panics on a non-positive interval, so this must be a load
+// error rather than a crash after the socket is already up.
+func TestLoadRejectsNegativeReapInterval(t *testing.T) {
+	path := writeConfig(t, `
+socket: /tmp/s.sock
+reap_interval: -1m
+profiles:
+  p:
+    image: example.com/i@sha256:abc
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected an error for a negative reap_interval")
+	}
+}

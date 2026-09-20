@@ -125,6 +125,9 @@ func TestContainmentIsAppliedToTheRuntime(t *testing.T) {
 	if hc.Memory != int64(sandbox.DefaultMemoryBytes) {
 		t.Errorf("Memory = %d, want %d", hc.Memory, int64(sandbox.DefaultMemoryBytes))
 	}
+	if hc.MemorySwap != hc.Memory {
+		t.Errorf("MemorySwap = %d, want %d — swap would double the memory bound", hc.MemorySwap, hc.Memory)
+	}
 	if hc.NanoCPUs != int64(sandbox.DefaultCPUs*1e9) {
 		t.Errorf("NanoCPUs = %d, want %d", hc.NanoCPUs, int64(sandbox.DefaultCPUs*1e9))
 	}

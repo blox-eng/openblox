@@ -1,6 +1,6 @@
 # openblox
 
-Secure sandboxes for running untrusted, AI-generated code.
+Self-hosted sandboxes for running untrusted, AI-generated code under gVisor.
 
 openblox is a small Go library over Docker and [gVisor](https://gvisor.dev). There is no
 control plane, no database, and no scheduler — a sandbox is a container, and the
@@ -15,7 +15,8 @@ defer backend.Close()
 
 // No options: no network, non-root, read-only rootfs, capped CPU/memory/PIDs,
 // gVisor runtime, reaped when idle.
-sb, err := backend.Create(ctx, "session-1")
+sb, err := backend.Create(ctx, "session-1",
+    sandbox.WithImage("ghcr.io/blox-eng/openblox-sandbox:latest"))
 if err != nil {
     return err
 }
@@ -48,10 +49,10 @@ you run yourself, with isolation supplied by gVisor rather than by hope.
     No API server, no database, no runner service, no key. `docker ps` shows your
     sandboxes; `docker rm` destroys them.
 
--   **Safe by default**
+-   **Restrictive by default**
 
-    The zero value of every option is the safe one. No network, non-root, read-only
-    rootfs, bounded CPU, memory and PIDs.
+    The zero value of every option is the most restrictive one. No network, non-root,
+    read-only rootfs, bounded CPU, memory and PIDs.
 
 -   **Previews without a network**
 
@@ -76,5 +77,6 @@ you run yourself, with isolation supplied by gVisor rather than by hope.
 ## Next
 
 - [Quick start](getting-started.md) — install, prerequisites, a working example
+- [Production](production.md) — `openbloxd`, compatibility, upgrades, troubleshooting
 - [Security model](security.md) — what is isolated, how, and what is *not* claimed
 - [The image contract](image.md) — what an image must provide

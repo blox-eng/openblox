@@ -100,6 +100,15 @@ func TestBuildConfigAppliesContainment(t *testing.T) {
 	if hostCfg.PidsLimit == nil {
 		t.Error("PidsLimit unset")
 	}
+	if hostCfg.MemorySwap != hostCfg.Memory {
+		t.Errorf("MemorySwap = %d, want %d (= Memory, no swap)", hostCfg.MemorySwap, hostCfg.Memory)
+	}
+	if len(hostCfg.Binds) != 0 || len(hostCfg.Mounts) != 0 {
+		t.Errorf("sandbox has host mounts %v %v; nothing from the host may be mounted in", hostCfg.Binds, hostCfg.Mounts)
+	}
+	if hostCfg.Privileged {
+		t.Error("sandbox is privileged")
+	}
 	if cfg.Labels[labelName] != "session-1" {
 		t.Errorf("name label = %q, want session-1", cfg.Labels[labelName])
 	}
