@@ -9,11 +9,13 @@ name: Publish image
 #
 # The digest is printed to the job summary. Pin THAT downstream, not the tag: an
 # image is the sandbox's entire userland, and whoever controls the registry can
-# repoint a tag.
+# repoint a tag. A version tag is never overwritten by this workflow — a fix is
+# a new version — and every pushed digest carries a Sigstore-signed build
+# provenance attestation (`gh attestation verify oci://...`) plus the SBOM and
+# provenance buildx attaches to the image index.
 #
 # Every ${{ }} value is passed through env rather than interpolated into a run:
-# script — workflow_dispatch inputs are attacker-controlled by anyone who can
-# trigger the workflow, and this job holds a registry-write token.
+# script, because this job holds a registry-write token.
 
 on:
   pull_request:
@@ -26,16 +28,15 @@ on:
       - 'image/**'
       - '.github/workflows/publish-image.yml'
     tags: ['v*']
+  # Dispatch on a release tag to publish that version (a run that failed on
+  # the tag push), or on main to refresh :edge:
+  #   gh workflow run publish-image.yml --ref v1.2.3
+  # The attestation records the ref the run started from, so the version is
+  # taken from that ref rather than from an input that could disagree with it.
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Version tag to publish (e.g. 0.1.0). Defaults to :edge.'
-        type: string
-        required: false
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: publish-image
@@ -54,8 +55,12 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -82,37 +87,44 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      # Signing the provenance attestation: an OIDC token proves to Sigstore
+      # that THIS workflow, at THIS commit, built the digest.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      # Resolve the version BEFORE anything can push. A tag push publishes that
-      # version plus :latest; anything else is :edge. A dispatch override is
-      # validated, because it reaches a shell holding a write token.
+      # Resolve the version BEFORE anything can push. A release tag publishes
+      # that version plus :latest; main publishes :edge; any other ref is
+      # refused, so a branch cannot publish under either name.
       - name: Resolve tags
         id: meta
         env:
-          TAG_INPUT: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
           set -euo pipefail
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/openblox-sandbox"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
-          version=""
-          if [ -n "$TAG_INPUT" ]; then
-            version="${TAG_INPUT#v}"
-          elif [ "$REF_TYPE" = tag ]; then
+          if [ "$REF_TYPE" = tag ]; then
             version="${REF_NAME#v}"
-          fi
-
-          if [ -n "$version" ]; then
             if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-              echo "refusing version '$version': expected semver like 1.2.3" >&2
+              echo "refusing tag '$REF_NAME': expected semver like v1.2.3" >&2
               exit 1
             fi
+            echo "version=$version" >> "$GITHUB_OUTPUT"
             printf 'tags=%s:%s,%s:latest\n' "$image" "$version" "$image" >> "$GITHUB_OUTPUT"
-          else
+          elif [ "$REF_NAME" = main ]; then
             printf 'tags=%s:edge\n' "$image" >> "$GITHUB_OUTPUT"
+          else
+            echo "refusing to publish from $REF_TYPE '$REF_NAME': only release tags and main publish" >&2
+            exit 1
           fi
 
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
@@ -124,6 +136,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A published version is immutable: users pin it, and a rebuild would give
+      # the same name to different bytes. A fix ships as a new version.
+      - name: Refuse to overwrite a published version
+        if: steps.meta.outputs.version != ''
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
+            echo "$IMAGE:$VERSION is already published; refusing to overwrite it" >&2
+            exit 1
+          fi
 
       - name: Build and push
         id: push
@@ -138,22 +164,36 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           provenance: true
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # No layer cache: a published image must not depend on cache contents
+          # written by earlier runs.
+          no-cache: true
 
-      # Smoke-test the published image against the contract the Dockerfile
-      # asserts at build time. The build only proves it held on the BUILD
-      # platform; this proves the pushed manifest runs.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.meta.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      # Smoke-test the published image, by digest, against the contract the
+      # Dockerfile asserts at build time — on BOTH platforms. The build only
+      # proves it held on the build platform; arm64 runs here under the QEMU
+      # set up above. Then verify the attestation the way a user would.
       - name: Verify the pushed image
         env:
-          TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ref="${TAGS%%,*}"
-          docker pull "$ref"
-          docker run --rm --entrypoint /bin/sh "$ref" -c \
-            'command -v bash && command -v python3 && command -v nc && [ "$(id -u)" -ne 0 ]'
-          echo "contract holds for $ref"
+          ref="$IMAGE@$DIGEST"
+          for platform in linux/amd64 linux/arm64; do
+            docker run --rm --platform "$platform" --entrypoint /bin/sh "$ref" -c \
+              'command -v bash && command -v python3 && command -v nc && [ "$(id -u)" -ne 0 ]'
+            echo "contract holds for $ref on $platform"
+          done
+          gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-image.yml"
 
       - name: Report the digest to pin
         env:

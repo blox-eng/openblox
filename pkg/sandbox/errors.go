@@ -14,8 +14,11 @@ var (
 	// ErrInvalid means the request was malformed and retrying will not help.
 	ErrInvalid = errors.New("invalid request")
 
-	// ErrTimeout means a command exceeded its deadline and was killed. The
-	// sandbox itself remains usable.
+	// ErrTimeout means a command exceeded its deadline. The backend kills the
+	// command and its process group, but a process that deliberately detaches
+	// (setsid, daemonizing) survives until the sandbox is reaped or destroyed.
+	// When the work must stop, Destroy the sandbox. The sandbox itself remains
+	// usable.
 	ErrTimeout = errors.New("timed out")
 
 	// ErrRuntimeUnavailable means the host cannot provide the required

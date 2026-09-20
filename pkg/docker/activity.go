@@ -35,7 +35,7 @@ func (s *dockerSandbox) touch(ctx context.Context) {
 		_, _ = s.exec(ctx, sandbox.Command{
 			Argv:    []string{"sh", "-c", `echo "$0" > ` + lastUsedPath, time.Now().UTC().Format(time.RFC3339Nano)},
 			Timeout: touchTimeout,
-		}, rootUser)
+		}, rootUser, "")
 	}()
 }
 
@@ -43,7 +43,7 @@ func (s *dockerSandbox) touch(ctx context.Context) {
 // cannot be established — the sandbox is stopped, was never used, or predates
 // activity tracking. Callers fall back to the creation time.
 func (s *dockerSandbox) lastUsed(ctx context.Context) time.Time {
-	res, err := s.exec(ctx, sandbox.Command{Argv: []string{"cat", lastUsedPath}}, "")
+	res, err := s.exec(ctx, sandbox.Command{Argv: []string{"cat", lastUsedPath}}, "", "")
 	if err != nil || res.ExitCode != 0 {
 		return time.Time{}
 	}

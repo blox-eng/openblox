@@ -8,9 +8,15 @@ of it is checkable.
 **`/bin/sh`** — openblox replaces the entrypoint with its own idle loop, so the image
 needs a shell but no `CMD` or `ENTRYPOINT` of its own. One it declares is overridden.
 
-**A non-root default `USER`** — sandboxes must not run as uid 0. openblox performs its
-own privileged bookkeeping as root explicitly, per exec, rather than by running the
-workload that way.
+**A usable non-root user** — openblox runs the sandbox as the numeric `uid:gid` it is
+given (`1000:1000` by default) and refuses root, whatever the image's own `USER` says.
+That user needs to be able to write `/workspace` and `/tmp`, which openblox mounts as
+tmpfs. openblox performs its own privileged bookkeeping as root explicitly, per exec,
+rather than by running the workload that way.
+
+**Standard utilities** — `cat`, `mkdir`, `chmod`, `test` and `rm`, from coreutils or
+busybox. File transfer runs them inside the sandbox, and a command's process-group
+record is written and removed with them so a timeout can kill it.
 
 **`nc` or `python3`** — the preview relay reaches a port inside the sandbox over the
 exec channel, because the container has no network interface. It prefers `nc` and falls
@@ -54,7 +60,7 @@ running deployment.
 Layer on top of the reference image and the contract is satisfied for you:
 
 ```dockerfile
-FROM ghcr.io/blox-eng/openblox-sandbox:latest
+FROM ghcr.io/blox-eng/openblox-sandbox:0.6.0@sha256:...   # pin the digest; see above
 USER root
 RUN pip install --no-cache-dir pandas
 USER sandbox
@@ -64,8 +70,9 @@ Starting from something else is fine too — assert the contract at build time s
 missing piece is a failed build rather than a broken preview in production:
 
 ```dockerfile
-RUN command -v sh && command -v python3 && command -v nc
-USER myuser
+RUN command -v sh && command -v python3 && command -v nc \
+    && command -v cat && command -v mkdir && command -v chmod && command -v rm
+USER 1000:1000
 ```
 
 ## Things that trip people up

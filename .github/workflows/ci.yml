@@ -87,6 +87,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -98,9 +100,14 @@ jobs:
       # vulnerability with no published fix — the check goes permanently red and
       # people learn to ignore it. Known-unfixable findings live in
       # .github/vuln-allowlist.txt with a reason, rather than being suppressed.
+      #
+      # Pinned rather than @latest, like every other tool here: the scanner is
+      # part of the gate, and a gate that changes under an unchanged commit is
+      # not reproducible. The vulnerability DATABASE is still live, which is
+      # the point. v1.7.0 is the newest release that builds with go.mod's Go.
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           .github/scripts/vulncheck.sh
 
   integration-build:
@@ -131,11 +138,23 @@ jobs:
   # standard hosted runner can register runsc. That also keeps the suite off a
   # self-hosted runner, which for a public repo would mean executing a stranger's
   # PR on our own hardware.
+  #
+  # Both architectures run the whole suite natively — adversarial cases included
+  # — because a release ships binaries and an image for each. The amd64 leg keeps
+  # the job name branch protection already requires.
   integration:
-    name: Integration Tests (gVisor)
-    runs-on: ubuntu-latest
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
     needs: lint
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Integration Tests (gVisor)
+            runner: ubuntu-latest
+          - name: Integration Tests (gVisor, arm64)
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

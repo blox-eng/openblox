@@ -51,9 +51,10 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, brokerapi.ExecResponse{
-		Stdout:   res.Stdout,
-		Stderr:   res.Stderr,
-		ExitCode: res.ExitCode,
+		Stdout:    res.Stdout,
+		Stderr:    res.Stderr,
+		ExitCode:  res.ExitCode,
+		Truncated: res.Truncated,
 	})
 }
 

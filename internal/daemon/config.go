@@ -79,6 +79,9 @@ func (c *Config) validate() error {
 	if len(c.Profiles) == 0 {
 		return fmt.Errorf("%w: no profiles configured; the daemon would accept nothing", sandbox.ErrInvalid)
 	}
+	if c.ReapInterval < 0 {
+		return fmt.Errorf("%w: reap_interval %s is negative", sandbox.ErrInvalid, c.ReapInterval)
+	}
 	if c.ReapInterval == 0 {
 		c.ReapInterval = time.Minute
 	}
@@ -171,7 +174,7 @@ func (p Profile) validate(name string) error {
 		return fmt.Errorf("%w: profile %q has default_timeout %s above max_timeout %s, so every command is clamped below its own default",
 			sandbox.ErrInvalid, name, p.DefaultTimeout, p.MaxTimeout)
 	}
-	if err := sandbox.NewSpec(p.Options()...).Resources.Validate(); err != nil {
+	if err := sandbox.NewSpec(p.Options()...).Validate(); err != nil {
 		return fmt.Errorf("profile %q: %w", name, err)
 	}
 	return nil

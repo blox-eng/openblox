@@ -1,0 +1,259 @@
+# Releasing
+
+Releases are cut by CI from `main`. Nobody builds, tags, signs or uploads
+anything from their own machine, and a release cannot be produced from code that
+has not passed the full test suite.
+
+```
+pull request ─► CI: conventional commits · go vet · golangci-lint (gofmt,
+                    goimports, gosec, …) · unit tests with -race ·
+                    govulncheck · gVisor integration + adversarial suites
+                    on amd64 and arm64 · CodeQL · image build (if image/ changed)
+     │
+   merge (squash, required checks green)
+     │
+main ─► CI again on the merge commit
+     │
+     └─► release.yml   (CI green on that exact commit)
+            next version from conventional commits
+            tag vX.Y.Z + GitHub release with generated notes
+                 │
+                 ├─► publish-daemon.yml   openbloxd linux/amd64 + linux/arm64
+                 │      static, reproducible build · CycloneDX SBOM ·
+                 │      signed provenance + SBOM attestations · sha256 ·
+                 │      attached to the release · then downloaded, verified
+                 │      and executed on native amd64 and arm64 runners
+                 │
+                 └─► publish-image.yml    sandbox image linux/amd64 + linux/arm64
+                        ghcr.io/blox-eng/openblox-sandbox:X.Y.Z (+ :latest)
+                        buildx SBOM + provenance in the index · signed
+                        provenance attestation · both platforms smoke-tested
+```
+
+## 1. Preparing a release
+
+There is no release branch and no version file. To release, merge to `main`:
+
+1. Every user-visible change adds a line under `## [Unreleased]` in
+   [CHANGELOG.md](CHANGELOG.md), in the same PR, under `Added`, `Changed`, `Fixed`,
+   `Security` or `Breaking`.
+2. The PR title is a Conventional Commit. It becomes the squash commit, and the
+   squash commit decides the version.
+
+## 2. How the version is chosen
+
+`release.yml` runs [go-semantic-release](https://github.com/go-semantic-release/semantic-release)
+over the commits since the last tag:
+
+| Commit | While on `0.x` | From `1.0.0` |
+|---|---|---|
+| `fix:` | patch | patch |
+| `feat:` | minor | minor |
+| `feat!:` / `BREAKING CHANGE:` footer | minor | major |
+| `docs:`, `ci:`, `test:`, `chore:`, … | no release | no release |
+
+`1.0.0` is a deliberate decision, not something a commit triggers.
+
+## 3. Required checks
+
+`main` is protected by a ruleset: changes land only through a squash-merged pull
+request with these checks green — `Conventional Commits Check`, `Lint`, `Test`,
+`Integration Tests (compile only)` and `Integration Tests (gVisor)`. Maintainers
+should also require `Vulnerabilities`, `Integration Tests (gVisor, arm64)` and
+`CodeQL Analyze` once each has a green run on `main`.
+
+## 4. How the release is tagged
+
+`release.yml` starts when CI completes on `main`. It refuses to run unless:
+
+- CI passed, and it was a **push** to this repository (a pull request from a fork's
+  `main` branch also completes a CI run named `main`), and
+- the commit CI verified is still the tip of `main`. If something merged while CI
+  ran, that newer commit's own CI run releases both.
+
+The version is computed with a read-only token. The tag and release are then created
+by `gh release create --target <verified sha>` using `RELEASE_TOKEN`, a
+fine-grained PAT with `Contents: write` on this repository only. A PAT is needed
+because tags pushed with the built-in token do not start other workflows. The
+third-party semantic-release binary never sees it.
+
+`v*` tags are protected by a ruleset: they cannot be moved or deleted.
+
+## 5. How artifacts are built
+
+**`openbloxd`** (`publish-daemon.yml`): one static binary per architecture, built
+on the tag with the Go version pinned in `go.mod`:
+
+```sh
+CGO_ENABLED=0 GOOS=linux GOARCH=<arch> go build -trimpath \
+  -ldflags "-X main.version=<tag>" -o openbloxd-linux-<arch> ./cmd/openbloxd
+```
+
+Attached to the release: the two binaries, a `.sha256` and a CycloneDX SBOM
+(`.cdx.json`) for each, the systemd unit, and the example config.
+
+**Sandbox image** (`publish-image.yml`): `image/Dockerfile`, built for
+`linux/amd64` and `linux/arm64` with buildx. The base image is pinned by digest.
+
+## 6. How signatures are generated
+
+With [GitHub artifact attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations):
+the workflow obtains a short-lived OIDC identity, Sigstore issues a certificate
+for it, and the attestation is signed and recorded in Sigstore's public
+transparency log. There are no long-lived signing keys to manage or leak.
+
+Each attestation binds an artifact's digest to the repository, the workflow file,
+the ref (`refs/tags/vX.Y.Z`) and the commit it was built from. Produced per release:
+
+- `openbloxd-linux-{amd64,arm64}`: SLSA build provenance, and a CycloneDX SBOM
+  attestation.
+- the sandbox image index digest: SLSA build provenance, also pushed to the registry.
+
+## 7. How images are published
+
+| Tag | Moves? | Use it for |
+|---|---|---|
+| `X.Y.Z` | never — the workflow refuses to overwrite a published version | production, **pinned by digest** |
+| `latest` | every release | quick starts and tutorials only |
+| `edge` | every change to `image/` on `main` | testing unreleased changes |
+
+The digest is printed in the publish job's summary.
+
+## 8. How release notes are generated
+
+The GitHub release notes are generated from the Conventional Commit subjects since
+the previous tag. [CHANGELOG.md](CHANGELOG.md) is the curated, engineer-facing
+record: after a release, a maintainer renames `[Unreleased]` to the new version and
+date in a `docs:` PR (this does not trigger another release).
+
+## Verifying a release
+
+What follows needs the [GitHub CLI](https://cli.github.com/) (`gh`), and for images,
+Docker with buildx. These are the same commands the publish workflows run against
+every release.
+
+```sh
+VERSION=v0.6.0   # the release you are installing
+ARCH=amd64       # or arm64
+
+gh release download "$VERSION" -R blox-eng/openblox \
+  -p "openbloxd-linux-$ARCH" -p "openbloxd-linux-$ARCH.sha256" -p "openbloxd-linux-$ARCH.cdx.json"
+
+# Integrity: the file is the one the release lists.
+sha256sum -c "openbloxd-linux-$ARCH.sha256"
+
+# Authenticity and provenance: this repository's publish workflow built it,
+# from this tag.
+gh attestation verify "openbloxd-linux-$ARCH" -R blox-eng/openblox \
+  --signer-workflow blox-eng/openblox/.github/workflows/publish-daemon.yml \
+  --source-ref "refs/tags/$VERSION"
+
+# The SBOM is attested too.
+gh attestation verify "openbloxd-linux-$ARCH" -R blox-eng/openblox \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+The sandbox image:
+
+```sh
+IMAGE=ghcr.io/blox-eng/openblox-sandbox
+DIGEST=$(docker buildx imagetools inspect "$IMAGE:${VERSION#v}" --format '{{json .Manifest}}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+
+gh attestation verify "oci://$IMAGE@$DIGEST" -R blox-eng/openblox \
+  --signer-workflow blox-eng/openblox/.github/workflows/publish-image.yml
+
+# SBOM (SPDX) and buildx provenance, per platform; the provenance's
+# vcs:revision is the commit the image was built from.
+docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .SBOM}}'
+docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Provenance}}'
+```
+
+Then pin `"$IMAGE@$DIGEST"` in your `openbloxd` profiles.
+
+Releases up to and including `v0.5.0` predate attestations: verify those binaries by
+checksum and by reproducing them (below).
+
+### Reproducing the `openbloxd` binaries
+
+The binaries are reproducible: a clean clone of the tag, built with the Go version in
+`go.mod` and the command in §5, gives byte-identical files. That was checked against
+the published `v0.5.0` assets, for both architectures, on a different machine from the
+one that built them:
+
+```sh
+git clone --depth 1 --branch "$VERSION" https://github.com/blox-eng/openblox.git
+cd openblox
+export GOTOOLCHAIN="go$(awk '/^go /{print $2}' go.mod)"   # the exact Go the release used
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+  -ldflags "-X main.version=$VERSION" -o openbloxd-linux-amd64 ./cmd/openbloxd
+sha256sum openbloxd-linux-amd64   # compare with the release's .sha256
+```
+
+`GOTOOLCHAIN` matters: a different Go version produces a different binary, and `go`
+only switches toolchains automatically when yours is *older* than `go.mod`'s. Both
+release binaries are cross-compiled on an amd64 host; reproduction has been checked
+on amd64 hosts only.
+
+**The sandbox image is not bit-for-bit reproducible.** Its base is pinned by digest,
+but `apt-get` installs the current Debian package versions at build time. Its
+provenance is established by the signed attestation and the recorded `vcs:revision`,
+not by rebuilding.
+
+## Re-running a failed publish
+
+If a publish workflow failed on a tag, dispatch it **on the tag**, so the attestation
+records the tag as its source:
+
+```sh
+gh workflow run publish-daemon.yml --ref v0.6.0 -R blox-eng/openblox
+gh workflow run publish-image.yml  --ref v0.6.0 -R blox-eng/openblox
+```
+
+`publish-image.yml` refuses if that image version already exists. A half-published
+image is fixed with a new patch release, never by overwriting.
+
+## Rolling back a bad release
+
+Tags and published image versions are immutable, so a release is never deleted or
+replaced — it is superseded:
+
+1. Fix forward with a `fix:` commit. It releases the next patch version, which moves
+   `latest`.
+2. Edit the bad GitHub release's notes to say what is wrong and which version to use
+   instead.
+3. For the Go module, add a `retract` directive to `go.mod` in the fix, so
+   `go get` stops selecting the bad version:
+
+   ```
+   retract v0.6.0 // <what is wrong with it>
+   ```
+
+4. Operators roll back by re-pinning the previous `openbloxd` binary and image digest.
+   Sandboxes and their labels carry no version state, so no migration is needed in
+   either direction.
+
+## Security releases
+
+A vulnerability reported privately (see [SECURITY.md](SECURITY.md)) is fixed in a
+[private fork of the security advisory](https://docs.github.com/code-security/security-advisories/working-with-repository-security-advisories/collaborating-in-a-temporary-private-fork-to-resolve-a-repository-security-vulnerability),
+not in a public PR. Then:
+
+1. The fix is a `fix:` commit with a `Security` entry in the changelog. It merges
+   through the normal checks and releases through the normal pipeline — there is no
+   separate, less tested path.
+2. The advisory is published once the release's artifacts are verified, with a CVE
+   where one applies, naming the fixed version.
+3. If the vulnerability is in the sandbox image's userland, the new image version is
+   what the advisory points to; `openbloxd` users re-pin its digest.
+
+## Credentials
+
+| Secret | Scope | Used by |
+|---|---|---|
+| `RELEASE_TOKEN` | fine-grained PAT, this repository, `Contents: write` | the final step of `release.yml` only |
+| `GITHUB_TOKEN` | per-job, least privilege, declared in each workflow | everything else |
+
+No secret is available to pull-request workflows beyond the built-in read-only
+token. `RELEASE_TOKEN` expires by design; when it does, the release step fails
+loudly. Rotate it, then re-run the failed `Release` workflow run.

@@ -123,7 +123,7 @@ func (b *Backend) Create(ctx context.Context, name string, opts ...sandbox.Creat
 		return nil, fmt.Errorf("%w: sandbox name is empty", sandbox.ErrInvalid)
 	}
 	spec := sandbox.NewSpec(opts...)
-	if err := spec.Resources.Validate(); err != nil {
+	if err := spec.Validate(); err != nil {
 		return nil, err
 	}
 	if spec.Image == "" {
@@ -131,7 +131,16 @@ func (b *Backend) Create(ctx context.Context, name string, opts ...sandbox.Creat
 	}
 
 	if sb, err := b.Open(ctx, name); err == nil {
-		return sb, nil
+		if !b.halted(ctx, sb.Info().ID) {
+			return sb, nil
+		}
+		// A halted sandbox — stopped by Stop, or by its own guest killing PID 1
+		// — is replaced rather than restarted. Every writable path is tmpfs, so
+		// a restart would preserve nothing but the policy it was created under,
+		// which may be older and weaker than the one asked for now.
+		if err := b.Destroy(ctx, name); err != nil {
+			return nil, err
+		}
 	} else if !errors.Is(err, sandbox.ErrNotFound) {
 		return nil, err
 	}
@@ -221,6 +230,17 @@ func (b *Backend) Destroy(ctx context.Context, name string) error {
 	return nil
 }
 
+// halted reports whether a container has exited and will not run again on its
+// own. "created" is deliberately excluded: that is a concurrent Create between
+// creating its container and starting it.
+func (b *Backend) halted(ctx context.Context, id string) bool {
+	inspect, err := b.cli.ContainerInspect(ctx, id)
+	if err != nil || inspect.State == nil {
+		return false
+	}
+	return inspect.State.Status == "exited" || inspect.State.Status == "dead"
+}
+
 // assertRuntime fails when the host cannot provide the requested isolation.
 //
 // This never falls back to the default runtime. A sandbox silently running on
@@ -281,9 +301,13 @@ func buildConfig(name string, spec sandbox.Spec) (*container.Config, *container.
 		SecurityOpt:    []string{"no-new-privileges"},
 		Tmpfs:          scratchMounts(spec.Resources.DiskBytes),
 		Resources: container.Resources{
-			NanoCPUs:  int64(spec.Resources.CPUs * 1e9),
-			Memory:    spec.Resources.MemoryBytes,
-			PidsLimit: pidsLimit(spec.Resources.MaxProcesses),
+			NanoCPUs: int64(spec.Resources.CPUs * 1e9),
+			Memory:   spec.Resources.MemoryBytes,
+			// Equal to Memory: no swap. Left unset, Docker grants swap equal to
+			// the memory limit on top of it, so a sandbox could push its whole
+			// budget again into host swap and disk I/O.
+			MemorySwap: spec.Resources.MemoryBytes,
+			PidsLimit:  pidsLimit(spec.Resources.MaxProcesses),
 		},
 		// Never restart. A sandbox that resurrects itself outlives the reaper.
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},

@@ -69,8 +69,10 @@ type Sandbox interface {
 	// Revoke invalidates a token returned by Expose before it expires.
 	Revoke(ctx context.Context, port int, token string) error
 
-	// Stop halts the sandbox without discarding it. A stopped sandbox can be
-	// reached again through [Backend.Create] with the same name.
+	// Stop halts the sandbox, freeing its CPU and memory. The sandbox's
+	// writable storage does not survive a stop. [Backend.Create] with the same
+	// name replaces a stopped sandbox with a fresh one, under the options
+	// passed to that call.
 	Stop(ctx context.Context) error
 }
 
@@ -85,8 +87,8 @@ type State string
 const (
 	// StateRunning means the sandbox is up and accepting commands.
 	StateRunning State = "running"
-	// StateStopped means the sandbox exists but is halted. It can be restarted
-	// through [Backend.Create] with the same name.
+	// StateStopped means the sandbox exists but is halted. [Backend.Create]
+	// with the same name replaces it with a fresh one.
 	StateStopped State = "stopped"
 	// StateError means the runtime reported a state openblox cannot act on. The
 	// sandbox should be destroyed rather than reused.
@@ -159,7 +161,18 @@ type Result struct {
 	Stdout   []byte
 	Stderr   []byte
 	ExitCode int
+	// Truncated reports that Stdout or Stderr reached MaxOutputBytes and the
+	// rest of that stream was discarded. The command still ran to completion.
+	Truncated bool
 }
+
+// MaxOutputBytes caps each of a command's output streams as held in memory.
+//
+// Output is attacker-controlled: without a cap, a guest printing in a loop until
+// its timeout grows the caller's heap — or openbloxd's, which every sandbox on
+// the host depends on — without bound. Use ReadFile for large results; it
+// streams.
+const MaxOutputBytes = 16 << 20 // 16 MiB
 
 // Preview is a signed, expiring route to a port inside a sandbox.
 type Preview struct {

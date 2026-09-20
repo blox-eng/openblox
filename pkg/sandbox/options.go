@@ -1,6 +1,10 @@
 package sandbox
 
-import "time"
+import (
+	"strconv"
+	"strings"
+	"time"
+)
 
 // EgressPolicy controls a sandbox's outbound network access.
 type EgressPolicy int
@@ -44,6 +48,40 @@ type Resources struct {
 	// MaxProcesses caps the process count. Without it a fork bomb inside the
 	// sandbox exhausts host PIDs regardless of CPU and memory limits.
 	MaxProcesses int
+}
+
+// Validate reports whether the spec can be created as asked. Backends call it
+// before creating anything, so an unsafe spec fails rather than being corrected.
+func (s Spec) Validate() error {
+	if err := validateUser(s.User); err != nil {
+		return err
+	}
+	return s.Resources.Validate()
+}
+
+// validateUser accepts only a numeric, non-root "uid:gid".
+//
+// Anything resolved inside the image is refused, because the image is exactly
+// the thing not trusted. A user name could map to uid 0. A bare uid is refused
+// too: Docker then takes the primary group, and supplementary groups, from the
+// image's /etc/passwd and /etc/group — which can place it in group 0. Group 0 is
+// refused for the same reason root is: it owns files the sandbox user should
+// not reach. IDs are capped at 2^31-1, as Docker's are.
+func validateUser(user string) error {
+	uid, gid, ok := strings.Cut(user, ":")
+	if !ok {
+		return newInvalidError("user %q: want numeric uid:gid; a bare uid takes its groups from the untrusted image", user)
+	}
+	for _, id := range []struct{ what, v string }{{"uid", uid}, {"gid", gid}} {
+		n, err := strconv.ParseUint(id.v, 10, 31)
+		if err != nil {
+			return newInvalidError("user %q: %s %q is not numeric; names resolve inside the untrusted image", user, id.what, id.v)
+		}
+		if n == 0 {
+			return newInvalidError("user %q: %s 0 is root; sandboxes must run unprivileged", user, id.what)
+		}
+	}
+	return nil
 }
 
 // Validate reports whether the bounds are internally consistent.
@@ -158,7 +196,8 @@ func WithRuntime(name string) CreateOption {
 	return func(s *Spec) { s.Runtime = name }
 }
 
-// WithUser sets the uid:gid the sandbox runs as. It must not be root.
+// WithUser sets the numeric "uid:gid" the sandbox runs as. Create refuses root
+// (uid or gid 0), user names and a bare uid; see [Spec.Validate].
 func WithUser(user string) CreateOption {
 	return func(s *Spec) { s.User = user }
 }

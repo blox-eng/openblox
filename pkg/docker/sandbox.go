@@ -3,6 +3,9 @@ package docker
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -52,7 +55,7 @@ func (s *dockerSandbox) resolveTimeout(requested time.Duration) time.Duration {
 
 // Exec runs a command to completion inside the sandbox.
 func (s *dockerSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result, error) {
-	res, err := s.exec(ctx, cmd, "")
+	res, err := s.exec(ctx, cmd, "", newPIDFile())
 	s.touch(ctx)
 	return res, err
 }
@@ -60,7 +63,12 @@ func (s *dockerSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.
 // exec runs a command as user, without recording activity. Everything that
 // records activity goes through Exec; this exists so touch itself does not
 // recurse.
-func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user string) (sandbox.Result, error) {
+//
+// A non-empty pidFile wraps the command so a timeout kills it; see killGroup.
+// Only the caller's own commands pass one: openblox's bookkeeping is never
+// killed on the word of a guest-writable file, and the kill is not itself
+// wrapped.
+func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user, pidFile string) (sandbox.Result, error) {
 	if err := cmd.Validate(); err != nil {
 		return sandbox.Result{}, err
 	}
@@ -68,6 +76,10 @@ func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user stri
 	timeout := s.resolveTimeout(cmd.Timeout)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	if pidFile != "" {
+		cmd.Argv = append([]string{"sh", "-c", groupScript, "sh", pidFile}, cmd.Argv...)
+	}
 
 	execID, attached, err := s.attach(ctx, cmd, user)
 	if err != nil {
@@ -79,12 +91,13 @@ func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user stri
 		pumpStdin(attached, cmd.Stdin)
 	}
 
-	var stdout, stderr bytes.Buffer
+	stdout := &cappedBuffer{limit: sandbox.MaxOutputBytes}
+	stderr := &cappedBuffer{limit: sandbox.MaxOutputBytes}
 	copyDone := make(chan error, 1)
 	go func() {
 		// The attach stream is multiplexed unless a TTY was allocated; StdCopy
 		// splits it back into the two streams.
-		_, err := stdcopy.StdCopy(&stdout, &stderr, attached.Reader)
+		_, err := stdcopy.StdCopy(stdout, stderr, attached.Reader)
 		copyDone <- err
 	}()
 
@@ -100,6 +113,15 @@ func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user stri
 		// as long as the command itself.
 		attached.Close()
 		<-copyDone
+		// Closing the stream does not stop the command, and Docker has no call
+		// that kills an exec — so without this the command runs on, unobserved,
+		// until the sandbox is reaped.
+		if pidFile != "" {
+			s.killGroup(context.WithoutCancel(ctx), pidFile)
+		}
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return sandbox.Result{}, fmt.Errorf("command in %q: %w", s.info.Name, ctx.Err())
+		}
 		return sandbox.Result{}, fmt.Errorf("%w: command in %q exceeded %s", sandbox.ErrTimeout, s.info.Name, timeout)
 	}
 
@@ -115,10 +137,78 @@ func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user stri
 
 	// A non-zero exit is the command's result, not our error.
 	return sandbox.Result{
-		Stdout:   stdout.Bytes(),
-		Stderr:   stderr.Bytes(),
-		ExitCode: inspect.ExitCode,
+		Stdout:    stdout.buf.Bytes(),
+		Stderr:    stderr.buf.Bytes(),
+		ExitCode:  inspect.ExitCode,
+		Truncated: stdout.truncated || stderr.truncated,
 	}, nil
+}
+
+// groupScript records the process group a command runs in, then runs it.
+//
+// Under gVisor every exec starts a new session, so the wrapping shell is its own
+// process-group leader and $$ names the whole group: the command and anything it
+// starts, unless that deliberately calls setsid. (Under runc an exec does not
+// start a session, and killScript falls back to killing the wrapper alone.)
+//
+// The command runs in a child so the record can be removed when it finishes,
+// and its exit status is passed through unchanged. The child execs the command
+// rather than letting the shell run it: `exec` always runs an external program,
+// so argv[0] is never taken for a shell builtin (echo, kill, exit, test) and
+// behaves exactly as it would without the wrapper. $1 is the record, everything
+// after it the command, so no part of the command is parsed as shell syntax.
+const groupScript = `f="$1"; shift; echo $$ >"$f" 2>/dev/null; (exec "$@"); s=$?; rm -f "$f"; exit $s`
+
+// killScript kills the group recorded in $1. It runs as the sandbox user, so a
+// forged record can only make it signal the guest's own processes.
+const killScript = `read -r p <"$1" 2>/dev/null; rm -f "$1"; case "$p" in ""|*[!0-9]*|1) exit 0;; esac; kill -9 -"$p" 2>/dev/null || kill -9 "$p" 2>/dev/null; exit 0`
+
+// killTimeout bounds the kill itself, so a wedged sandbox cannot turn a timeout
+// into a hang.
+const killTimeout = 10 * time.Second
+
+// newPIDFile names a per-exec record on the scratch tmpfs. Random, so
+// concurrent execs never share one.
+func newPIDFile() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return "/tmp/.openblox-exec-" + hex.EncodeToString(b[:])
+}
+
+// killGroup kills a timed-out command and its process group.
+//
+// Best effort, and only against code that is not trying to survive: a process
+// that calls setsid, or a guest that fills /tmp so the record is never written,
+// outlives it. Those are bounded by the sandbox's CPU and process caps and its
+// lifetime, and ended by Destroy.
+func (s *dockerSandbox) killGroup(ctx context.Context, pidFile string) {
+	ctx, cancel := context.WithTimeout(ctx, killTimeout)
+	defer cancel()
+	_, _ = s.exec(ctx, sandbox.Command{
+		Argv:    []string{"sh", "-c", killScript, "sh", pidFile},
+		Timeout: killTimeout,
+	}, "", "")
+}
+
+// cappedBuffer keeps the first limit bytes written to it and discards the rest.
+//
+// It never reports an error for the excess: the stream is still drained, so the
+// guest is not blocked on a full pipe and the command finishes with its real
+// exit status. The buffer is a named field rather than embedded, so no promoted
+// method (ReadFrom, WriteString) can write around the cap.
+type cappedBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if room := b.limit - b.buf.Len(); len(p) > room {
+		b.truncated = true
+		_, _ = b.buf.Write(p[:max(room, 0)])
+		return len(p), nil
+	}
+	return b.buf.Write(p)
 }
 
 // attach starts an exec and hijacks its stream. user overrides the identity the

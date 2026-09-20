@@ -80,7 +80,9 @@ sandbox rather than a second one. That makes it safe to call per request without
 tracking what already exists.
 
 A non-zero `res.ExitCode` is the program failing, not an openblox error. `err` is
-reserved for openblox failing to run it at all.
+reserved for openblox failing to run it at all — including `sandbox.ErrTimeout`, after
+which the command has been killed. Each output stream is capped at 16 MiB;
+`res.Truncated` reports when output was discarded.
 
 !!! note "Argv, not a shell string"
     `Command.Argv` is passed directly to `exec`. Nothing in it is parsed as shell
@@ -140,8 +142,17 @@ p, err := sb.Expose(ctx, 8080, 10*time.Minute)
 removed, err := backend.Reap(ctx)   // destroys sandboxes past idle timeout or max age
 ```
 
-Call it from a ticker. It is safe to run concurrently with everything else, and safe to
-run from several processes at once.
+Call it from a ticker. **Nothing else enforces the idle timeout and max age in library
+mode** — without `Reap`, sandboxes live until you destroy them. It is safe to run
+concurrently with everything else, and from several processes at once. (`openbloxd`
+runs it for you.)
+
+## Next: production
+
+This page imports the library directly, so your process holds the Docker socket —
+root-equivalent on the host. Before running untrusted code for real, read
+[Running in production](production.md): it moves the socket into `openbloxd` and
+covers verification, compatibility and upgrades.
 
 ## Defaults
 

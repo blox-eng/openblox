@@ -13,7 +13,16 @@ name: Release
 # That makes the token this job pushes with load bearing — see the note on it
 # below. It also means a tag cut without those workflows firing is a release that
 # ships nothing, which is how v0.3.0 came to have no assets.
-on:
+#
+# The full test suite — lint, race, the gVisor integration and adversarial
+# suites — is not re-run here. It is the CI run this workflow is triggered BY,
+# on exactly the commit that gets tagged: the checks below refuse to tag
+# anything else.
+# workflow_run is flagged by zizmor as dangerous-triggers. It is safe here only
+# because the job acts solely on a push to this repository's main that CI
+# passed, on exactly the commit CI verified, and never checks out or runs
+# pull-request code — see its `if:` and first step. Keep it that way.
+on: # zizmor: ignore[dangerous-triggers]
   workflow_run:
     workflows: [CI]
     branches: [main]
@@ -21,7 +30,7 @@ on:
       - completed
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 permissions:
@@ -34,39 +43,89 @@ defaults:
 jobs:
   release:
     name: Create Release
-    # workflow_run fires regardless of the triggering run's result.
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # workflow_run fires for every CI run whose head branch is called "main" —
+    # including a pull request from a FORK's main branch, which runs this
+    # workflow in the base repository with its secrets. Release only from a push
+    # to this repository's main that CI passed.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Read-only on purpose. Every write on this job goes through RELEASE_TOKEN,
-    # and checkout runs with persist-credentials: false, so the built-in token
-    # has no consumer left — granting it write would only widen what a
-    # compromised third-party action could reach.
+    # Read-only on purpose. The one write — creating the tag and release — goes
+    # through RELEASE_TOKEN in a step of our own, and checkout runs with
+    # persist-credentials: false so the built-in token has no consumer left.
     permissions:
       contents: read
     steps:
+      # Tag only the commit CI verified. workflow_run checks out the tip of main
+      # at the time THIS workflow starts, which is a newer, unverified commit if
+      # anything merged while CI ran. That newer commit's own CI run releases it.
+      - name: Refuse a commit CI did not verify
+        id: verified
+        env:
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+          TIP_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$VERIFIED_SHA" != "$TIP_SHA" ]; then
+            echo "main moved on to $TIP_SHA while CI verified $VERIFIED_SHA; leaving the release to the newer run"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # No ref: the step above established that the default, github.sha, IS
+      # the verified commit, and this job never checks out anything else.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.verified.outputs.current == 'true'
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Create Release
+
+      # Compute the next version only. The action downloads the latest
+      # semantic-release binary and its plugins from a third-party registry at
+      # run time, unpinned, so it runs in dry mode holding nothing but this
+      # job's read-only token. It never sees RELEASE_TOKEN.
+      - name: Compute the next version
+        id: semrel
+        if: steps.verified.outputs.current == 'true'
         uses: go-semantic-release/action@2e9dc4247a6004f8377781bef4cb9dad273a741f # v1.24.1
         with:
-          changelog-file: CHANGELOG.md
+          dry: true
           allow-initial-development-versions: true
-          prepend: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # A PAT, not the built-in GITHUB_TOKEN: GitHub refuses to start a workflow
+      # for a ref pushed with GITHUB_TOKEN, so the tag this step creates would
+      # never reach publish-image.yml's `tags: ['v*']` trigger and every release
+      # would ship without its container image.
+      #
+      # RELEASE_TOKEN is a fine-grained PAT scoped to this repository with
+      # Contents: write — enough to create the tag and release, and nothing
+      # else. It expires; when it does this step fails outright rather than
+      # silently skipping the image.
+      #
+      # The version is re-validated before it reaches the tag, and the notes —
+      # built from commit messages, which anyone with a merged PR wrote — travel
+      # through a file, never through the shell.
+      - name: Tag and release the verified commit
+        if: steps.semrel.outputs.version != ''
         env:
-          # A PAT, not the built-in GITHUB_TOKEN: GitHub refuses to start a
-          # workflow for a ref pushed with GITHUB_TOKEN, so the tag this step
-          # creates would never reach publish-image.yml's `tags: ['v*']` trigger
-          # and every release would ship without its container image.
-          #
-          # RELEASE_TOKEN is a fine-grained PAT scoped to this repository with
-          # Contents: write — enough to push the tag, commit the changelog, and
-          # cut the release, and nothing else. It expires; when it does this job
-          # fails outright rather than silently skipping the image.
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.semrel.outputs.version }}
+          NOTES: ${{ steps.semrel.outputs.changelog }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "refusing version '$VERSION': not semver" >&2
+            exit 1
+          fi
+          printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
+          gh release create "v${VERSION}" \
+            --target "$SHA" \
+            --title "v${VERSION}" \
+            --notes-file "$RUNNER_TEMP/notes.md"
