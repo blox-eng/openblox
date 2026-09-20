@@ -298,6 +298,17 @@ listen:
     client_ca_file: /ca
     allowed_client_cns: ["sandbox-caller"]
 `, "host:port"},
+		// SplitHostPort accepts this and net.Listen would pick a free port at
+		// random, so the daemon would listen somewhere no caller can dial.
+		"address has no port": {`
+listen:
+  address: "127.0.0.1:"
+  tls:
+    cert_file: /c
+    key_file: /k
+    client_ca_file: /ca
+    allowed_client_cns: ["sandbox-caller"]
+`, "no port"},
 		"no cert_file": {`
 listen:
   address: "127.0.0.1:9443"

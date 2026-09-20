@@ -159,6 +159,11 @@ func serve(ctx context.Context, httpSrv *http.Server, lns ...net.Listener) error
 
 	select {
 	case err := <-serveErr:
+		// One listener failing leaves the others up. Close them: the unix
+		// listener unlinks its socket on close, and that unlink is what makes a
+		// dead daemon answer ENOENT rather than ECONNREFUSED — the same property
+		// the ListenTLS failure path above exists to preserve.
+		_ = httpSrv.Close()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("serve: %w", err)
 		}

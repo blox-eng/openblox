@@ -293,12 +293,15 @@ process substitution is not POSIX `sh`):
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
   -keyout ca.key -out ca.crt -subj "/CN=openbloxd-ca"
 
-# The daemon's certificate. The SAN must match the address callers dial.
+# The daemon's certificate. The SAN must match the address callers dial —
+# DNS:<daemon-hostname>, or IP:<daemon-address> when callers dial by address.
+# This whole section is about a daemon on a machine of its own, so a loopback
+# SAN here would be a certificate no remote caller can verify.
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
   -keyout server.key -out server.csr -subj "/CN=openbloxd"
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -days 825 -out server.crt \
-  -extfile <(printf "subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth")
+  -extfile <(printf "subjectAltName=DNS:openbloxd.internal.example\nextendedKeyUsage=serverAuth")
 
 # One caller. The CN is what goes in allowed_client_cns.
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \

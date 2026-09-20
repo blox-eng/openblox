@@ -162,8 +162,16 @@ func (l *ListenConfig) validate() error {
 	if l.Address == "" {
 		return fmt.Errorf("%w: listen.address is empty; a bind address has no default", sandbox.ErrInvalid)
 	}
-	if _, _, err := net.SplitHostPort(l.Address); err != nil {
+	_, port, err := net.SplitHostPort(l.Address)
+	if err != nil {
 		return fmt.Errorf("%w: listen.address %q is not host:port: %w", sandbox.ErrInvalid, l.Address, err)
+	}
+	// SplitHostPort accepts a trailing colon with no port, and net.Listen then
+	// picks a free one at random. The daemon would come up listening somewhere
+	// nobody configured and no caller could predict — a listener that exists but
+	// cannot be reached, which is worse than a refusal to start.
+	if port == "" {
+		return fmt.Errorf("%w: listen.address %q has no port; a port chosen at random is one no caller can dial", sandbox.ErrInvalid, l.Address)
 	}
 	switch {
 	case l.TLS.CertFile == "":
