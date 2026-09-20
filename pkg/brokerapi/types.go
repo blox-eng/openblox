@@ -50,6 +50,8 @@ type ExecResponse struct {
 	Stdout   []byte `json:"stdout"`
 	Stderr   []byte `json:"stderr"`
 	ExitCode int    `json:"exit_code"`
+	// Truncated mirrors sandbox.Result.Truncated.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // ProcessRequest starts a detached background process.

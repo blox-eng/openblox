@@ -128,6 +128,52 @@ func TestProxyForwardsAnAuthenticatedRequest(t *testing.T) {
 	}
 }
 
+// routedDialer is a set of sandboxes: each dial reaches a server that answers
+// with the name and port it was dialled for, over a connection that stays open
+// for keep-alive the way a real preview server's does.
+type routedDialer struct{}
+
+func (routedDialer) DialPort(_ context.Context, name string, port int) (net.Conn, error) {
+	client, server := net.Pipe()
+	answer := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, "%s:%d", name, port)
+	})
+	go http.Serve(newSingleConnListener(server), answer) //nolint:errcheck // the listener yields one conn then closes
+	return client, nil
+}
+
+// A pooled upstream connection is a connection to ONE sandbox port. Handing it
+// to a request authorised for a different one would serve sandbox A's content
+// to a holder of sandbox B's token.
+func TestProxyNeverReusesAConnectionAcrossRoutes(t *testing.T) {
+	s := testSigner(t)
+	h := NewHandler(routedDialer{}, s)
+
+	for _, target := range []struct {
+		name string
+		port int
+	}{
+		{"session-a", 3000},
+		{"session-b", 3000},
+		{"session-a", 4000},
+		{"session-a", 3000},
+	} {
+		token, err := s.Sign(target.name, target.port, time.Now().Add(time.Hour))
+		if err != nil {
+			t.Fatalf("Sign = %v", err)
+		}
+		resp := request(t, h, URL("", target.name, target.port), token)
+		var body bytes.Buffer
+		_, _ = body.ReadFrom(resp.Body)
+		_ = resp.Body.Close()
+
+		want := fmt.Sprintf("%s:%d", target.name, target.port)
+		if body.String() != want {
+			t.Fatalf("request for %s was answered by %q — an upstream connection was reused across sandboxes", want, body.String())
+		}
+	}
+}
+
 // The credential authorises the hop to the sandbox. Code inside the sandbox must
 // never see it, or it holds a key to its own front door.
 func TestProxyStripsTheCredentialBeforeForwarding(t *testing.T) {

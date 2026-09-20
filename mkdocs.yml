@@ -1,5 +1,5 @@
 site_name: openblox
-site_description: Secure sandboxes for running untrusted, AI-generated code. A small Go library over Docker and gVisor.
+site_description: Self-hosted sandboxes for running untrusted, AI-generated code under gVisor. A small Go library and daemon over Docker.
 site_url: https://openblox.sh
 repo_url: https://github.com/blox-eng/openblox
 repo_name: blox-eng/openblox
@@ -40,6 +40,7 @@ theme:
 nav:
   - Home: index.md
   - Quick start: getting-started.md
+  - Production: production.md
   - Security model: security.md
   - The image contract: image.md
   - Contributing: contributing.md
@@ -55,6 +56,7 @@ plugins:
           - index.md
         Usage:
           - getting-started.md
+          - production.md
           - image.md
         Security:
           - security.md

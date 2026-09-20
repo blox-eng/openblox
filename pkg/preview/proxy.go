@@ -2,6 +2,8 @@ package preview
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -48,8 +50,15 @@ type Handler struct {
 func NewHandler(dialer Dialer, signer *Signer) *Handler {
 	h := &Handler{dialer: dialer, signer: signer, revoked: map[string]time.Time{}}
 	h.proxy = &httputil.ReverseProxy{
-		Rewrite:   rewrite,
-		Transport: &http.Transport{DialContext: h.dial},
+		Rewrite: rewrite,
+		// Each idle connection is a relay process in a sandbox plus a Docker
+		// connection, and every (sandbox, port) has its own pool — so idle
+		// connections are bounded in number and in time.
+		Transport: &http.Transport{
+			DialContext:     h.dial,
+			MaxIdleConns:    64,
+			IdleConnTimeout: 30 * time.Second,
+		},
 		// Stream rather than buffer. A preview commonly carries server-sent
 		// events or a long-lived agent protocol, and buffering those means the
 		// client sees nothing until the response ends, which it never does.
@@ -121,22 +130,38 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.proxy.ServeHTTP(w, r)
 }
 
-// dial ignores the address net/http computed and reaches the sandbox named by
-// the request's own route. The address is a placeholder — there is no host to
-// resolve, because the sandbox has no network.
-func (h *Handler) dial(ctx context.Context, _, _ string) (net.Conn, error) {
+// dial reaches the sandbox named by the request's own route. There is no host
+// to resolve, because the sandbox has no network; the address net/http passes
+// is the route's pool key, and must match the route or the dial is refused.
+func (h *Handler) dial(ctx context.Context, _, addr string) (net.Conn, error) {
 	name, port, ok := routeFrom(ctx)
 	if !ok {
 		return nil, errors.New("preview: request reached the dialer without a route")
 	}
+	if want := net.JoinHostPort(upstreamHost(name, port), "80"); addr != want {
+		return nil, fmt.Errorf("preview: dial for %q does not match the authorised route", addr)
+	}
 	return h.dialer.DialPort(ctx, name, port)
+}
+
+// upstreamHost is the per-route host the transport pools connections under.
+//
+// net/http reuses an idle keep-alive connection for any later request to the
+// same host. Every route must therefore have a host of its own: a shared one
+// would hand a connection into sandbox A to a request authorised only for
+// sandbox B. The name is hashed because it is arbitrary caller text and a
+// hostname label is not.
+func upstreamHost(name string, port int) string {
+	sum := sha256.Sum256([]byte(name))
+	return fmt.Sprintf("%s-%d.sandbox.invalid", hex.EncodeToString(sum[:16]), port)
 }
 
 func rewrite(pr *httputil.ProxyRequest) {
 	pr.Out.URL.Scheme = "http"
-	// Every connection is dialled per-request into one sandbox, so the host is
-	// never used to route. It is set because net/http requires one.
-	pr.Out.URL.Host = "sandbox.invalid"
+	// The route was attached by ServeHTTP after the token was verified; see
+	// upstreamHost for why the host must be unique to it.
+	name, port, _ := routeFrom(pr.In.Context())
+	pr.Out.URL.Host = upstreamHost(name, port)
 	pr.Out.Host = "localhost"
 	// Do not forward X-Forwarded-For and friends: they would tell code in the
 	// sandbox the client's address, which is not its business.

@@ -14,14 +14,25 @@
 [![Go 1.25](https://img.shields.io/badge/go-1.25-00ADD8.svg)](https://go.dev/dl/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
-Run untrusted, AI-generated code on your own hardware. 2,000 lines of Go over
+Run untrusted, AI-generated code on your own hardware. Under 3,000 lines of Go over
 Docker and [gVisor](https://gvisor.dev) — no control plane, no database, no
 scheduler. A sandbox is a container, and the container is the state.
 
 [Docs](https://openblox.sh) · [Getting started](https://openblox.sh/getting-started/) ·
-[Architecture](ARCHITECTURE.md) · [Security](SECURITY.md) · [Sandbox image](image/README.md)
+[Production](https://openblox.sh/production/) · [Architecture](ARCHITECTURE.md) ·
+[Threat model](THREAT_MODEL.md) · [Security](SECURITY.md) · [Releasing](RELEASING.md)
 
-> **Status: pre-release.** The API is taking shape and will change.
+> **Status: pre-release (`0.x`).** The API will change; breaking changes bump the
+> minor version and are listed in the [changelog](CHANGELOG.md).
+
+## Quick start
+
+Needs Linux, Docker, and gVisor registered as the `runsc` runtime
+([how](https://openblox.sh/getting-started/#prerequisites)).
+
+```bash
+go get github.com/blox-eng/openblox
+```
 
 ```go
 backend, err := docker.New()
@@ -44,42 +55,48 @@ res, err := sb.Exec(ctx, sandbox.Command{
 fmt.Println(string(res.Stdout)) // 42
 ```
 
-That image is the [reference sandbox userland](image/README.md) openblox
-publishes. Any image works, as long as it has a shell, a non-root default user,
-and `nc` or `python3`.
+That image is the [reference sandbox userland](image/README.md); any image that
+meets [the contract](https://openblox.sh/image/) works. `:latest` is fine here —
+pin a digest anywhere it matters.
 
-## Why
+## In production: run `openbloxd`
 
-Running code an LLM wrote, against files a user uploaded, is a hostile workload
-wearing a friendly hat. The usual answers are a hosted sandbox platform — which
-means your customers' data crosses someone else's boundary — or a plain
-container, which shares a kernel with the host.
+The quick start imports the library, so **your process holds the Docker socket,
+which is root-equivalent on the host.** In production, run the `openbloxd` daemon
+on the host instead. It owns the socket, and your application talks to it over a
+Unix socket with `pkg/brokerclient` — the same `Backend` interface, no Docker
+access:
 
-openblox takes the third option: a substrate small enough to read in an
-afternoon, that you run yourself, with isolation supplied by gVisor rather than
-by hope.
+```
+application ──unix socket──► openbloxd ──Docker API──► Docker + gVisor ──► sandbox
+(no Docker access)           (policy per profile,
+                              not settable by requests)
+```
 
-## Secure by default
+Deployment, verification, compatibility, upgrades and troubleshooting:
+**[Running in production](https://openblox.sh/production/)**.
 
-The zero value of every option is the safe one. A sandbox created with no
-options gets:
+## Restrictive by default
+
+The zero value of every option is the most restrictive one. A sandbox created
+with no options gets:
 
 | | |
 |---|---|
 | **Isolation** | gVisor (`runsc`) — syscalls handled in user space, not by the host kernel |
 | **Network** | no external interface, so no egress *and* no DNS side channel |
-| **Filesystem** | read-only root, non-root user |
-| **Resources** | bounded CPU, memory, disk, and process count |
+| **Filesystem** | read-only root, non-root user (root is refused), `noexec` scratch |
+| **Resources** | bounded CPU, memory (no swap), disk, process count, and captured output |
 | **Privileges** | all capabilities dropped, `no-new-privileges` |
-| **Lifetime** | reaped when idle, destroyed at max age |
+| **Lifetime** | commands killed at their timeout; sandboxes reaped when idle and at max age |
 
-Forgetting an option can only make a sandbox more restrictive, never less.
-Relaxing anything is explicit and greppable at the call site.
+Relaxing anything is explicit and greppable at the call site. If the host cannot
+provide gVisor, `Create` fails with `ErrRuntimeUnavailable`; it never falls back
+to a weaker boundary.
 
-If the host cannot provide the requested isolation, `Create` fails with
-`ErrRuntimeUnavailable`. It never silently falls back to a weaker boundary — a
-sandbox that is quietly less isolated than you asked for is worse than no
-sandbox, because you keep trusting it.
+These are isolation *measures*, not a guarantee: the boundary is gVisor's, and
+[THREAT_MODEL.md](THREAT_MODEL.md) lists what is defended, the test behind each
+claim, and what is not defended.
 
 ## What you get
 
@@ -90,50 +107,50 @@ sandbox, because you keep trusting it.
 | **Processes** | start a detached background command, idempotently |
 | **Preview links** | HMAC-signed reverse proxy to a port inside the sandbox |
 | **Reaping** | idle timeout and max age, enforced without a scheduler |
+| **`openbloxd`** | a policy broker so callers never touch Docker |
 
-## What it is not
+## When not to use it
 
-- **Not multi-tenant.** No organizations, auth, billing, or metering. Tenancy is
-  the caller's concern.
-- **Not a fleet.** One host, one daemon.
-- **No snapshot, fork, or pause/resume.** Stop and re-create from a baked image.
-- **Not the fastest.** Correctness and containment over cold-start latency.
+- **You need tenants isolated from each other at the API.** Every caller of one
+  `openbloxd` can reach every sandbox; tenancy is yours to enforce in front of it.
+- **You need a fleet.** One host, one daemon. No scheduling, no fairness.
+- **You need a separate kernel per workload** (hardware virtualisation), or
+  protection from side channels between co-resident sandboxes.
+- **You need snapshots, fork, pause/resume, or sub-second cold starts.**
+- **You cannot run Linux with gVisor**, or cannot keep `runsc` patched.
 
-Those are deliberate. See [ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning.
 
-## Install
+## Supported
 
-```bash
-go get github.com/blox-eng/openblox
-```
-
-Requires Go 1.25+, Docker Engine, and gVisor (`runsc`) registered as a Docker
-runtime. The [getting started guide](https://openblox.sh/getting-started/) covers
-installing `runsc` and wiring it up.
+Linux on `amd64` and `arm64`, both tested natively in CI against a real gVisor
+runtime. Docker Engine with `runsc` registered. Go 1.25+ for library users. The
+[compatibility matrix](https://openblox.sh/production/#compatibility) covers
+`openbloxd`, clients, images, Docker and gVisor.
 
 ## Status
 
-The badges above are measured from the source on every deploy, not typed here —
-size, test counts, and coverage cannot drift from the code that produced them.
-Two direct dependencies (`docker/docker` and `containerd/errdefs`). Every release
-publishes a multi-architecture sandbox image with an SBOM and build provenance.
-CI runs lint, tests, and `govulncheck`, gating on newly reachable
-vulnerabilities. The integration suite runs there too, against a real gVisor
-daemon on a hosted runner — including the adversarial cases that try to break
-the resource caps.
+The badges above are measured from the source on every deploy, not typed here.
+Three direct dependencies (`docker/docker`, `containerd/errdefs`, `yaml.v3`).
 
-Honest about the gaps: importing the library still means giving your service
-access to the Docker socket, which is root-equivalent on the host. `openbloxd`
-closes that — a daemon that owns the socket and exposes only openblox's own
-surface, policy fixed daemon-side and not settable per request — see
-[Security](https://openblox.sh/security/#deploying-the-policy-broker-openbloxd).
-The [open issues](https://github.com/blox-eng/openblox/issues) are the honest
-roadmap for what's left.
+CI runs lint, race-enabled tests, CodeQL and `govulncheck` (gating on newly
+reachable vulnerabilities), plus the integration and adversarial suites against a
+real gVisor runtime on amd64 and arm64 — including attacks on the network,
+filesystem, privileges, resource caps and timeouts.
+
+Every release is cut by CI from a verified commit. The `openbloxd` binaries are
+reproducible and ship with SBOMs; binaries and the sandbox image carry Sigstore-signed
+build provenance. [RELEASING.md](RELEASING.md#verifying-a-release) shows how to
+verify them.
 
 Written for [Blox](https://blox.bg), where it is the only sandbox backend and
 replaced a hosted platform. Its own production rollout is gated on migrating its
-callers off the Docker socket and onto `openbloxd`. The API is unstable
-pre-1.0 — expect breaking changes on minor versions. No support SLA.
+callers off the Docker socket and onto `openbloxd`. No support SLA.
+
+## Security
+
+Report vulnerabilities privately — see [SECURITY.md](SECURITY.md). Please do not
+open a public issue.
 
 ## Contributing
 

@@ -140,7 +140,7 @@ Enforced at create, non-optional:
 | CPU / memory / disk caps | a crafted input must not exhaust the host |
 | `PidsLimit` | fork-bomb containment |
 | non-root user, read-only rootfs | reduce what a successful RCE can reach |
-| all capabilities dropped, `no-new-privileges` | no path to escalate inside the guest |
+| all capabilities dropped, `no-new-privileges` | no privileged operations, and setuid binaries cannot raise privileges |
 
 Two invariants that are easy to violate and fatal when violated:
 
@@ -156,6 +156,8 @@ Files move over the Docker control channel, not the network, which is why
 Stated plainly, because a security section that only lists wins is marketing:
 
 - A gVisor escape. We inherit gVisor's threat model and its CVEs.
+- The full list, with the test behind each claim, is in
+  [THREAT_MODEL.md](THREAT_MODEL.md).
 - A malicious or backdoored sandbox **image**. Image supply chain is the caller's
   responsibility — pin digests.
 
