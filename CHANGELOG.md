@@ -49,7 +49,15 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   command's process group is now killed with SIGKILL. A process that deliberately
   leaves the group (`setsid`) still survives; it stays bounded by the sandbox's
   CPU and process caps and its lifetime. This also applies when an `openbloxd`
-  client disconnects mid-command.
+  client disconnects mid-command. A command cancelled in the moment between the
+  runtime starting it and its wrapper recording the group had no record to be
+  killed by, which is the likeliest case for a client that disconnects as soon
+  as it has asked; the kill now waits briefly for the record to appear.
+- **An unknown egress policy gave the sandbox a network.** Backends ask whether
+  the policy is `EgressNone` and attach an interface when it is not, so an
+  `EgressPolicy` that was neither defined value — an unchecked conversion, or a
+  constant from a newer version of the package — silently resolved to the
+  permissive answer. `Create` now refuses it with `ErrInvalid`.
 - **Root was not refused.** `WithUser` documented that root was forbidden but did
   not enforce it (see Breaking).
 - **Swap doubled the memory bound.** Sandboxes are now created with
@@ -60,7 +68,12 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   third-party semantic-release binary (downloaded unpinned at run time) with the
   release token, refuses to act on `workflow_run` events from pull requests
   (including those from a fork's `main`), and tags exactly the commit CI
-  verified. Published image versions can no longer be overwritten.
+  verified. Published image versions can no longer be overwritten: the check
+  that a version is unpublished now distinguishes the registry saying so from a
+  network, registry or authentication fault, which it previously read as
+  permission to push. The post-publish verification holds the `attestations:
+  read` scope its own `gh attestation verify` needs, so it cannot fail for want
+  of a permission after the assets are already public.
 
 ### Added
 
@@ -101,6 +114,10 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   created under rather than the one asked for now; its tmpfs storage would not
   have survived either way. This also recovers a sandbox whose guest killed its
   own PID 1.
+- `Create` handed back a stale sandbox when the daemon could not be reached for
+  the liveness check that decides whether to replace a halted one, or when the
+  sandbox was removed between being opened and being checked. The inspection
+  error is now returned, and a sandbox that has vanished is replaced.
 - `openbloxd` crashed at start-up on a negative `reap_interval`; it is now a
   config error.
 - `ErrTimeout`'s documentation claimed the command had been killed.

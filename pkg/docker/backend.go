@@ -131,7 +131,11 @@ func (b *Backend) Create(ctx context.Context, name string, opts ...sandbox.Creat
 	}
 
 	if sb, err := b.Open(ctx, name); err == nil {
-		if !b.halted(ctx, sb.Info().ID) {
+		stopped, err := b.halted(ctx, sb.Info().ID)
+		if err != nil {
+			return nil, err
+		}
+		if !stopped {
 			return sb, nil
 		}
 		// A halted sandbox — stopped by Stop, or by its own guest killing PID 1
@@ -233,12 +237,24 @@ func (b *Backend) Destroy(ctx context.Context, name string) error {
 // halted reports whether a container has exited and will not run again on its
 // own. "created" is deliberately excluded: that is a concurrent Create between
 // creating its container and starting it.
-func (b *Backend) halted(ctx context.Context, id string) bool {
+//
+// A container that vanished since it was opened counts as halted, so Create
+// replaces it rather than handing back a sandbox that no longer exists. Every
+// other inspection failure is returned: treating "the daemon did not answer" as
+// "still running" would return a stale sandbox whose every Exec then fails,
+// which is the bug replacing a halted sandbox exists to fix.
+func (b *Backend) halted(ctx context.Context, id string) (bool, error) {
 	inspect, err := b.cli.ContainerInspect(ctx, id)
-	if err != nil || inspect.State == nil {
-		return false
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return true, nil
+		}
+		return false, fmt.Errorf("inspect sandbox %q: %w", id, err)
 	}
-	return inspect.State.Status == "exited" || inspect.State.Status == "dead"
+	if inspect.State == nil {
+		return false, fmt.Errorf("inspect sandbox %q: the daemon reported no state", id)
+	}
+	return inspect.State.Status == "exited" || inspect.State.Status == "dead", nil
 }
 
 // assertRuntime fails when the host cannot provide the requested isolation.

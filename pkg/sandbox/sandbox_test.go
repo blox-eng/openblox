@@ -158,3 +158,30 @@ func TestSpecValidateRefusesRootAndNamedUsers(t *testing.T) {
 		})
 	}
 }
+
+// A backend asks whether the policy is EgressNone and gives a network interface
+// when it is not, so an unknown value must fail the create rather than resolve
+// to the permissive answer.
+func TestSpecValidateRefusesUnknownEgressPolicies(t *testing.T) {
+	tests := []struct {
+		name   string
+		egress EgressPolicy
+		ok     bool
+	}{
+		{"none", EgressNone, true},
+		{"unrestricted", EgressUnrestricted, true},
+		{"past the last policy", EgressUnrestricted + 1, false},
+		{"negative", -1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := NewSpec(WithEgress(tt.egress)).Validate()
+			if tt.ok && err != nil {
+				t.Fatalf("Validate(egress %d) = %v, want nil", tt.egress, err)
+			}
+			if !tt.ok && !errors.Is(err, ErrInvalid) {
+				t.Fatalf("Validate(egress %d) = %v, want ErrInvalid", tt.egress, err)
+			}
+		})
+	}
+}

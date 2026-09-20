@@ -146,10 +146,23 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
+          if out="$(docker buildx imagetools inspect "$IMAGE:$VERSION" 2>&1)"; then
             echo "$IMAGE:$VERSION is already published; refusing to overwrite it" >&2
             exit 1
           fi
+          # inspect fails both when the version is absent and when the registry
+          # could not be reached or authenticated. Only the registry saying the
+          # manifest does not exist is permission to push: reading a transient
+          # fault as "absent" would overwrite exactly the published version this
+          # step exists to protect.
+          case "$(printf '%s' "$out" | tr '[:upper:]' '[:lower:]')" in
+            *"not found"*|*"manifest unknown"*|*"name_unknown"*|*"manifest_unknown"*) ;;
+            *)
+              echo "cannot determine whether $IMAGE:$VERSION is published; refusing to push" >&2
+              printf '%s\n' "$out" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Build and push
         id: push

@@ -71,7 +71,8 @@ missing piece is a failed build rather than a broken preview in production:
 
 ```dockerfile
 RUN command -v sh && command -v python3 && command -v nc \
-    && command -v cat && command -v mkdir && command -v chmod && command -v rm
+    && command -v cat && command -v mkdir && command -v chmod \
+    && command -v test && command -v rm
 USER 1000:1000
 ```
 

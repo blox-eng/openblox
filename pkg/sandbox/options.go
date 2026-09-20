@@ -56,7 +56,25 @@ func (s Spec) Validate() error {
 	if err := validateUser(s.User); err != nil {
 		return err
 	}
+	if err := validateEgress(s.Egress); err != nil {
+		return err
+	}
 	return s.Resources.Validate()
+}
+
+// validateEgress accepts only the policies defined here.
+//
+// Backends ask whether the policy is EgressNone and give a network interface
+// when it is not, so a value that is neither — an unchecked conversion, or a
+// constant from a newer version of this package — would silently resolve to the
+// permissive answer. An unknown containment setting fails the create instead.
+func validateEgress(p EgressPolicy) error {
+	switch p {
+	case EgressNone, EgressUnrestricted:
+		return nil
+	default:
+		return newInvalidError("egress policy %d is not a known policy", int(p))
+	}
 }
 
 // validateUser accepts only a numeric, non-root "uid:gid".

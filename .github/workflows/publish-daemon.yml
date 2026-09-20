@@ -152,7 +152,11 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          GOARCH= go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0 \
+          # env -u, not a `GOARCH= ` prefix: the tool itself must build for the
+          # runner, while the arguments below still name the target arch. The
+          # prefix form expresses that too, but reads as the mistake shellcheck
+          # takes it for (SC2097/SC2098).
+          env -u GOARCH go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0 \
             bin -json -version "$TAG" \
             -output "openbloxd-linux-${GOARCH}.cdx.json" "openbloxd-linux-${GOARCH}"
 
@@ -231,6 +235,10 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      # gh attestation verify reads the attestations API with this token. Without
+      # it the verification fails after the assets are already public — the one
+      # moment the check exists to cover.
+      attestations: read
     strategy:
       fail-fast: false
       matrix:

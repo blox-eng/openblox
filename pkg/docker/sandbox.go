@@ -161,11 +161,30 @@ const groupScript = `f="$1"; shift; echo $$ >"$f" 2>/dev/null; (exec "$@"); s=$?
 
 // killScript kills the group recorded in $1. It runs as the sandbox user, so a
 // forged record can only make it signal the guest's own processes.
-const killScript = `read -r p <"$1" 2>/dev/null; rm -f "$1"; case "$p" in ""|*[!0-9]*|1) exit 0;; esac; kill -9 -"$p" 2>/dev/null || kill -9 "$p" 2>/dev/null; exit 0`
+//
+// An absent or still-empty record exits killNoRecord so the caller can retry:
+// it means the wrapper has not reached its first statement yet, which is not
+// the same as having nothing to kill. The record is removed only once it has
+// been read, so a concurrent write is never unlinked from under the wrapper.
+const killScript = `read -r p <"$1" 2>/dev/null; case "$p" in "") exit 1;; esac; rm -f "$1"; case "$p" in *[!0-9]*|1) exit 0;; esac; kill -9 -"$p" 2>/dev/null || kill -9 "$p" 2>/dev/null; exit 0`
+
+// killNoRecord is killScript's exit code for "the record is not there yet".
+const killNoRecord = 1
 
 // killTimeout bounds the kill itself, so a wedged sandbox cannot turn a timeout
 // into a hang.
 const killTimeout = 10 * time.Second
+
+// killRecordWait bounds how long killGroup waits for a record to appear, and
+// killRetryInterval how often it looks. The gap it covers is between Docker
+// starting the exec and the wrapper's first statement — microseconds — so this
+// is generous. It is spent only on the kill path, and only when there is no
+// record: a command cancelled after it has written one is killed on the first
+// attempt.
+const (
+	killRecordWait    = 2 * time.Second
+	killRetryInterval = 50 * time.Millisecond
+)
 
 // newPIDFile names a per-exec record on the scratch tmpfs. Random, so
 // concurrent execs never share one.
@@ -177,17 +196,36 @@ func newPIDFile() string {
 
 // killGroup kills a timed-out command and its process group.
 //
-// Best effort, and only against code that is not trying to survive: a process
-// that calls setsid, or a guest that fills /tmp so the record is never written,
-// outlives it. Those are bounded by the sandbox's CPU and process caps and its
-// lifetime, and ended by Destroy.
+// The record is written by the command's own wrapper, so a command cancelled in
+// the moment between Docker starting the exec and that first statement has none
+// yet. Giving up then would leave exactly the command a cancelling caller most
+// expects to be gone — the one killed immediately, as when an openbloxd client
+// disconnects — running until the sandbox is reaped, so killGroup waits briefly
+// for the record to appear.
+//
+// Best effort even so, and only against code that is not trying to survive: a
+// process that calls setsid, or a guest that fills /tmp so the record is never
+// written, outlives it. Those are bounded by the sandbox's CPU and process caps
+// and its lifetime, and ended by Destroy.
 func (s *dockerSandbox) killGroup(ctx context.Context, pidFile string) {
 	ctx, cancel := context.WithTimeout(ctx, killTimeout)
 	defer cancel()
-	_, _ = s.exec(ctx, sandbox.Command{
-		Argv:    []string{"sh", "-c", killScript, "sh", pidFile},
-		Timeout: killTimeout,
-	}, "", "")
+
+	deadline := time.Now().Add(killRecordWait)
+	for {
+		res, err := s.exec(ctx, sandbox.Command{
+			Argv:    []string{"sh", "-c", killScript, "sh", pidFile},
+			Timeout: killTimeout,
+		}, "", "")
+		if err != nil || res.ExitCode != killNoRecord || time.Now().After(deadline) {
+			return
+		}
+		select {
+		case <-time.After(killRetryInterval):
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // cappedBuffer keeps the first limit bytes written to it and discards the rest.

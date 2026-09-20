@@ -346,6 +346,54 @@ func TestCancelledCommandIsKilledAndNotReportedAsTimeout(t *testing.T) {
 	}
 }
 
+// A command records its own process group as its first statement, so a command
+// cancelled in the moment between Docker starting the exec and that statement
+// leaves a running process and no record to kill it by. Cancelling that
+// narrowly is not reproducible from the outside, so the state it produces is
+// staged directly: a process already running, and its record appearing only
+// after the kill has started looking for it.
+//
+// Reading "no record" as "nothing to kill" would leave exactly the command a
+// cancelling caller most expects to be gone — the one cancelled immediately, as
+// when an openbloxd client disconnects — running until the sandbox is reaped.
+func TestKillGroupWaitsForAGroupRecordThatHasNotAppearedYet(t *testing.T) {
+	b := newTestBackend(t)
+	sb := create(t, b, "openblox-adv-killwait")
+	ds, ok := sb.(*dockerSandbox)
+	if !ok {
+		t.Fatalf("sandbox is %T, want *dockerSandbox", sb)
+	}
+
+	const marker = "sleep 3137"
+	const recordDelay = time.Second
+	pidFile := newPIDFile()
+
+	// The wrapper openblox normally uses, with the delay the race produces: a
+	// live exec that records its group only after the kill has begun looking.
+	// It must be a running exec rather than a backgrounded orphan, because an
+	// orphan is reaped on its own and would pass this test either way.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_, _ = ds.exec(ctx, sandbox.Command{
+			Argv:    []string{"sh", "-c", `sleep 1; echo $$ >"$1"; exec ` + marker, "sh", pidFile},
+			Timeout: time.Minute,
+		}, "", "")
+	}()
+
+	start := time.Now()
+	ds.killGroup(context.Background(), pidFile)
+
+	// Wait past the moment the record appears however long the kill took, so a
+	// kill that gave up early shows as the command it missed, still running.
+	if waited := time.Since(start); waited < recordDelay+time.Second {
+		time.Sleep(recordDelay + time.Second - waited)
+	}
+	if n := countProcs(t, sb, marker); n != 0 {
+		t.Errorf("killGroup gave up before the record appeared: %d still running", n)
+	}
+}
+
 // The kill is scoped to the timed-out command's own process group. A background
 // process started earlier — a preview server, say — must survive another
 // command timing out.
