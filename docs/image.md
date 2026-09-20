@@ -60,7 +60,7 @@ running deployment.
 Layer on top of the reference image and the contract is satisfied for you:
 
 ```dockerfile
-FROM ghcr.io/blox-eng/openblox-sandbox:0.6.0@sha256:...   # pin the digest; see above
+FROM ghcr.io/blox-eng/openblox-sandbox:0.6.1@sha256:...   # pin the digest; see above
 USER root
 RUN pip install --no-cache-dir pandas
 USER sandbox

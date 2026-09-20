@@ -62,7 +62,7 @@ before installing (details in
 [RELEASING.md](https://github.com/blox-eng/openblox/blob/main/RELEASING.md#verifying-a-release)):
 
 ```sh
-VERSION=v0.6.0; ARCH=amd64
+VERSION=v0.6.1; ARCH=amd64
 gh release download "$VERSION" -R blox-eng/openblox \
   -p "openbloxd-linux-$ARCH" -p "openbloxd-linux-$ARCH.sha256" \
   -p openbloxd.service -p openbloxd.example.yaml
