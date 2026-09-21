@@ -126,8 +126,26 @@ The digest is printed in the publish job's summary.
 
 The GitHub release notes are generated from the Conventional Commit subjects since
 the previous tag. [CHANGELOG.md](CHANGELOG.md) is the curated, engineer-facing
-record: after a release, a maintainer renames `[Unreleased]` to the new version and
-date in a `docs:` PR (this does not trigger another release).
+record, and stays hand-written: the prose says *why* a change was made, which no
+commit subject carries. Write the entry under `[Unreleased]` in the PR that makes
+the change.
+
+Promoting that section to a released version is mechanical, so `release.yml` does
+it: after cutting a tag it runs
+[`.github/scripts/promote-changelog.sh`](.github/scripts/promote-changelog.sh),
+which moves the entries under a dated heading and adds the compare link, and opens
+a `docs:` PR with the result (a `docs:` commit does not trigger another release).
+Review and merge it; nothing else in the release waits on it, but
+`changelog-guard.sh` fails Lint on every other PR until it lands.
+
+A PR rather than a push because the `main` ruleset requires one. If the workflow
+cannot open it — Actions barred from creating PRs, or the token expired — it warns
+instead of failing a release that has already shipped, and the guard is what makes
+sure the gap is not missed. Run the script by hand in that case:
+
+```sh
+.github/scripts/promote-changelog.sh 0.8.1 "$(date -u +%Y-%m-%d)"
+```
 
 ## Verifying a release
 
