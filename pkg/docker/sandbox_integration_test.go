@@ -192,6 +192,62 @@ func TestReadFileAbsentReportsNotFound(t *testing.T) {
 	}
 }
 
+// A stopped sandbox is a caller-actionable state, not a daemon fault: hitting
+// the memory ceiling stops a sandbox, and that is ordinary behaviour for
+// untrusted code. Every operation that needs a running container funnels
+// through attach, so exec, files and processes must all report it the same way
+// — a caller that cannot tell "your sandbox is gone" from "the daemon is
+// broken" has no way to recover but to poll after every failure.
+func TestOperationsOnStoppedSandboxReportStopped(t *testing.T) {
+	b := newTestBackend(t)
+	sb := create(t, b, "openblox-test-stopped")
+	ctx := context.Background()
+
+	if err := sb.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	t.Run("exec", func(t *testing.T) {
+		_, err := sb.Exec(ctx, sandbox.Command{Argv: []string{"echo", "hi"}})
+		if !errors.Is(err, sandbox.ErrStopped) {
+			t.Errorf("Exec on stopped = %v, want ErrStopped", err)
+		}
+	})
+
+	t.Run("read file", func(t *testing.T) {
+		_, err := sb.ReadFile(ctx, "/workspace/anything.txt")
+		if !errors.Is(err, sandbox.ErrStopped) {
+			t.Errorf("ReadFile on stopped = %v, want ErrStopped", err)
+		}
+	})
+
+	t.Run("write file", func(t *testing.T) {
+		err := sb.WriteFile(ctx, "/workspace/anything.txt", 0o644, strings.NewReader("x"))
+		if !errors.Is(err, sandbox.ErrStopped) {
+			t.Errorf("WriteFile on stopped = %v, want ErrStopped", err)
+		}
+	})
+
+	t.Run("start process", func(t *testing.T) {
+		err := sb.StartProcess(ctx, "job", sandbox.Command{Argv: []string{"sleep", "60"}})
+		if !errors.Is(err, sandbox.ErrStopped) {
+			t.Errorf("StartProcess on stopped = %v, want ErrStopped", err)
+		}
+	})
+
+	// ErrStopped must not swallow the distinction it exists to draw: a sandbox
+	// that was destroyed is still not-found, not stopped.
+	t.Run("destroyed is still not found", func(t *testing.T) {
+		if err := b.Destroy(ctx, "openblox-test-stopped"); err != nil {
+			t.Fatalf("Destroy: %v", err)
+		}
+		_, err := b.Open(ctx, "openblox-test-stopped")
+		if !errors.Is(err, sandbox.ErrNotFound) {
+			t.Errorf("Open after Destroy = %v, want ErrNotFound", err)
+		}
+	})
+}
+
 // The root filesystem is read-only; only the scratch mounts accept writes.
 func TestWritesOutsideScratchAreRejected(t *testing.T) {
 	b := newTestBackend(t)

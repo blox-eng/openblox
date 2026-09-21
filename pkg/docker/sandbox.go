@@ -12,6 +12,7 @@ import (
 	"path"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
@@ -263,6 +264,19 @@ func (s *dockerSandbox) attach(ctx context.Context, cmd sandbox.Command, user st
 		AttachStderr: true,
 	})
 	if err != nil {
+		// The daemon answers 409 here when the container is not in a state that
+		// can run a command — stopped, which is the case that matters, and also
+		// paused or restarting, which openblox never does to a sandbox itself.
+		// Left unclassified this became an opaque internal error, which asserts
+		// a server fault where there is none and leaves the caller unable to
+		// tell a dead sandbox from a broken daemon.
+		//
+		// Classified here rather than in each operation because every path that
+		// needs a running container — exec, files, processes, the preview relay
+		// — reaches the daemon through this one call.
+		if cerrdefs.IsConflict(err) {
+			return "", types.HijackedResponse{}, fmt.Errorf("%w: %q", sandbox.ErrStopped, s.info.Name)
+		}
 		return "", types.HijackedResponse{}, fmt.Errorf("exec create in %q: %w", s.info.Name, err)
 	}
 

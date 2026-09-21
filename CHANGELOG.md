@@ -13,6 +13,19 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed
+
+- An operation against a stopped sandbox no longer flattens into an opaque
+  `500 {"kind":"internal"}`. Exec, file and process calls now report the new
+  `sandbox.ErrStopped` sentinel, sent over the broker as `409` with kind
+  `stopped`, so a caller can tell "your sandbox is gone" from "the daemon is
+  broken" without a second request to disambiguate. A sandbox that exhausts
+  `memory_mb` is killed — ordinary behaviour for untrusted code, and the reason
+  the cap exists — so this was a predictable state being reported as a server
+  fault. The kill takes the whole sandbox rather than the offending process,
+  which is now stated in the troubleshooting table: recovery is to create a new
+  sandbox, not to retry.
+
 ## [0.8.0] - 2026-09-21
 
 ### Added

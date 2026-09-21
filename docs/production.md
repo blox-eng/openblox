@@ -155,6 +155,7 @@ no version state, so nothing needs migrating in either direction.
 | `ErrInvalid: user …` (root, not numeric, or a bare uid) | Set `user` to an explicit, numeric, non-zero `uid:gid`, such as `"1000:1000"`. |
 | HTTP 429, kind `at_capacity` | The profile is at `max_sandboxes`. Retry after the reaper frees a slot, destroy unused sandboxes, or raise the cap if the host can hold it. |
 | HTTP 409, kind `conflict` | The name already exists under another profile. Use a different name, or destroy the old sandbox. |
+| HTTP 409, kind `stopped` (`ErrStopped`) | The sandbox exists but is not running, so it cannot serve exec, files or processes. Usually it hit `memory_mb` and was killed. The kill takes the whole sandbox, not the offending process, so anything it held is gone: create a fresh one rather than retrying. `GET /sandboxes/{name}` still resolves, so you can confirm the state. |
 | `EACCES` on the socket | Your process is not in `socket_group`, or `socket_group` differs from the unit's group — see the [security model](security.md#deploying-the-policy-broker-openbloxd). |
 | `ENOENT` on the socket after a daemon restart | A container mounted the socket file rather than `/run/openbloxd`. Mount the directory. |
 | Preview returns 502 | Nothing is listening on `127.0.0.1:<port>` inside the sandbox, or the image has neither `nc` nor `python3`. |

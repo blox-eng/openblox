@@ -193,6 +193,41 @@ func TestBrokerWriteFileRejectsRelativePath(t *testing.T) {
 	}
 }
 
+// The mirror of TestOperationsOnStoppedSandboxReportStopped in pkg/docker, and
+// the case #29 was actually about: over the wire the condition used to flatten
+// into 500 {"kind":"internal"}, indistinguishable from a broken daemon. This
+// asserts the whole round trip — the backend classifies it, the daemon sends
+// kind "stopped" with 409, and the client maps it back to the sentinel, so
+// errors.Is behaves the same against the broker as against the library.
+func TestBrokerOperationsOnStoppedSandboxReportStopped(t *testing.T) {
+	c := startBroker(t)
+	sb := create(t, c, "openblox-test-broker-stopped")
+	ctx := context.Background()
+
+	if err := sb.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if _, err := sb.Exec(ctx, sandbox.Command{Argv: []string{"echo", "hi"}}); !errors.Is(err, sandbox.ErrStopped) {
+		t.Errorf("Exec on stopped = %v, want ErrStopped", err)
+	}
+	if _, err := sb.ReadFile(ctx, "/workspace/anything.txt"); !errors.Is(err, sandbox.ErrStopped) {
+		t.Errorf("ReadFile on stopped = %v, want ErrStopped", err)
+	}
+	if err := sb.WriteFile(ctx, "/workspace/anything.txt", 0o644, strings.NewReader("x")); !errors.Is(err, sandbox.ErrStopped) {
+		t.Errorf("WriteFile on stopped = %v, want ErrStopped", err)
+	}
+	if err := sb.StartProcess(ctx, "job", sandbox.Command{Argv: []string{"sleep", "60"}}); !errors.Is(err, sandbox.ErrStopped) {
+		t.Errorf("StartProcess on stopped = %v, want ErrStopped", err)
+	}
+
+	// A stopped sandbox is still there: the state the caller needs in order to
+	// act on ErrStopped must remain readable.
+	if _, err := c.Open(ctx, "openblox-test-broker-stopped"); err != nil {
+		t.Errorf("Open on stopped = %v, want it to still resolve", err)
+	}
+}
+
 // --- start a background process and observe it ---
 
 // StartProcess must return once the process is detached, not once it exits.
