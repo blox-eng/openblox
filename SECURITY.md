@@ -1,42 +1,113 @@
 # Security Policy
 
-openblox exists to contain hostile code. Security reports get priority over everything else.
+openblox exists to contain hostile code, so security reports take priority over
+all other work.
 
 ## Reporting a vulnerability
 
-**Do not open a public issue.**
+**Do not open a public issue, pull request or discussion.**
 
-Use [GitHub private vulnerability reporting](https://github.com/blox-eng/openblox/security/advisories/new),
+Report privately through
+[GitHub private vulnerability reporting](https://github.com/blox-eng/openblox/security/advisories/new),
 or email **security@openblox.sh**.
 
-Please include a description, reproduction steps, and the impact you believe it has.
-We will acknowledge within 72 hours and keep you updated until it is resolved.
-Credit is given unless you prefer otherwise.
+Include what you can of: the affected version or commit, the deployment mode
+(library or `openbloxd`), the gVisor version (`runsc --version`), reproduction
+steps, and the impact you believe it has. A failing test in the style of
+`pkg/docker/adversarial_integration_test.go` is the most useful form a report can
+take, but is not required.
 
-## Threat model
+In scope: anything that lets code inside a sandbox reach something
+[THREAT_MODEL.md](THREAT_MODEL.md) says it cannot; anything that lets an `openbloxd`
+caller weaken a profile's policy; forging or misrouting preview tokens; and any
+claim in the documentation that the code does not uphold. Vulnerabilities in gVisor,
+Docker or the Linux kernel themselves belong with those projects, but tell us too
+if openblox's defaults make one reachable.
 
-openblox assumes the code running inside a sandbox is **actively hostile**, and
-that the data it processes is attacker-controlled. It is designed to contain:
+## What to expect
 
-- arbitrary code execution inside the guest, including compiled native code
-- attempts to reach the host, the host network, or link-local metadata endpoints
-- resource exhaustion: CPU, memory, disk, and process count
-- data exfiltration over the network, including via DNS
+- Acknowledgement within **72 hours**.
+- An initial assessment — whether we can reproduce it, and how severe we think it
+  is — within **7 days**.
+- A fix or a documented mitigation as fast as severity warrants. We aim for
+  **90 days** at most and will agree a disclosure date with you.
+- Credit in the advisory and release notes, unless you prefer otherwise.
 
-## What openblox does not protect against
+Please give us a reasonable chance to ship a fix before disclosing publicly, and do
+not test against systems you do not own.
 
-Stated plainly, because a threat model that only lists wins is marketing:
+## How fixes are communicated
 
-- **A gVisor escape.** We inherit gVisor's threat model and its CVEs. Keep `runsc` patched.
-- **A malicious sandbox image.** The image is the guest's entire userland and is
-  the caller's responsibility. Pin digests, not tags.
-- **Side channels** between sandboxes co-resident on one host.
-- **What you do with the output.** openblox contains execution; it does not
-  sanitise results. Treat everything a sandbox returns as untrusted input.
-- **A misconfigured host.** Mounting the container runtime's socket into a
-  sandbox, or overriding the runtime to the host default, defeats the boundary
-  entirely. openblox never does either; your deployment must not either.
+- A [GitHub Security Advisory](https://github.com/blox-eng/openblox/security/advisories),
+  with a CVE where one applies. This also feeds `govulncheck` and Dependabot.
+- A patch release. Its notes and the `Security` section of
+  [CHANGELOG.md](CHANGELOG.md) say what was fixed and who is affected.
+- For a vulnerability in the reference sandbox image, a new image version. Published
+  image versions are never overwritten, so an image pinned by digest does not change
+  underneath you; move the pin to pick up the fix.
 
 ## Supported versions
 
-Pre-1.0: only the latest release receives fixes.
+openblox is pre-1.0. Only the **latest release** receives security fixes. Upgrade
+to it rather than expecting a backport.
+
+| Version | Supported |
+|---|---|
+| latest `v0.x` release | yes |
+| older releases | no |
+
+## Security assumptions
+
+openblox assumes the code in a sandbox is actively hostile. It trusts the host, its
+kernel, Docker, gVisor, the sandbox image, `openbloxd`, and whoever configures
+them. The full model — assets, trust boundaries, each attack with its defence and
+test, and the residual risks — is in [THREAT_MODEL.md](THREAT_MODEL.md).
+
+openblox narrows what untrusted code can reach. It does not guarantee that a sandbox
+cannot be escaped: its isolation is gVisor's, and gVisor has had vulnerabilities.
+
+## Recommended deployment
+
+```
+application ──Unix socket──► openbloxd ──Docker API──► Docker + gVisor ──► sandbox
+ (no Docker access)          (holds the socket;
+                              policy in its config)
+```
+
+- Run **`openbloxd`** on the host and have applications use `pkg/brokerclient`.
+  Importing `pkg/docker` directly means your application holds the Docker socket,
+  which is equivalent to root on the host.
+- Install `openbloxd` from a release, verified as described in
+  [RELEASING.md](RELEASING.md#verifying-a-release), and pin a version, not `latest`.
+- Pin the sandbox image **by digest** in every profile.
+- Keep `runsc` current; its security fixes are yours to apply.
+- Serve preview URLs from an origin that shares no cookies with your application.
+
+## Security-sensitive configuration
+
+| Setting | Safe value | Why it matters |
+|---|---|---|
+| `runtime` / `WithRuntime` | `runsc` (default) | Any other runtime runs untrusted code on the host kernel. |
+| `egress` / `WithEgress` | `none` (default) | `unrestricted` gives the sandbox the host's network, including the LAN and cloud metadata. |
+| `user` / `WithUser` | numeric, non-zero `uid:gid` (default `1000:1000`) | Root, group 0, user names and a bare uid are refused: names and a bare uid resolve inside the untrusted image. |
+| `image` / `WithImage` | `name@sha256:…` | A tag can be repointed by whoever controls the registry. |
+| `socket_group` | a group holding only trusted callers | Every member controls every sandbox. |
+| `max_sandboxes`, `memory_mb`, `cpus` | sized to the host | Per-sandbox caps do not bound the total. |
+| `idle_timeout`, `max_age` | positive (defaults apply when omitted) | Negative values are refused by `openbloxd`; in the library they disable the bound. |
+| Preview key (`WithPreviews`) | ≥ 32 random bytes, kept secret | Anyone with the key can mint a preview token for any sandbox port. |
+
+## What you must not do
+
+- Do not mount the Docker socket — or any host path — into a sandbox.
+- Do not run `openbloxd` in a container with the Docker socket mounted; it defeats
+  the reason the daemon exists.
+- Do not mount the Docker socket into an application container to use the library;
+  use `openbloxd`.
+- Do not set `egress: unrestricted` for untrusted code without an external firewall.
+- Do not set a runtime other than `runsc` for untrusted code.
+- Do not put secrets into a sandbox's environment, files or command arguments.
+- Do not trust sandbox output: escape it before rendering, bound it before parsing,
+  and treat it as potential prompt injection before handing it to a model.
+- Do not rely on `Revoke` across replicas; rely on short preview TTLs.
+- Do not treat openblox as a tenant boundary between callers of the same
+  `openbloxd` (see [THREAT_MODEL.md §7](THREAT_MODEL.md#7-explicit-non-goals-and-residual-risks)).

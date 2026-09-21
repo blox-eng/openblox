@@ -18,7 +18,12 @@
 # Debian rather than Alpine on purpose: sandboxes run Python, and musl has no
 # manylinux wheels, so on Alpine every numpy/pandas install compiles from source
 # inside the sandbox.
-FROM python:3.12-slim-bookworm
+#
+# Pinned by digest (the multi-arch index), so a rebuild of the same commit
+# starts from the same base. Dependabot bumps the digest weekly; the tag stays
+# for readability. Package versions from apt below are not pinned, so the
+# image is not bit-for-bit reproducible — see RELEASING.md.
+FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
 
 # netcat-openbsd gives the preview relay its fast path; without it the relay
 # falls back to python3, which works but pays interpreter startup per connection.

@@ -29,6 +29,22 @@ ghcr.io/blox-eng/openblox-sandbox@sha256:...
 
 Every publish prints the digest to its job summary.
 
+**Verify the digest before you pin it.** Each publish signs the image with a
+build provenance attestation, keyless, through the workflow's own OIDC identity.
+Checking it proves the image was built by this repository's publish workflow —
+not merely that someone holding a key signed it:
+
+```sh
+gh attestation verify "oci://ghcr.io/blox-eng/openblox-sandbox@sha256:..." \
+  -R blox-eng/openblox \
+  --signer-workflow blox-eng/openblox/.github/workflows/publish-image.yml
+```
+
+That takes the digest, never a tag — which is the point: a tag can be repointed
+by whoever controls the registry, a digest cannot. For the `openbloxd` binaries,
+the SBOM and the build provenance, see
+[Verifying a release](../RELEASING.md#verifying-a-release).
+
 ## The contract
 
 An openblox image must provide:

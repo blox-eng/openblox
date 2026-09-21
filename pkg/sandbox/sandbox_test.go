@@ -122,3 +122,66 @@ func TestWithLabelDoesNotAliasAcrossSpecs(t *testing.T) {
 		t.Errorf("first spec label = %q, want %q; option shares a map across specs", first.Labels["owner"], "a")
 	}
 }
+
+func TestSpecValidateRefusesRootAndNamedUsers(t *testing.T) {
+	tests := []struct {
+		user string
+		ok   bool
+	}{
+		{DefaultUser, true},
+		{"65534:65534", true},
+		{"2147483647:1", true},
+		{"1000", false}, // a bare uid takes its groups from the image
+		{"2147483648:1000", false},
+		{"+1000:1000", false},
+		{" 1000:1000", false},
+		{"0", false},
+		{"0:0", false},
+		{"1000:0", false},
+		{"0:1000", false},
+		{"root", false},
+		{"sandbox", false}, // a name can map to uid 0 inside the image
+		{"", false},        // empty means the image's own USER, which may be root
+		{"1000:", false},
+		{"-1", false},
+		{"1000:1000:1000", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.user, func(t *testing.T) {
+			err := NewSpec(WithUser(tt.user)).Validate()
+			if tt.ok && err != nil {
+				t.Fatalf("Validate(%q) = %v, want nil", tt.user, err)
+			}
+			if !tt.ok && !errors.Is(err, ErrInvalid) {
+				t.Fatalf("Validate(%q) = %v, want ErrInvalid", tt.user, err)
+			}
+		})
+	}
+}
+
+// A backend asks whether the policy is EgressNone and gives a network interface
+// when it is not, so an unknown value must fail the create rather than resolve
+// to the permissive answer.
+func TestSpecValidateRefusesUnknownEgressPolicies(t *testing.T) {
+	tests := []struct {
+		name   string
+		egress EgressPolicy
+		ok     bool
+	}{
+		{"none", EgressNone, true},
+		{"unrestricted", EgressUnrestricted, true},
+		{"past the last policy", EgressUnrestricted + 1, false},
+		{"negative", -1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := NewSpec(WithEgress(tt.egress)).Validate()
+			if tt.ok && err != nil {
+				t.Fatalf("Validate(egress %d) = %v, want nil", tt.egress, err)
+			}
+			if !tt.ok && !errors.Is(err, ErrInvalid) {
+				t.Fatalf("Validate(egress %d) = %v, want ErrInvalid", tt.egress, err)
+			}
+		})
+	}
+}

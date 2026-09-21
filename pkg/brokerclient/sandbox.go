@@ -53,7 +53,7 @@ func (s *brokerSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.
 	if err := s.client.do(ctx, http.MethodPost, s.route("/exec"), req, &resp); err != nil {
 		return sandbox.Result{}, err
 	}
-	return sandbox.Result{Stdout: resp.Stdout, Stderr: resp.Stderr, ExitCode: resp.ExitCode}, nil
+	return sandbox.Result{Stdout: resp.Stdout, Stderr: resp.Stderr, ExitCode: resp.ExitCode, Truncated: resp.Truncated}, nil
 }
 
 // WriteFile writes src to dest inside the sandbox.
