@@ -13,6 +13,17 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Added
+
+- Releases now attach `THIRD_PARTY_LICENSES.txt`: the full licence text of every
+  module linked into the `openbloxd` binaries, plus the `NOTICE` files of the
+  two that ship one. The binaries are statically linked, so they contain their
+  dependencies' code, and Apache-2.0, MIT and BSD alike allow that copy only if
+  the notices travel with it — previously nothing in a release carried them. The
+  bundle is generated per release from `go list -deps`, never committed, so it
+  cannot go stale against the dependencies it claims to describe. `make licenses`
+  builds the same file locally.
+
 ## [0.7.0] - 2026-09-20
 
 ### Added

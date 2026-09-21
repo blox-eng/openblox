@@ -209,7 +209,19 @@ jobs:
             "openbloxd-linux-${GOARCH}.cdx.json" \
             --clobber
 
-      - name: Attach the unit and example config
+      # The binaries are statically linked, so each dependency's object code is
+      # inside them, and Apache-2.0, MIT and BSD all permit that copy only if
+      # their notices travel with it. Generated here rather than committed: the
+      # module set moves with the dependencies, and a stale bundle that claims
+      # completeness is worse than an obviously absent one.
+      - name: Generate the third-party licence bundle
+        # One arch only, for the same reason as the unit and config below. The
+        # script unions both architectures' module sets, so each leg would
+        # produce the same file and the second upload would be pure race.
+        if: matrix.goarch == 'amd64'
+        run: .github/scripts/third-party-licenses.sh
+
+      - name: Attach the unit, example config, and licences
         # One arch only — these are arch-independent, and both legs uploading
         # them would have the two races --clobber cannot help with.
         if: matrix.goarch == 'amd64'
@@ -222,6 +234,7 @@ jobs:
           gh release upload "$TAG" \
             deploy/openbloxd.service \
             deploy/openbloxd.example.yaml \
+            THIRD_PARTY_LICENSES.txt \
             --clobber
 
   # Verify the release the way a user would, from the published assets, on a
@@ -271,3 +284,21 @@ jobs:
             exit 1
           fi
           echo "verified $bin $TAG on $(uname -m)"
+
+      # The licence bundle is a condition of redistributing the binaries above,
+      # so a release that published them without it is not one to leave standing.
+      # Checked from the published asset, like everything else here: generating
+      # it successfully in the publish job does not prove it reached the release.
+      - name: Verify the licence bundle was published
+        if: matrix.goarch == 'amd64'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.publish.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" -p THIRD_PARTY_LICENSES.txt
+          # Spot-check a module that is linked in on every build rather than
+          # merely asserting the file is non-empty.
+          grep -q '^github.com/docker/docker .* — NOTICE$' THIRD_PARTY_LICENSES.txt
+          echo "licence bundle present for $TAG"

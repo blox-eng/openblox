@@ -1,4 +1,4 @@
-.PHONY: all vet lint test test-integration cover tidy image image-verify build-daemon
+.PHONY: all vet lint test test-integration cover tidy image image-verify build-daemon licenses
 
 # The reference sandbox image. See image/README.md for the contract it satisfies.
 IMAGE ?= openblox-sandbox:dev
@@ -26,6 +26,11 @@ tidy:
 
 build-daemon:
 	CGO_ENABLED=0 go build -trimpath -o bin/openbloxd ./cmd/openbloxd
+
+# The licence bundle the release attaches to the openbloxd binaries. Generated,
+# never committed — see the script for why.
+licenses:
+	.github/scripts/third-party-licenses.sh
 
 image:
 	docker build -t $(IMAGE) image/
