@@ -1,6 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="openblox — secure sandboxes for untrusted, AI-generated code">
-  <!-- GitHub social preview card, 1280x640. Rendered to social-preview.png and
-       uploaded in repository settings; GitHub does not accept SVG there.
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="openblox — run untrusted, AI-generated code on your own hardware. Open, so you can see in. Closed, so it cannot get out.">
+  <!-- Social card, 1280x640. This file is the source; social-preview.png is
+       rendered from it with `make social-preview` and is what actually ships:
+       GitHub's repository settings do not accept SVG, and og:image wants a
+       raster too. Both copies of the PNG are generated, never hand-edited.
        Dark ground because the mark's light-ink variant is the stronger one, and
        a link unfurl competes with whatever timeline it lands in. -->
   <rect width="1280" height="640" fill="#0d0f10"/>
@@ -19,11 +21,15 @@
   </g>
 
   <g font-family="DejaVu Sans Mono, Liberation Mono, monospace">
-    <text x="368" y="268" fill="#EDEDED" font-size="76" font-weight="700" letter-spacing="-2">openblox</text>
-    <text x="372" y="330" fill="#9aa3a6" font-size="27">Secure sandboxes for untrusted, AI-generated code.</text>
-    <text x="372" y="372" fill="#9aa3a6" font-size="27">Run it on your own hardware.</text>
+    <text x="368" y="264" fill="#EDEDED" font-size="76" font-weight="700" letter-spacing="-2">openblox</text>
+    <text x="372" y="320" fill="#9aa3a6" font-size="24">Run untrusted, AI-generated code on your own hardware.</text>
 
-    <text x="372" y="452" fill="#5f6a6d" font-size="21" letter-spacing="3">GO &#183; DOCKER &#183; GVISOR &#183; MIT</text>
+    <!-- The site's motto, split light over muted the way the page sets it:
+         the first half is the promise, the second is the constraint. -->
+    <text x="372" y="386" fill="#EDEDED" font-size="30">Open, so you can see in.</text>
+    <text x="372" y="424" fill="#9aa3a6" font-size="30">Closed, so it cannot get out.</text>
+
+    <text x="372" y="496" fill="#5f6a6d" font-size="21" letter-spacing="3">GO &#183; DOCKER &#183; GVISOR &#183; MIT</text>
   </g>
 
   <text x="120" y="556" fill="#5f6a6d" font-family="DejaVu Sans Mono, Liberation Mono, monospace" font-size="21">github.com/blox-eng/openblox</text>

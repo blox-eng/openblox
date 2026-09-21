@@ -1,4 +1,4 @@
-.PHONY: all vet lint test test-integration cover tidy image image-verify build-daemon licenses
+.PHONY: all vet lint test test-integration cover tidy image image-verify build-daemon licenses social-preview
 
 # The reference sandbox image. See image/README.md for the contract it satisfies.
 IMAGE ?= openblox-sandbox:dev
@@ -31,6 +31,16 @@ build-daemon:
 # never committed — see the script for why.
 licenses:
 	.github/scripts/third-party-licenses.sh
+
+# The social card. .github/assets/social-preview.svg is the source; this renders
+# it to the two PNGs that actually ship — one uploaded in repository settings,
+# one served as og:image from openblox.sh. Both are committed, because neither
+# consumer can build them: GitHub takes an upload, and www/ has no build step.
+social-preview:
+	inkscape .github/assets/social-preview.svg \
+	  --export-type=png --export-width=1280 --export-height=640 \
+	  --export-filename=.github/assets/social-preview.png
+	cp .github/assets/social-preview.png www/assets/social-preview.png
 
 image:
 	docker build -t $(IMAGE) image/
