@@ -51,8 +51,15 @@ this page.
 
 IBM Plex Sans, Sans Condensed and Mono, latin subset, taken from the Google
 Fonts CDN once and committed under `assets/fonts/`. They are served from this
-origin so the page makes no third-party request at all — which is both the
-honest position for a project about not handing your workload to someone else,
-and what lets `_headers` set a Content-Security-Policy with no external sources
-in it. IBM Plex is licensed under the SIL Open Font License 1.1, whose text
-ships alongside the files in `assets/fonts/LICENSE.txt`.
+origin rather than a font CDN, which is the honest position for a project about
+not handing your workload to someone else. IBM Plex is licensed under the SIL
+Open Font License 1.1, whose text ships alongside the files in
+`assets/fonts/LICENSE.txt`.
+
+## Analytics
+
+Page counts come from Umami, which is cookieless and builds no cross-site
+identity. It is the only third-party request the page makes, and the
+Content-Security-Policy in `_headers` names its two hosts one directive at a
+time — `cloud.umami.is` may script and may not post, `gateway.umami.is` may
+post and may not script — so neither is allowed by accident.

@@ -14,9 +14,10 @@
 [![Go 1.25](https://img.shields.io/badge/go-1.25-00ADD8.svg)](https://go.dev/dl/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
-Run untrusted, AI-generated code on your own hardware. Under 3,000 lines of Go over
-Docker and [gVisor](https://gvisor.dev) — no control plane, no database, no
-scheduler. A sandbox is a container, and the container is the state.
+Run untrusted, AI-generated code on your own hardware. A Go library over Docker
+and [gVisor](https://gvisor.dev), small enough to read in an afternoon — no
+control plane, no database, no scheduler. A sandbox is a container, and the
+container is the state.
 
 [openblox.sh](https://openblox.sh) · [Docs](https://docs.openblox.sh) ·
 [Getting started](https://docs.openblox.sh/getting-started/) ·

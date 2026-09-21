@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>openblox — self-hosted sandboxes for untrusted, AI-generated code</title>
-<meta name="description" content="Run untrusted, AI-generated code on your own hardware. Under 3,000 lines of Go over Docker and gVisor. No control plane, no database, no scheduler.">
+<meta name="description" content="Run untrusted, AI-generated code on your own hardware. A Go library over Docker and gVisor, small enough to read in an afternoon. No control plane, no database, no scheduler.">
 <link rel="canonical" href="https://openblox.sh/">
 <link rel="icon" href="assets/openblox-mark.svg" type="image/svg+xml">
 <link rel="preload" href="assets/fonts/plex-sans-condensed-600.woff2" as="font" type="font/woff2" crossorigin>
@@ -14,9 +14,15 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://openblox.sh/">
 <meta property="og:title" content="openblox — self-hosted sandboxes for untrusted, AI-generated code">
-<meta property="og:description" content="Under 3,000 lines of Go over Docker and gVisor. No control plane, no database, no scheduler. A sandbox is a container, and the container is the state.">
+<meta property="og:description" content="A Go library over Docker and gVisor, small enough to read in an afternoon. No control plane, no database, no scheduler. A sandbox is a container, and the container is the state.">
 <meta property="og:image" content="https://openblox.sh/assets/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
+
+<!-- Umami: page counts, cookieless, no cross-site identity. It is the only
+     third-party request this page makes, and _headers names both of its hosts
+     explicitly rather than widening the policy to allow them by accident. -->
+<link rel="preconnect" href="https://cloud.umami.is" crossorigin>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="f95447d5-221a-4463-a657-405a76795b2d"></script>
 </head>
 <body>
 
@@ -55,9 +61,9 @@
     <div>
       <h1>Run untrusted, AI-generated code on your own hardware.</h1>
       <p class="sub">
-        Under 3,000 lines of Go over Docker and gVisor. <b>No control plane, no
-        database, no scheduler</b> — a sandbox is a container, and the container
-        is the state.
+        A Go library over Docker and gVisor, small enough to read in an
+        afternoon. <b>No control plane, no database, no scheduler</b> — a
+        sandbox is a container, and the container is the state.
       </p>
 
       <div class="install" id="quick-start">
