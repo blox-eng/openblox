@@ -76,6 +76,30 @@ application ──unix socket──► openbloxd ──Docker API──► Docke
 Deployment, verification, compatibility, upgrades and troubleshooting:
 **[Running in production](https://openblox.sh/production/)**.
 
+## Where this sits
+
+openblox is the layer *below* a sandbox platform, not a smaller one.
+
+```
+  your scheduler, your tenancy, your API    ← yours to build, if you ever need it
+  ──────────────────────────────────────
+  openblox                                  ← isolation, done correctly
+  ──────────────────────────────────────
+  Docker + gVisor                           ← the boundary itself
+```
+
+One rule decides what belongs here:
+
+> **How a sandbox is isolated is openblox's problem.
+> Which sandbox runs where is yours.**
+
+Egress, capabilities, filesystem, resource caps, lifetime, runtime: openblox's.
+Placement, queueing, tenancy, metering, snapshots: not openblox's, and not
+planned. Build those on top when something actually asks for them. That is what
+a lower layer is for, and it is why there is no control plane to adopt first.
+
+The comparison is `libvirt`, not OpenStack.
+
 ## Restrictive by default
 
 The zero value of every option is the most restrictive one. A sandbox created
@@ -98,6 +122,16 @@ These are isolation *measures*, not a guarantee: the boundary is gVisor's, and
 [THREAT_MODEL.md](THREAT_MODEL.md) lists what is defended, the test behind each
 claim, and what is not defended.
 
+**Two levels of the same guarantee.** In the library, *your* code chooses: the
+defaults are safe, and every relaxation is explicit and greppable at the call
+site. Through [`openbloxd`](https://openblox.sh/security/#deploying-the-policy-broker-openbloxd)
+the choice stops being the caller's at all — profiles live in the daemon's
+config file and no request can reach them. A caller names a profile. It cannot
+name an image, a runtime, a user, an egress policy, or a resource cap.
+
+That is the difference between weakening being **visible** and weakening being
+**unreachable**, and it is the whole reason the daemon exists.
+
 ## What you get
 
 | | |
@@ -119,7 +153,11 @@ claim, and what is not defended.
 - **You need snapshots, fork, pause/resume, or sub-second cold starts.**
 - **You cannot run Linux with gVisor**, or cannot keep `runsc` patched.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning.
+Most of these are placement rather than isolation, which the rule above puts on
+your side of the line; the rest are trades made deliberately. None are gaps
+waiting to be filled. They are the boundary that keeps openblox small enough to
+be worth reading, and requests to cross it get declined on that basis. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning.
 
 ## Supported
 

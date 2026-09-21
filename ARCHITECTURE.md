@@ -5,10 +5,26 @@ openblox runs untrusted, machine-generated code in disposable Linux sandboxes.
 It is a **Go library first** and a daemon second. There is no control plane, no
 database, and no scheduler. A sandbox is a container; the container is the state.
 
-## Non-goals
+openblox is deliberately the layer *below* a sandbox platform. If you need
+scheduling, tenancy or an API of your own, build them on top — the absence of a
+control plane here is what makes that possible, rather than something you have
+to work around.
 
-Stating these up front, because every one of them is a place a sandbox project
-grows into a platform:
+## The rule
+
+One line decides whether something belongs in openblox:
+
+> **How a sandbox is isolated is openblox's problem.
+> Which sandbox runs where is yours.**
+
+Isolation is the runtime, the egress policy, the filesystem, the user, the
+capabilities, the resource caps and the lifetime bounds. Placement is
+scheduling, queueing, tenancy, metering, fleet membership and snapshots.
+
+Every non-goal below is an application of that rule, not a separate opinion —
+which is why the list has not grown and is not expected to.
+
+## Non-goals
 
 - **No multi-tenant SaaS.** No organizations, billing, usage metering, or audit log.
 - **No scheduler.** One host, one daemon. Not a fleet.
@@ -17,8 +33,10 @@ grows into a platform:
 - **No sub-second cold starts.** Correctness and containment over latency.
 - **No database.** Container labels are the registry.
 
-If you need those, you want a hosted platform. That is a legitimate need and
-openblox is the wrong tool for it.
+If you need those, build them on top of openblox or use a hosted platform. Both
+are legitimate; neither belongs in here. A feature request that crosses the rule
+is declined by pointing at the rule, which is the only way a project this small
+stays this small.
 
 ## Shape
 
