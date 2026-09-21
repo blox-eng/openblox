@@ -36,22 +36,22 @@ runtime ([how](https://docs.openblox.sh/getting-started/#prerequisites)).
 **The daemon.** Your application never touches the Docker socket:
 
 ```bash
-curl -fsSL https://openblox.sh/install.sh | sh
+curl -fsSL https://openblox.sh/install.sh -o install.sh
+less install.sh          # the bytes you are about to run
+sh install.sh
 ```
 
-It verifies the published checksum, and the Sigstore build attestation too when
-the `gh` CLI is present. It installs one binary and starts nothing. Read it
-first — [`www/install.sh`](www/install.sh) is the file that URL serves:
+Fetched once and run from disk, so what you read is what executes. Piping
+`curl` straight into `sh` reads one response and runs another.
 
-```bash
-curl -fsSL https://openblox.sh/install.sh | less
-```
+The script installs one binary and starts nothing. It verifies the published
+checksum, and the Sigstore build attestation too when the `gh` CLI is present.
+Its source is [`www/install.sh`](www/install.sh) — that URL serves this file.
 
 Pin a version in production, and pick your own target if you want one:
 
 ```bash
-OPENBLOX_VERSION=v0.8.1 OPENBLOX_BIN_DIR=~/.local/bin \
-  sh -c "$(curl -fsSL https://openblox.sh/install.sh)"
+OPENBLOX_VERSION=v0.8.1 OPENBLOX_BIN_DIR=~/.local/bin sh install.sh
 ```
 
 **The library.** For a single process that may hold the Docker socket:
