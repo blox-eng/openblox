@@ -52,6 +52,13 @@ jobs:
           cache: true
       - name: Changelog documents the latest release
         run: .github/scripts/changelog-guard.sh
+      # Build the licence bundle on every PR, not only at release time. The
+      # script fails on a dependency that ships no licence file, and the PR that
+      # adds such a dependency is the moment to find out — at release time the
+      # tag is already cut and the choice is between blocking the release and
+      # shipping without the notices.
+      - name: Third-party licence bundle builds
+        run: .github/scripts/third-party-licenses.sh
       - name: go vet
         run: go vet ./...
       - name: golangci-lint
