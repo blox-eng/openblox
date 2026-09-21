@@ -39,6 +39,10 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   function invoked on its last line, so a truncated download does nothing
   instead of running half a script. `go install` and `go get` still work and
   are still on the landing page.
+- openblox.sh counts page views with [Umami](https://umami.is), which sets no
+  cookies and builds no cross-site identity. It is the only third-party request
+  the page makes, and the Content-Security-Policy names its script host and its
+  collection host in separate directives rather than widening to admit both.
 - The project now has a [Discord](https://discord.gg/ksxTebDjj), linked from
   the README, the landing page and the documentation, so a question that is not
   an issue has somewhere to go.

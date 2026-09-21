@@ -5,7 +5,17 @@
   # script, the marks and the fonts. Nothing is fetched from a third party, so
   # the policy can say exactly that and any future addition has to be a
   # deliberate edit here rather than a quiet new request.
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+  # Two hosts are named, and only two: cloud.umami.is serves the tracker and
+  # gateway.umami.is receives the events. They are deliberately separate
+  # directives — the script host cannot post, and the collector cannot script.
+  #
+  # Umami Cloud has moved its collection host more than once, and the failure
+  # is silent: the script loads, connect-src blocks the POST, and the dashboard
+  # simply shows nothing. If the numbers go flat, re-derive the host before
+  # assuming the traffic did:
+  #
+  #   curl -s https://cloud.umami.is/script.js | grep -oE 'https?://[a-z.]+'
+  Content-Security-Policy: default-src 'none'; script-src 'self' https://cloud.umami.is; style-src 'self'; img-src 'self'; font-src 'self'; connect-src https://gateway.umami.is; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), camera=(), microphone=(), interest-cohort=()
