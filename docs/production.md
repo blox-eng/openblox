@@ -59,10 +59,33 @@ Docker socket mounted puts back the privilege it exists to remove.
 
 **1. Install a verified release.** Pick a version rather than `latest`, and verify it
 before installing (details in
-[RELEASING.md](https://github.com/blox-eng/openblox/blob/main/RELEASING.md#verifying-a-release)):
+[RELEASING.md](https://github.com/blox-eng/openblox/blob/main/RELEASING.md#verifying-a-release)).
+
+The installer does the download, the checksum and — where `gh` is present — the
+attestation, in one command. Its source is
+[`www/install.sh`](https://github.com/blox-eng/openblox/blob/main/www/install.sh),
+which is the file `https://openblox.sh/install.sh` serves; read it before you pipe
+it anywhere, here most of all:
 
 ```sh
-VERSION=v0.6.1; ARCH=amd64
+OPENBLOX_VERSION=v0.8.1 sh -c "$(curl -fsSL https://openblox.sh/install.sh)"
+openbloxd --version      # must print $OPENBLOX_VERSION, not "dev"
+```
+
+It installs the binary and nothing else — no unit, no config, no user. Steps 3
+and 4 below need two more files from the same release:
+
+```sh
+gh release download v0.8.1 -R blox-eng/openblox \
+  -p openbloxd.service -p openbloxd.example.yaml
+```
+
+The same steps by hand, which is what to run when you want to see each one
+succeed separately, or when `gh` is unavailable and the attestation has to be
+checked another way:
+
+```sh
+VERSION=v0.8.1; ARCH=amd64
 gh release download "$VERSION" -R blox-eng/openblox \
   -p "openbloxd-linux-$ARCH" -p "openbloxd-linux-$ARCH.sha256" \
   -p openbloxd.service -p openbloxd.example.yaml

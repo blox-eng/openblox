@@ -28,14 +28,39 @@ container is the state.
 > **Status: pre-release (`0.x`).** The API will change; breaking changes bump the
 > minor version and are listed in the [changelog](CHANGELOG.md).
 
-## Quick start
+## Install
 
-Needs Linux, Docker, and gVisor registered as the `runsc` runtime
-([how](https://docs.openblox.sh/getting-started/#prerequisites)).
+Linux on `amd64` or `arm64`, Docker, and gVisor registered as the `runsc`
+runtime ([how](https://docs.openblox.sh/getting-started/#prerequisites)).
+
+**The daemon.** Your application never touches the Docker socket:
+
+```bash
+curl -fsSL https://openblox.sh/install.sh | sh
+```
+
+It verifies the published checksum, and the Sigstore build attestation too when
+the `gh` CLI is present. It installs one binary and starts nothing. Read it
+first — [`www/install.sh`](www/install.sh) is the file that URL serves:
+
+```bash
+curl -fsSL https://openblox.sh/install.sh | less
+```
+
+Pin a version in production, and pick your own target if you want one:
+
+```bash
+OPENBLOX_VERSION=v0.8.1 OPENBLOX_BIN_DIR=~/.local/bin \
+  sh -c "$(curl -fsSL https://openblox.sh/install.sh)"
+```
+
+**The library.** For a single process that may hold the Docker socket:
 
 ```bash
 go get github.com/blox-eng/openblox
 ```
+
+## Use it
 
 ```go
 backend, err := docker.New()
@@ -64,7 +89,7 @@ pin a digest anywhere it matters.
 
 ## In production: run `openbloxd`
 
-The quick start imports the library, so **your process holds the Docker socket,
+The example above imports the library, so **your process holds the Docker socket,
 which is root-equivalent on the host.** In production, run the `openbloxd` daemon
 on the host instead. It owns the socket, and your application talks to it over a
 Unix socket with `pkg/brokerclient` — the same `Backend` interface, no Docker
