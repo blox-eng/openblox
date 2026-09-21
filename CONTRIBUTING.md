@@ -9,7 +9,7 @@ Read this before proposing a feature. One rule decides what belongs in openblox:
 
 Isolation is in scope: runtimes, egress policy, filesystem, users, capabilities,
 resource caps, lifetime bounds. Placement is not: scheduling, multi-node, tenancy,
-metering, snapshot/resume, an API server, a database.
+metering, snapshot/resume, a control-plane API server, a database.
 
 openblox is the layer below a sandbox platform. Anything on the placement side is
 something you can build on top, and keeping it out is what keeps this small enough
