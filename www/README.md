@@ -16,6 +16,10 @@ Cloudflare Pages, connected to this repository. The domain is already on
 Cloudflare, which is what makes apex support and the edge redirects free; GitHub
 Pages could not serve both sites, because one repository gets one custom domain.
 
+Connecting the project and repointing the apex are manual steps in the
+Cloudflare dashboard, done once and not by anything in this repository. Until
+they are, nothing here is served at `openblox.sh`. The settings to use:
+
 | Setting | Value |
 |---|---|
 | Production branch | `main` |

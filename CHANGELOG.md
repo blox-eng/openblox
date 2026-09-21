@@ -15,10 +15,13 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ### Changed
 
-- **The documentation moved to `docs.openblox.sh`.** Same pages, same MkDocs
-  build, same workflow — only the domain changed. `openblox.sh` is now a
-  landing page that says what openblox is before a reader has to infer it from
-  a documentation nav. Every documentation URL that used to sit on the apex
+- **The documentation site moves to `docs.openblox.sh`, and `openblox.sh`
+  becomes a landing page.** Same pages, same MkDocs build, same workflow — only
+  the domain changes — and the apex now says what openblox is instead of asking
+  a reader to infer it from a documentation nav. The two halves are hosted
+  separately, because one repository gets one custom domain on GitHub Pages;
+  the DNS and hosting changes that complete the move are made outside this
+  repository. Every documentation URL that used to sit on the apex
   (`/getting-started/`, `/production/`, `/security/`, `/image/`,
   `/contributing/`) redirects permanently to the same path on the subdomain,
   deep anchors included, so nothing you have linked or bookmarked breaks. The

@@ -63,15 +63,27 @@ for page in "$ROOT"/*.html; do
         target="$ROOT/$ref" ;;
     esac
 
-    # An in-page fragment on a local path is checked as a path only; the page it
-    # names is this repository's, so a missing id there is that page's problem.
+    frag=""
+    case $ref in *\#*) frag=${ref#*\#} ;; esac
     target=${target%%#*}
     target=${target%%\?*}
 
     if [ -d "$target" ]; then
-      [ -f "$target/index.html" ] || problem "$ref — directory has no index.html"
+      target="$target/index.html"
+      [ -f "$target" ] || { problem "$ref — directory has no index.html"; continue; }
     elif [ ! -f "$target" ]; then
       problem "$ref — no such file"
+      continue
+    fi
+
+    # A fragment on another page in this site is as checkable as one on this
+    # page, so it is checked the same way. Today the site is one page and every
+    # such reference takes the "#..." arm above; this is what keeps the
+    # guarantee true on the day a second page is added.
+    if [ -n "$frag" ] && [ "${target%.html}" != "$target" ]; then
+      grep -oE 'id="[^"]+"' "$target" | sed 's/id="//; s/"$//' |
+        grep -qxF "$frag" ||
+        problem "$ref — $(basename "$target") has no element with that id"
     fi
   done <<<"$refs"
 done
