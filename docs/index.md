@@ -106,3 +106,6 @@ are not gaps waiting to be filled.
 - [Production](production.md) — `openbloxd`, compatibility, upgrades, troubleshooting
 - [Security model](security.md) — what is isolated, how, and what is *not* claimed
 - [The image contract](image.md) — what an image must provide
+
+A question that is not an issue belongs on
+[Discord](https://discord.gg/ksxTebDjj).

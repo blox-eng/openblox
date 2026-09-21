@@ -15,6 +15,33 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ### Changed
 
+- **The documentation site moves to `docs.openblox.sh`, and `openblox.sh`
+  becomes a landing page.** Same pages, same MkDocs build, same workflow — only
+  the domain changes — and the apex now says what openblox is instead of asking
+  a reader to infer it from a documentation nav. The two halves are hosted
+  separately, because one repository gets one custom domain on GitHub Pages;
+  the DNS and hosting changes that complete the move are made outside this
+  repository. Every documentation URL that used to sit on the apex
+  (`/getting-started/`, `/production/`, `/security/`, `/image/`,
+  `/contributing/`) redirects permanently to the same path on the subdomain,
+  deep anchors included, so nothing you have linked or bookmarked breaks. The
+  shields.io badge endpoints under `/badges/` moved with the site and redirect
+  the same way; the README's badge URLs now point at the subdomain directly.
+  `security@openblox.sh` and `conduct@openblox.sh` are unaffected — the mail
+  records stay on the apex.
+- **`openbloxd` can be installed with one command.** `install.sh` resolves the
+  release for this machine, downloads the binary and the checksum published
+  beside it, and installs nothing unless they match. Where the `gh` CLI is
+  present it also verifies the Sigstore build attestation, because a checksum
+  that ships in the same release as the binary proves the bytes arrived intact
+  and not that the release is the one CI built. It refuses anything but Linux
+  on amd64 or arm64 by name rather than failing obscurely later, and it is one
+  function invoked on its last line, so a truncated download does nothing
+  instead of running half a script. `go install` and `go get` still work and
+  are still on the landing page.
+- The project now has a [Discord](https://discord.gg/ksxTebDjj), linked from
+  the README, the landing page and the documentation, so a question that is not
+  an issue has somewhere to go.
 - After cutting a tag, the release workflow now opens the `docs:` PR that
   promotes `[Unreleased]` to that version, instead of leaving it for a
   maintainer. Only the heading and compare link are machine-written; the entries

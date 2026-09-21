@@ -1,0 +1,41 @@
+# Cloudflare Pages redirects for openblox.sh.
+#
+# The documentation used to live at this apex and now lives on docs.openblox.sh.
+# These keep every published URL working: the README, CHANGELOG, RELEASING.md,
+# SECURITY.md and pkg.go.dev all carry apex documentation links, and so do
+# whatever bookmarks and search results already exist.
+#
+# Scoped to the documentation prefixes deliberately. A blanket `/* ... 301`
+# would swallow the landing page this site exists to serve.
+#
+# Fragments are not sent to the server, so a deep anchor such as
+# /security/#deploying-the-policy-broker-openbloxd survives on its own: the
+# browser reattaches it to the redirect target. Query strings are forwarded by
+# Pages. Both the bare path and the trailing-slash form are listed, because a
+# splat rule does not match the path without its slash.
+#
+# 301, not 302: these moves are permanent, and a permanent redirect is what
+# search engines need to hand the documentation's ranking to the new host.
+
+/getting-started      https://docs.openblox.sh/getting-started/        301
+/getting-started/*    https://docs.openblox.sh/getting-started/:splat  301
+/production           https://docs.openblox.sh/production/             301
+/production/*         https://docs.openblox.sh/production/:splat       301
+/security             https://docs.openblox.sh/security/               301
+/security/*           https://docs.openblox.sh/security/:splat         301
+/image                https://docs.openblox.sh/image/                  301
+/image/*              https://docs.openblox.sh/image/:splat            301
+/contributing         https://docs.openblox.sh/contributing/           301
+/contributing/*       https://docs.openblox.sh/contributing/:splat     301
+
+# The README's four shields.io badges read these endpoints, and shields caches
+# by URL. They move with the site that generates them.
+/badges/*             https://docs.openblox.sh/badges/:splat           301
+
+# Emitted by the mkdocs llmstxt plugin, for readers that are themselves agents.
+/llms.txt             https://docs.openblox.sh/llms.txt                301
+/llms-full.txt        https://docs.openblox.sh/llms-full.txt           301
+
+# The docs site owns its own sitemap and search index; this apex is one page.
+/sitemap.xml          https://docs.openblox.sh/sitemap.xml             301
+/search/*             https://docs.openblox.sh/search/:splat           301

@@ -6,10 +6,10 @@
 # openblox
 
 [![CI](https://github.com/blox-eng/openblox/actions/workflows/ci.yml/badge.svg)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/endpoint?url=https://openblox.sh/badges/tests.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
-[![Integration tests](https://img.shields.io/endpoint?url=https://openblox.sh/badges/integration.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://openblox.sh/badges/coverage.json)](https://github.com/blox-eng/openblox/issues/10)
-[![Lines of Go](https://img.shields.io/endpoint?url=https://openblox.sh/badges/loc.json)](ARCHITECTURE.md)
+[![Tests](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/tests.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
+[![Integration tests](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/integration.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/coverage.json)](https://github.com/blox-eng/openblox/issues/10)
+[![Lines of Go](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/loc.json)](ARCHITECTURE.md)
 [![Go Reference](https://pkg.go.dev/badge/github.com/blox-eng/openblox.svg)](https://pkg.go.dev/github.com/blox-eng/openblox)
 [![Go 1.25](https://img.shields.io/badge/go-1.25-00ADD8.svg)](https://go.dev/dl/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
@@ -18,9 +18,11 @@ Run untrusted, AI-generated code on your own hardware. Under 3,000 lines of Go o
 Docker and [gVisor](https://gvisor.dev) — no control plane, no database, no
 scheduler. A sandbox is a container, and the container is the state.
 
-[Docs](https://openblox.sh) · [Getting started](https://openblox.sh/getting-started/) ·
-[Production](https://openblox.sh/production/) · [Architecture](ARCHITECTURE.md) ·
-[Threat model](THREAT_MODEL.md) · [Security](SECURITY.md) · [Releasing](RELEASING.md)
+[openblox.sh](https://openblox.sh) · [Docs](https://docs.openblox.sh) ·
+[Getting started](https://docs.openblox.sh/getting-started/) ·
+[Production](https://docs.openblox.sh/production/) · [Architecture](ARCHITECTURE.md) ·
+[Threat model](THREAT_MODEL.md) · [Security](SECURITY.md) · [Releasing](RELEASING.md) ·
+[Discord](https://discord.gg/ksxTebDjj)
 
 > **Status: pre-release (`0.x`).** The API will change; breaking changes bump the
 > minor version and are listed in the [changelog](CHANGELOG.md).
@@ -28,7 +30,7 @@ scheduler. A sandbox is a container, and the container is the state.
 ## Quick start
 
 Needs Linux, Docker, and gVisor registered as the `runsc` runtime
-([how](https://openblox.sh/getting-started/#prerequisites)).
+([how](https://docs.openblox.sh/getting-started/#prerequisites)).
 
 ```bash
 go get github.com/blox-eng/openblox
@@ -56,7 +58,7 @@ fmt.Println(string(res.Stdout)) // 42
 ```
 
 That image is the [reference sandbox userland](image/README.md); any image that
-meets [the contract](https://openblox.sh/image/) works. `:latest` is fine here —
+meets [the contract](https://docs.openblox.sh/image/) works. `:latest` is fine here —
 pin a digest anywhere it matters.
 
 ## In production: run `openbloxd`
@@ -74,7 +76,7 @@ application ──unix socket──► openbloxd ──Docker API──► Docke
 ```
 
 Deployment, verification, compatibility, upgrades and troubleshooting:
-**[Running in production](https://openblox.sh/production/)**.
+**[Running in production](https://docs.openblox.sh/production/)**.
 
 ## Where this sits
 
@@ -124,7 +126,7 @@ claim, and what is not defended.
 
 **Two levels of the same guarantee.** In the library, *your* code chooses: the
 defaults are safe, and every relaxation is explicit and greppable at the call
-site. Through [`openbloxd`](https://openblox.sh/security/#deploying-the-policy-broker-openbloxd)
+site. Through [`openbloxd`](https://docs.openblox.sh/security/#deploying-the-policy-broker-openbloxd)
 the choice stops being the caller's at all — profiles live in the daemon's
 config file and no request can reach them. A caller names a profile. It cannot
 name an image, a runtime, a user, an egress policy, or a resource cap.
@@ -163,7 +165,7 @@ be worth reading, and requests to cross it get declined on that basis. See
 
 Linux on `amd64` and `arm64`, both tested natively in CI against a real gVisor
 runtime. Docker Engine with `runsc` registered. Go 1.25+ for library users. The
-[compatibility matrix](https://openblox.sh/production/#compatibility) covers
+[compatibility matrix](https://docs.openblox.sh/production/#compatibility) covers
 `openbloxd`, clients, images, Docker and gVisor.
 
 ## Status
@@ -181,7 +183,7 @@ reproducible and ship with SBOMs; binaries and the sandbox image carry Sigstore-
 build provenance. [RELEASING.md](RELEASING.md#verifying-a-release) shows how to
 verify them.
 
-Written for [Blox](https://blox.bg), where it is the only sandbox backend and
+Written for [Blox](https://bloxng.com), where it is the only sandbox backend and
 replaced a hosted platform. Its own production rollout is gated on migrating its
 callers off the Docker socket and onto `openbloxd`. No support SLA.
 
@@ -194,6 +196,8 @@ open a public issue.
 
 Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits follow
 [Conventional Commits](https://www.conventionalcommits.org/); CI enforces it.
+For a question that is not an issue, there is a
+[Discord](https://discord.gg/ksxTebDjj).
 
 ## License
 

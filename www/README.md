@@ -1,0 +1,58 @@
+# www — openblox.sh
+
+The landing page: one screen, no scroll. Hand-written static HTML with no build
+step and no dependencies — `index.html`, one stylesheet, one script, and the
+marks and fonts it serves itself. Open `index.html` in a browser, or
+`python3 -m http.server --directory www` for a server that resolves the root
+path the way the host does.
+
+`install.sh` is served from here too, at the URL the page's own install command
+prints. It is in the repository rather than pasted into a hosting dashboard so
+that the script people are asked to pipe into a shell goes through the same
+review and the same checks as everything else — and so "read it first", which
+the page links, reaches something a reader can diff against its history.
+
+The argument for openblox — the two-tier guarantee, the isolation-versus-
+placement rule, what it does not do — lives in the documentation. This page's
+job is to say what openblox is and get out of the way.
+
+The reference documentation is a separate site — MkDocs, in `docs/`, deployed to
+`docs.openblox.sh` by `.github/workflows/docs.yml`. This directory is not that
+site and does not link into it by relative path.
+
+## Deployment
+
+Cloudflare Pages, connected to this repository. The domain is already on
+Cloudflare, which is what makes apex support and the edge redirects free; GitHub
+Pages could not serve both sites, because one repository gets one custom domain.
+
+Connecting the project and repointing the apex are manual steps in the
+Cloudflare dashboard, done once and not by anything in this repository. Until
+they are, nothing here is served at `openblox.sh`. The settings to use:
+
+| Setting | Value |
+|---|---|
+| Production branch | `main` |
+| Build command | `.github/scripts/check-links.sh www` |
+| Build output directory | `www` |
+| Root directory | repository root |
+
+The build command is a check, not a compiler: there is nothing to compile, and
+the thing worth failing on is a reference that does not resolve. It is the same
+script CI runs, so a broken link fails the preview deploy and the pull request
+alike. Pages builds every pull request as its own preview URL.
+
+`_redirects` and `_headers` are read by Pages and not served. The redirects
+carry the documentation URLs that used to live on this apex over to
+`docs.openblox.sh`, scoped to the documentation prefixes so they cannot swallow
+this page.
+
+## Fonts
+
+IBM Plex Sans, Sans Condensed and Mono, latin subset, taken from the Google
+Fonts CDN once and committed under `assets/fonts/`. They are served from this
+origin so the page makes no third-party request at all — which is both the
+honest position for a project about not handing your workload to someone else,
+and what lets `_headers` set a Content-Security-Policy with no external sources
+in it. IBM Plex is licensed under the SIL Open Font License 1.1, whose text
+ships alongside the files in `assets/fonts/LICENSE.txt`.
