@@ -36,3 +36,7 @@ site/
 
 # make build-daemon output
 bin/
+
+# make licenses output — generated on every release, never committed, because a
+# stale bundle that claims to be complete is worse than an absent one
+THIRD_PARTY_LICENSES.txt

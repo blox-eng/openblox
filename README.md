@@ -198,3 +198,8 @@ Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits follow
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+The `openbloxd` binaries are statically linked, so they also carry the code of
+their dependencies. Every release attaches `THIRD_PARTY_LICENSES.txt` with the
+full licence text of each linked module, generated from what is actually in the
+binary. Build it yourself with `make licenses`.
