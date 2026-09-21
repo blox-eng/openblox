@@ -25,9 +25,17 @@ Sandboxes run under gVisor (`runsc`). Guest syscalls are serviced by a user-spac
 rather than passed to the host, so the host kernel's syscall surface is not directly
 reachable from inside a sandbox.
 
-openblox **will not fall back to `runc`**. If `runsc` is not registered, `Create` fails
-with `ErrRuntimeUnavailable`. A fallback would mean untrusted code silently running on
-the host kernel while the API reported success.
+openblox **will not fall back to `runc`**. If the configured runtime is not registered,
+`Create` fails with `ErrRuntimeUnavailable`. A fallback would mean untrusted code
+silently running on the host kernel while the API reported success.
+
+Runtimes are ordered, not binary. `runc` reaches the host kernel in full and is unsafe
+for untrusted code; gVisor reaches a user-space kernel; a microVM runtime such as Kata
+reaches a separate guest kernel and is a **stronger** boundary than the default, at a
+higher cost per sandbox. openblox does not rank them — it checks only that the runtime
+is registered — so a deployment that has chosen a microVM runtime is supported, with the
+caveat that the threat model's gVisor-specific rows and every test behind it are written
+against `runsc`. See [SECURITY.md](https://github.com/blox-eng/openblox/blob/main/SECURITY.md#the-isolation-runtime).
 
 ### No network interface at all
 

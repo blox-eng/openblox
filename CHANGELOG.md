@@ -70,6 +70,35 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   cookies and builds no cross-site identity. It is the only third-party request
   the page makes, and the Content-Security-Policy names its script host and its
   collection host in separate directives rather than widening to admit both.
+
+### Fixed
+
+- **`SECURITY.md` no longer tells you that a stronger runtime is a weaker one.**
+  It said "any other runtime runs untrusted code on the host kernel", and listed
+  "do not set a runtime other than `runsc`" under *What you must not do*. Both
+  are false for a microVM runtime such as [Kata](https://katacontainers.io),
+  which registers with Docker as an OCI runtime exactly as `runsc` does and
+  gives each sandbox a **separate guest kernel** — a stronger boundary than
+  gVisor's user-space one. Anyone who had deliberately paid for that boundary
+  was being told by the project's own security document that they had broken
+  their deployment, and then told to undo it. Runtime strength is now documented
+  as an ordering — `runc` reaches the host kernel in full, gVisor reaches the
+  Sentry, a microVM reaches its own kernel — with the caveat that
+  `THREAT_MODEL.md` §B1/§B2 and every test behind it are written against
+  `runsc`, so on anything else you are trusting that runtime's evidence rather
+  than openblox's. Nothing in the code changes: `Create` never enforced a single
+  approved runtime, only that the configured one is registered with Docker, so
+  Kata has worked since the backend was written and still fails closed
+  (`ErrRuntimeUnavailable`) exactly as before.
+- Why openblox is not a multi-backend abstraction is now written down in
+  [`specs/2026-09-21-backend-scope.md`](specs/2026-09-21-backend-scope.md),
+  rather than being answered one thread at a time. In short: an in-process WASM
+  runtime is a genuinely stronger boundary than gVisor and still the wrong shape
+  here, because `Files`, `StartProcess` and preview ports have no referent under
+  it and the target workload installs things; and an interface whose methods
+  return `ErrUnsupported` depending on configuration gives back, one level up,
+  the visible-but-unreachable confusion `openbloxd` exists to remove. A microVM
+  runtime is in scope precisely because it is the same integration point.
 - The project now has a [Discord](https://discord.gg/ksxTebDjj), linked from
   the README, the landing page and the documentation, so a question that is not
   an issue has somewhere to go.

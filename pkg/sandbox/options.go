@@ -208,8 +208,18 @@ func WithImage(ref string) CreateOption {
 }
 
 // WithRuntime overrides the isolation runtime. The default, runsc, is gVisor.
-// Setting this to the host's default runtime trades away the isolation openblox
-// exists to provide.
+//
+// Runtimes are not interchangeable, and they are not merely runsc-or-worse.
+// What matters is which kernel a guest syscall reaches: the host's own kernel
+// under runc, a user-space kernel under gVisor, a separate guest kernel under
+// a microVM runtime such as Kata. Only the first trades away the isolation
+// openblox exists to provide; a microVM runtime is a stronger boundary than the
+// default, at a higher cost per sandbox.
+//
+// Create does not rank runtimes. It requires only that the named runtime is
+// registered with Docker, and fails with [ErrRuntimeUnavailable] when it is
+// not — so the choice, and the reasoning behind it, are the caller's. See
+// SECURITY.md for the ordering and what each boundary is worth.
 func WithRuntime(name string) CreateOption {
 	return func(s *Spec) { s.Runtime = name }
 }
