@@ -31,13 +31,19 @@ for page in "$ROOT"/*.html; do
   echo "$page"
 
   # Every id on the page, for resolving fragments.
-  ids=$(grep -oE 'id="[^"]+"' "$page" | sed 's/id="//; s/"$//' | sort -u)
+  #
+  # `|| true` on both greps: under `set -e` a grep that matches nothing exits 1
+  # and takes the script with it. A page carrying no id at all is perfectly
+  # valid — 404.html has none — and a page with no href or src would be too,
+  # so neither is an error. Without this the checker dies on such a page having
+  # printed only its name, which reads as a broken reference it cannot name.
+  ids=$(grep -oE 'id="[^"]+"' "$page" | sed 's/id="//; s/"$//' | sort -u || true)
 
   # srcset carries the dark-mode mark, and a <picture> silently falls back to
   # its <img> when the source 404s — exactly the kind of break nobody reports.
   refs=$(grep -oE '(href|src|srcset)="[^"]*"' "$page" |
     sed 's/^[a-z]*="//; s/"$//' | tr ',' '\n' |
-    sed -E 's/^[[:space:]]+//; s/[[:space:]]+[0-9.]+[xw]$//' | sort -u)
+    sed -E 's/^[[:space:]]+//; s/[[:space:]]+[0-9.]+[xw]$//' | sort -u || true)
 
   while IFS= read -r ref; do
     [ -n "$ref" ] || continue

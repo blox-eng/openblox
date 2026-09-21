@@ -272,6 +272,35 @@
   .attrib svg { width: 14px; height: 14px; fill: currentColor; display: block; }
   .foot-right { display: flex; align-items: center; gap: 1rem; }
 
+  /* ---- 404 ------------------------------------------------------------
+     One column: there is no second thing to put beside the message, and the
+     landing page's right-hand track would otherwise hold the text to 1fr of
+     a two-track grid for no reason. */
+
+  .stage.solo { grid-template-columns: minmax(0, 1fr); }
+
+  .code {
+    margin: 0 0 0.6rem;
+    color: var(--muted);
+    font: 500 0.8125rem/1 var(--mono);
+    letter-spacing: 0.08em;
+  }
+
+  .ways {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.4rem;
+    margin: clamp(1.25rem, 3vh, 1.75rem) 0 0;
+  }
+  .ways a {
+    color: var(--muted);
+    text-decoration: none;
+    font: 500 0.8125rem/1 var(--mono);
+    letter-spacing: 0.04em;
+    transition: color 130ms ease;
+  }
+  .ways a:hover { color: var(--ink); }
+
   @media (max-width: 62rem) {
     .stage { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
     .blocks { max-width: 20rem; margin-inline: auto; order: -1; }

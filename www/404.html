@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Not found — openblox</title>
+<meta name="description" content="No page at this address on openblox.sh.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="assets/openblox-mark.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/plex-sans-condensed-600.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/plex-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+
+<!-- No script on this page, deliberately. app.js drives the install tabs, the
+     copy button and the canvas, none of which exist here, and it dereferences
+     those elements without guarding — so including it would throw before the
+     theme handler ran. The theme still follows prefers-color-scheme through
+     CSS; only the manual toggle is absent, which persists nothing and so
+     carries nothing across from the landing page anyway. -->
+</head>
+<body>
+
+<div class="screen">
+
+  <header class="chrome">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill-rule="evenodd" d="M 12 2 L 22 7 L 12 12 L 2 7 Z M 12 3.8 L 18.4 7 L 12 10.2 L 5.6 7 Z"/>
+        <path d="M 2 7 L 12 12 L 12 18 L 2 13 Z" opacity=".52"/>
+        <path d="M 22 7 L 12 12 L 12 18 L 22 13 Z" opacity=".28"/>
+        <path d="M 12 5.2 L 14.8 6.6 L 12 8 L 9.2 6.6 Z"/>
+        <path d="M 9.2 6.6 L 12 8 L 12 10 L 9.2 8.6 Z" opacity=".52"/>
+        <path d="M 14.8 6.6 L 12 8 L 12 10 L 14.8 8.6 Z" opacity=".28"/>
+      </svg>
+      openblox
+    </a>
+    <nav class="links">
+      <a href="https://docs.openblox.sh/">Docs</a>
+      <a href="https://github.com/blox-eng/openblox">GitHub</a>
+    </nav>
+  </header>
+
+  <main class="stage solo">
+    <div>
+      <p class="code" aria-hidden="true">404</p>
+      <h1>No page at this address.</h1>
+      <p class="sub">
+        If you arrived from a documentation link, the documentation moved to
+        <b>docs.openblox.sh</b>. Every published path redirects, so a link that
+        landed here is either older than those redirects or was never a page.
+      </p>
+      <p class="ways">
+        <a href="/">Landing page</a>
+        <a href="https://docs.openblox.sh/">Documentation</a>
+        <a href="https://docs.openblox.sh/getting-started/">Getting started</a>
+        <a href="https://github.com/blox-eng/openblox/issues">Report a broken link ↗</a>
+      </p>
+    </div>
+  </main>
+
+  <footer class="chrome foot">
+    <a class="attrib" href="https://bloxng.com">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 22 7.5v9L12 22 2 16.5v-9Zm0 2.3L4 8.6v6.8l8 4.3 8-4.3V8.6Z"/></svg>
+      Blox Engineering
+    </a>
+    <span class="foot-right">
+      <a href="https://github.com/blox-eng/openblox/blob/main/LICENSE">MIT</a>
+      <a href="https://github.com/blox-eng/openblox/releases">Releases ↗</a>
+    </span>
+  </footer>
+
+</div>
+
+</body>
+</html>

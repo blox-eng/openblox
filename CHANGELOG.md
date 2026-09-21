@@ -73,6 +73,25 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ### Fixed
 
+- **openblox.sh answers a missing page with a 404 instead of the landing page.**
+  Cloudflare Pages falls back to `index.html` when nothing matches, so every
+  mistyped or retired URL returned `200` with the front page — a soft 404, which
+  tells a reader nothing and invites search engines to index every wrong address
+  as a copy of the home page. `www/404.html` is that answer: the site's own
+  chrome, what happened, and the four places worth going next, including
+  `docs.openblox.sh` for the documentation links that used to live on this apex.
+  It carries no script, because `app.js` drives widgets that page does not have
+  and reaches for them unguarded, and because `_headers` sets `script-src 'self'`
+  with no `'unsafe-inline'` — a policy worth more than a theme toggle on an
+  error page. The theme still follows `prefers-color-scheme`.
+- **`check-links.sh` no longer dies on a page that carries no `id`.** It
+  collects every `id` on a page to resolve fragments with, and under `set -e` a
+  `grep` that matches nothing exits non-zero and takes the script with it. A
+  page with no `id` anywhere is perfectly valid — the new `404.html` is one —
+  but the checker would stop there having printed only that page's name, which
+  reads as a broken reference it declined to name. It was latent until now
+  because `index.html` has ids. Both greps tolerate no matches; a reference that
+  genuinely does not resolve still fails the build.
 - **`SECURITY.md` no longer tells you that a stronger runtime is a weaker one.**
   It said "any other runtime runs untrusted code on the host kernel", and listed
   "do not set a runtime other than `runsc`" under *What you must not do*. Both

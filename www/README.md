@@ -6,6 +6,16 @@ marks and fonts it serves itself. Open `index.html` in a browser, or
 `python3 -m http.server --directory www` for a server that resolves the root
 path the way the host does.
 
+`404.html` is served by Pages for any path that matches neither a file nor a
+redirect. It carries **no script at all**: `app.js` drives the install tabs, the
+copy button and the canvas, none of which exist on that page, and it reaches for
+those elements without guarding — so including it would throw before the theme
+handler ran, leaving a page whose toggle does nothing. The theme still follows
+`prefers-color-scheme` through CSS, and the toggle persists nothing, so there is
+no choice to carry across from the landing page in the first place. Inlining a
+small script instead is not an option either: `_headers` sets `script-src 'self'`
+with no `'unsafe-inline'`, and that is worth more than a toggle on an error page.
+
 `install.sh` is served from here too, at the URL the page's own install command
 prints. It is in the repository rather than pasted into a hosting dashboard so
 that the script people are asked to pipe into a shell goes through the same
