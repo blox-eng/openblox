@@ -99,7 +99,7 @@ more than a sandbox.
 
 | Attack | Defence | Tested | Residual |
 |---|---|---|---|
-| Container escape via the host kernel | gVisor: guest syscalls never reach the host kernel directly (B1, B2). `runsc` is required; there is no fallback to `runc` (`ErrRuntimeUnavailable`). | `TestSandboxRunsUnderGvisorKernel`, `TestCreateRejectsUnavailableRuntime` | A gVisor vulnerability. Keep `runsc` patched. |
+| Container escape via the host kernel | gVisor: guest syscalls never reach the host kernel directly (B1, B2). The configured runtime must be registered or `Create` fails (`ErrRuntimeUnavailable`); there is never a silent fallback to `runc`. This model assumes the default, `runsc`; under a microVM runtime the guest reaches a separate kernel instead and B1/B2 do not apply. | `TestSandboxRunsUnderGvisorKernel`, `TestCreateRejectsUnavailableRuntime` | A gVisor vulnerability. Keep `runsc` patched. |
 | gVisor vulnerability | Out of openblox's control. Defence in depth: non-root, no capabilities, read-only root, no network. | — | Real. gVisor has had and will have CVEs. |
 | Running as root | `Spec.Validate` refuses a user that is not an explicit, numeric, non-zero `uid:gid`. User names are refused because they resolve inside the untrusted image, and a bare uid because Docker then takes its primary and supplementary groups from that image — possibly group 0. `openbloxd` refuses such a profile at load. | `TestSpecValidateRefusesRootAndNamedUsers` (unit), `TestCreateRefusesRoot`, `TestBrokerRefusesARootProfile`, `TestLoadRejectsRootUser` (unit) | — |
 | Linux capabilities | `CapDrop: ALL`. | `TestSandboxHoldsNoCapabilities` (all five sets are zero) | — |

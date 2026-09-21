@@ -83,11 +83,37 @@ application ──Unix socket──► openbloxd ──Docker API──► Docke
 - Keep `runsc` current; its security fixes are yours to apply.
 - Serve preview URLs from an origin that shares no cookies with your application.
 
+## The isolation runtime
+
+The runtime decides **which kernel a guest syscall reaches**, and that is the
+property the rest of this document rests on. It is an ordering, not a switch:
+
+| Runtime | Kernel surface reached by the guest | Verdict |
+|---|---|---|
+| `runc` (the host default) | the host kernel, in full | Unsafe for untrusted code. A shared-kernel container is not a boundary against attacker-controlled native code. |
+| `runsc` (gVisor) — **default** | the Sentry, a user-space kernel; the host kernel only past **B1** and **B2** | What openblox is built and tested against. |
+| a microVM runtime, e.g. Kata | a separate guest kernel | **Stronger** than the default, at a higher cost per sandbox. |
+
+openblox does not rank runtimes at create time. `Create` requires only that the
+named runtime is registered with Docker and fails with `ErrRuntimeUnavailable`
+when it is not; it never falls back to the host default. Failing closed is a
+property of *"is it registered"*, and is independent of how strong the runtime
+is — so choosing a stronger one is supported, and choosing `runc` is refused by
+this document rather than by the code.
+
+Two caveats on going stronger. [THREAT_MODEL.md](THREAT_MODEL.md) §B1/§B2 is
+written specifically against gVisor's Sentry, so under a microVM runtime those
+two rows describe a boundary you are no longer relying on and the residual risks
+differ; and every test behind the claims below runs against `runsc` in CI, so on
+anything else you are trusting the runtime's own evidence, not openblox's. The
+containment openblox configures — no network interface, dropped capabilities,
+read-only root, non-root user, resource caps — is set identically either way.
+
 ## Security-sensitive configuration
 
 | Setting | Safe value | Why it matters |
 |---|---|---|
-| `runtime` / `WithRuntime` | `runsc` (default) | Any other runtime runs untrusted code on the host kernel. |
+| `runtime` / `WithRuntime` | `runsc` (default), or a microVM runtime | `runc`, the host default, runs untrusted code on the host kernel. See [The isolation runtime](#the-isolation-runtime). |
 | `egress` / `WithEgress` | `none` (default) | `unrestricted` gives the sandbox the host's network, including the LAN and cloud metadata. |
 | `user` / `WithUser` | numeric, non-zero `uid:gid` (default `1000:1000`) | Root, group 0, user names and a bare uid are refused: names and a bare uid resolve inside the untrusted image. |
 | `image` / `WithImage` | `name@sha256:…` | A tag can be repointed by whoever controls the registry. |
@@ -104,7 +130,9 @@ application ──Unix socket──► openbloxd ──Docker API──► Docke
 - Do not mount the Docker socket into an application container to use the library;
   use `openbloxd`.
 - Do not set `egress: unrestricted` for untrusted code without an external firewall.
-- Do not set a runtime other than `runsc` for untrusted code.
+- Do not run untrusted code under `runc`, the host default, or any other
+  shared-kernel runtime. Going the other way — a microVM runtime such as Kata —
+  is a stronger boundary and is supported.
 - Do not put secrets into a sandbox's environment, files or command arguments.
 - Do not trust sandbox output: escape it before rendering, bound it before parsing,
   and treat it as potential prompt injection before handing it to a model.
