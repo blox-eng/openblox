@@ -13,6 +13,7 @@ const (
 	KindNotFound           = "not_found"
 	KindInvalid            = "invalid"
 	KindConflict           = "conflict"
+	KindStopped            = "stopped"
 	KindTimeout            = "timeout"
 	KindRuntimeUnavailable = "runtime_unavailable"
 	KindImageUnavailable   = "image_unavailable"
@@ -46,6 +47,12 @@ func KindOf(err error) (string, int) {
 		return KindInvalid, http.StatusBadRequest
 	case errors.Is(err, ErrProfileConflict):
 		return KindConflict, http.StatusConflict
+	// 409 as well, and for the same reason: the sandbox's state conflicts with
+	// the request. It shares the status with ErrProfileConflict but not the
+	// kind, which is exactly the case the comment above describes — the status
+	// alone cannot carry the distinction, so the kind does.
+	case errors.Is(err, sandbox.ErrStopped):
+		return KindStopped, http.StatusConflict
 	case errors.Is(err, ErrAtCapacity):
 		return KindAtCapacity, http.StatusTooManyRequests
 	case errors.Is(err, sandbox.ErrTimeout):
@@ -69,6 +76,8 @@ func ErrorFor(kind string) error {
 		return sandbox.ErrInvalid
 	case KindConflict:
 		return ErrProfileConflict
+	case KindStopped:
+		return sandbox.ErrStopped
 	case KindAtCapacity:
 		return ErrAtCapacity
 	case KindTimeout:
