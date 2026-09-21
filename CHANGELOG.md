@@ -13,6 +13,55 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-20
+
+### Added
+
+- `openbloxd`: an optional `listen` block for a mutual-TLS network listener,
+  alongside (or instead of) the Unix socket — `socket` is now optional once
+  `listen` is set. Every caller presents a client certificate; only Common
+  Names on the configured allowlist are accepted, so a shared or mis-issued
+  CA cannot silently grant access. The caller's verified CN is recorded on
+  every request the daemon handles.
+- `pkg/brokerclient`: `NewRemote` and `TLSFiles`, so a caller can reach
+  `openbloxd` over the network with the same `sandbox.Backend` contract the
+  Unix-socket client satisfies.
+
+## [0.6.2] - 2026-09-20
+
+### Fixed
+
+- The CI step that installs gVisor had neither a timeout nor a retry, so a
+  stalled package mirror consumed the job's whole budget and the run was
+  *cancelled* rather than failed. A cancelled run is indistinguishable from no
+  run at all to the release workflow, which gates on a green CI run, so a
+  transient dependency stall could skip a release while reporting nothing. The
+  step is now bounded well below the job's budget, and the three commands that
+  reach the network retry with linear backoff.
+
+## [0.6.1] - 2026-09-20
+
+### Security
+
+- **Release pipeline.** Published image versions can no longer be overwritten:
+  the check that a version is unpublished now distinguishes the registry saying
+  so from a network, registry or authentication fault, which it previously read
+  as permission to push. The post-publish verification holds the `attestations:
+  read` scope its own `gh attestation verify` needs, so it cannot fail for want
+  of a permission after the assets are already public.
+
+### Fixed
+
+- The post-publish check of the sandbox image only ever got through the first
+  platform. The local image store keys images by digest, and one index digest
+  cannot hold two platforms' manifests at once, so pulling the `linux/arm64`
+  manifest over the `linux/amd64` one already held under the same reference was
+  refused — before the contract check ran on arm64, and before the attestation
+  was verified at all, which sits after the loop. The image is now removed
+  between platforms.
+
+## [0.6.0] - 2026-09-20
+
 ### Breaking
 
 - `WithUser` and the `openbloxd` profile `user` now accept only an explicit,
@@ -68,24 +117,10 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   third-party semantic-release binary (downloaded unpinned at run time) with the
   release token, refuses to act on `workflow_run` events from pull requests
   (including those from a fork's `main`), and tags exactly the commit CI
-  verified. Published image versions can no longer be overwritten: the check
-  that a version is unpublished now distinguishes the registry saying so from a
-  network, registry or authentication fault, which it previously read as
-  permission to push. The post-publish verification holds the `attestations:
-  read` scope its own `gh attestation verify` needs, so it cannot fail for want
-  of a permission after the assets are already public.
+  verified.
 
 ### Added
 
-- `openbloxd`: an optional `listen` block for a mutual-TLS network listener,
-  alongside (or instead of) the Unix socket — `socket` is now optional once
-  `listen` is set. Every caller presents a client certificate; only Common
-  Names on the configured allowlist are accepted, so a shared or mis-issued
-  CA cannot silently grant access. The caller's verified CN is recorded on
-  every request the daemon handles.
-- `pkg/brokerclient`: `NewRemote` and `TLSFiles`, so a caller can reach
-  `openbloxd` over the network with the same `sandbox.Backend` contract the
-  Unix-socket client satisfies.
 - `Result.Truncated`, `sandbox.MaxOutputBytes`, and `truncated` on the
   `openbloxd` exec response.
 - `Spec.Validate`, called by `Create` before anything is created.
@@ -205,7 +240,11 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
 
-[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/blox-eng/openblox/compare/v0.6.2...v0.7.0
+[0.6.2]: https://github.com/blox-eng/openblox/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/blox-eng/openblox/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/blox-eng/openblox/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/blox-eng/openblox/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/blox-eng/openblox/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/blox-eng/openblox/compare/v0.3.0...v0.4.0
