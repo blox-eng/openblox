@@ -183,7 +183,7 @@ reproducible and ship with SBOMs; binaries and the sandbox image carry Sigstore-
 build provenance. [RELEASING.md](RELEASING.md#verifying-a-release) shows how to
 verify them.
 
-Written for [Blox](https://blox.bg), where it is the only sandbox backend and
+Written for [Blox](https://bloxng.com), where it is the only sandbox backend and
 replaced a hosted platform. Its own production rollout is gated on migrating its
 callers off the Docker socket and onto `openbloxd`. No support SLA.
 

@@ -29,6 +29,16 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   the same way; the README's badge URLs now point at the subdomain directly.
   `security@openblox.sh` and `conduct@openblox.sh` are unaffected — the mail
   records stay on the apex.
+- **`openbloxd` can be installed with one command.** `install.sh` resolves the
+  release for this machine, downloads the binary and the checksum published
+  beside it, and installs nothing unless they match. Where the `gh` CLI is
+  present it also verifies the Sigstore build attestation, because a checksum
+  that ships in the same release as the binary proves the bytes arrived intact
+  and not that the release is the one CI built. It refuses anything but Linux
+  on amd64 or arm64 by name rather than failing obscurely later, and it is one
+  function invoked on its last line, so a truncated download does nothing
+  instead of running half a script. `go install` and `go get` still work and
+  are still on the landing page.
 - The project now has a [Discord](https://discord.gg/ksxTebDjj), linked from
   the README, the landing page and the documentation, so a question that is not
   an issue has somewhere to go.

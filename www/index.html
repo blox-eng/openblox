@@ -20,303 +20,86 @@
 </head>
 <body>
 
-<a class="skip" href="#quick-start">Skip to the quick start</a>
+<a class="skip" href="#quick-start">Skip to the install command</a>
 
-<header class="masthead">
-  <div class="wrap">
+<div class="screen">
+
+  <header class="chrome">
     <a class="brand" href="/">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="assets/openblox-mark-dark.svg">
-        <img src="assets/openblox-mark.svg" alt="" width="24" height="24">
-      </picture>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill-rule="evenodd" d="M 12 2 L 22 7 L 12 12 L 2 7 Z M 12 3.8 L 18.4 7 L 12 10.2 L 5.6 7 Z"/>
+        <path d="M 2 7 L 12 12 L 12 18 L 2 13 Z" opacity=".52"/>
+        <path d="M 22 7 L 12 12 L 12 18 L 22 13 Z" opacity=".28"/>
+        <path d="M 12 5.2 L 14.8 6.6 L 12 8 L 9.2 6.6 Z"/>
+        <path d="M 9.2 6.6 L 12 8 L 12 10 L 9.2 8.6 Z" opacity=".52"/>
+        <path d="M 14.8 6.6 L 12 8 L 12 10 L 14.8 8.6 Z" opacity=".28"/>
+      </svg>
       openblox
     </a>
-    <nav aria-label="Primary">
+    <nav class="links">
       <a href="https://docs.openblox.sh/">Docs</a>
-      <a href="https://github.com/blox-eng/openblox">GitHub</a>
-      <a href="https://discord.gg/ksxTebDjj">Discord</a>
-      <button class="theme" type="button" aria-pressed="false" hidden>Dark</button>
+      <a href="https://github.com/blox-eng/openblox" aria-label="GitHub" title="GitHub">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      </a>
+      <a href="https://discord.gg/ksxTebDjj" aria-label="Discord" title="Discord">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.55 3.16A12.4 12.4 0 0 0 10.5 2.2l-.15.3c1.05.26 1.92.68 2.72 1.2a9.4 9.4 0 0 0-3.2-1.02 10.9 10.9 0 0 0-3.76 0A9.6 9.6 0 0 0 2.9 3.7c.8-.51 1.68-.93 2.72-1.2l-.15-.3c-1.1.19-2.14.52-3.05.96C.94 5.73.45 8.2.58 10.64A12.6 12.6 0 0 0 4.4 13.8l.8-1.12c-.66-.25-1.27-.56-1.83-.94l.36-.27c1.87.88 3.9 1.32 5.93.88a10.5 10.5 0 0 0 2.4-.88l.36.27c-.56.38-1.17.7-1.84.94l.8 1.12a12.5 12.5 0 0 0 3.83-3.16c.15-2.82-.63-5.27-1.66-7.48ZM5.77 9.6c-.73 0-1.33-.68-1.33-1.51 0-.84.59-1.52 1.33-1.52s1.34.68 1.33 1.52c0 .83-.6 1.51-1.33 1.51Zm4.46 0c-.73 0-1.33-.68-1.33-1.51 0-.84.59-1.52 1.33-1.52s1.34.68 1.33 1.52c0 .83-.59 1.51-1.33 1.51Z"/></svg>
+      </a>
+      <span class="sep" aria-hidden="true"></span>
+      <button class="iconbtn" id="theme" aria-label="Switch to dark theme" title="Switch theme">
+        <svg id="theme-icon" viewBox="0 0 16 16" aria-hidden="true"></svg>
+      </button>
     </nav>
-  </div>
-</header>
+  </header>
 
-<main>
+  <main class="stage">
+    <div>
+      <h1>Run untrusted, AI-generated code on your own hardware.</h1>
+      <p class="sub">
+        Under 3,000 lines of Go over Docker and gVisor. <b>No control plane, no
+        database, no scheduler</b> — a sandbox is a container, and the container
+        is the state.
+      </p>
 
-<!-- hero ------------------------------------------------------------------ -->
-
-<div class="hero wrap">
-  <p class="eyebrow rise">Self-hosted sandboxes · Go · Docker + gVisor</p>
-  <h1 class="rise">Run untrusted, AI-generated code on your own hardware.</h1>
-  <p class="lead rise">
-    openblox is under 3,000 lines of Go over Docker and
-    <a href="https://gvisor.dev">gVisor</a>. No control plane, no database, no
-    scheduler — a sandbox is a container, and the container is the state.
-  </p>
-  <p class="audience rise">
-    For teams running code an LLM wrote against files a user uploaded, who would
-    rather that workload stayed on hardware they own than crossed someone else's
-    boundary.
-  </p>
-  <p class="actions rise">
-    <a class="btn" href="#quick-start">Quick start</a>
-    <a class="btn-quiet" href="https://docs.openblox.sh/">Read the docs →</a>
-  </p>
-  <p class="status rise">
-    <b>Pre-release, 0.x.</b> The API will change; breaking changes bump the minor version.
-  </p>
-
-  <!-- The hero's thesis, as an artifact rather than a claim. -->
-  <section class="defaults" aria-labelledby="defaults-h">
-    <div class="defaults-head">
-      <span class="eyebrow" id="defaults-h">Restrictive by default</span>
-      <span>the zero value of every option is the most restrictive one</span>
+      <div class="install" id="quick-start">
+        <div class="tabs" role="tablist" aria-label="How to install">
+          <button role="tab" id="t-daemon" aria-selected="true" aria-controls="cmdline">Daemon</button>
+          <button role="tab" id="t-source" aria-selected="false" aria-controls="cmdline">From source</button>
+          <button role="tab" id="t-lib" aria-selected="false" aria-controls="cmdline">Library</button>
+        </div>
+        <div class="cmd">
+          <code id="cmdline" role="tabpanel" aria-labelledby="t-daemon"><span class="p">$</span> <span id="cmdtext">curl -fsSL https://openblox.sh/install.sh | sh</span></code>
+          <button class="copy" id="copy" aria-label="Copy the command">Copy</button>
+        </div>
+        <p class="meta">
+          <span id="platform">Linux · amd64 or arm64 · needs Docker with gVisor</span>
+          <a href="/install.sh" id="readit">read the script first ↗</a>
+        </p>
+      </div>
     </div>
-<pre><code><span class="c-com">// No options. This is the entire configuration.</span>
-sb, err := backend.Create(ctx, <span class="c-str">"session-1"</span>,
-    sandbox.WithImage(<span class="c-str">"ghcr.io/blox-eng/openblox-sandbox:latest"</span>))</code></pre>
-    <ul class="defaults-list">
-      <li><b>Isolation</b>gVisor (<code>runsc</code>) — syscalls served in user space, not by the host kernel</li>
-      <li><b>Network</b>No external interface, so no egress <em>and</em> no DNS side channel</li>
-      <li><b>Filesystem</b>Read-only root, non-root user (root is refused), <code>noexec</code> scratch</li>
-      <li><b>Resources</b>Bounded CPU, memory (no swap), disk, process count and captured output</li>
-      <li><b>Privileges</b>All capabilities dropped, <code>no-new-privileges</code></li>
-      <li><b>Lifetime</b>Commands killed at their timeout; sandboxes reaped when idle and at max age</li>
-    </ul>
-    <p class="defaults-foot">
-      If the host cannot provide gVisor, <code>Create</code> fails with
-      <code>ErrRuntimeUnavailable</code>. It never falls back to a weaker boundary.
-      These are isolation <em>measures</em>, not a guarantee: the boundary is
-      gVisor's, and
-      <a href="https://github.com/blox-eng/openblox/blob/main/THREAT_MODEL.md">THREAT_MODEL.md</a>
-      lists what is defended, the test behind each claim, and what is not.
-    </p>
-  </section>
+
+    <div class="blocks" id="blocks" tabindex="0"
+         aria-label="An open box assembles from falling blocks around a block it contains. Look inside to read why it is open.">
+      <canvas id="stage"></canvas>
+      <p class="reveal">
+        <b>Open, so you can see in.</b>
+        Closed, so it cannot get out.
+      </p>
+      <p class="hint">look inside</p>
+    </div>
+  </main>
+
+  <footer class="chrome foot">
+    <a class="attrib" href="https://bloxng.com">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 22 7.5v9L12 22 2 16.5v-9Zm0 2.3L4 8.6v6.8l8 4.3 8-4.3V8.6Z"/></svg>
+      Blox Engineering
+    </a>
+    <span class="foot-right">
+      <a href="https://github.com/blox-eng/openblox/blob/main/LICENSE">MIT</a>
+      <a href="https://github.com/blox-eng/openblox/releases">Releases ↗</a>
+    </span>
+  </footer>
+
 </div>
-
-<!-- two tiers -------------------------------------------------------------- -->
-
-<section class="wrap" aria-labelledby="tiers-h">
-  <p class="rule"><span class="eyebrow">Guarantee</span></p>
-  <div class="prose">
-    <h2 id="tiers-h">The same guarantee, at two strengths.</h2>
-    <p>
-      Every isolation measure above can be relaxed. What changes between the
-      library and the daemon is not <em>whether</em> it can be relaxed, but who
-      is allowed to ask. Here is one relaxation — unrestricted egress — written
-      identically against both.
-    </p>
-  </div>
-
-  <div class="tiers">
-    <div class="tier tier-visible">
-      <p class="tier-head">Tier one · the library</p>
-<pre><code>backend, err := docker.New()
-
-sb, err := backend.Create(ctx, <span class="c-str">"session-1"</span>,
-    sandbox.WithImage(img),
-    <mark>sandbox.WithEgress(sandbox.EgressUnrestricted)</mark>,
-)</code></pre>
-      <p class="tier-verdict">
-        <b>Accepted — and visible.</b>
-        Your code chose it, at a call site one <code>grep</code> away. Nothing
-        is hidden in a config file you forgot you wrote.
-      </p>
-    </div>
-
-    <div class="tier tier-sealed">
-      <p class="tier-head">Tier two · through openbloxd</p>
-<pre><code>client, err := brokerclient.New(sock)
-
-sb, err := client.Create(ctx, <span class="c-str">"session-1"</span>,
-    brokerclient.WithProfile(<span class="c-str">"code-exec"</span>),
-    <span class="struck">sandbox.WithEgress(sandbox.EgressUnrestricted)</span>,
-)
-<span class="c-com">// invalid argument: egress is daemon policy
-// and cannot be set per-request</span></code></pre>
-      <p class="tier-verdict">
-        <b>Refused — and unreachable.</b>
-        A caller names a profile. It cannot name an image, a runtime, a user, an
-        egress policy or a resource cap; those live in the daemon's config file,
-        where no request reaches them.
-      </p>
-    </div>
-  </div>
-
-  <p class="verdict">
-    That is the difference between weakening being <strong>visible</strong> and
-    weakening being <strong>unreachable</strong>, and it is the whole reason the
-    daemon exists.
-  </p>
-</section>
-
-<!-- where this sits -------------------------------------------------------- -->
-
-<section class="wrap" aria-labelledby="layer-h">
-  <p class="rule"><span class="eyebrow">Layer</span></p>
-  <div class="prose">
-    <h2 id="layer-h">The layer below a sandbox platform, not a smaller one.</h2>
-  </div>
-
-  <div class="stack">
-    <div>your scheduler, your tenancy, your API <span>yours to build, if you ever need it</span></div>
-    <div class="here">openblox <span>isolation, done correctly</span></div>
-    <div>Docker + gVisor <span>the boundary itself</span></div>
-  </div>
-
-  <div class="prose">
-    <p>One rule decides what belongs here:</p>
-  </div>
-
-  <blockquote>How a sandbox is isolated is openblox's problem. Which sandbox runs where is yours.</blockquote>
-
-  <dl class="split">
-    <div>
-      <dt>openblox's</dt>
-      <dd>Egress, capabilities, filesystem, resource caps, lifetime, runtime.</dd>
-    </div>
-    <div>
-      <dt>Yours, and not planned</dt>
-      <dd>Placement, queueing, tenancy, metering, snapshots.</dd>
-    </div>
-  </dl>
-
-  <div class="prose">
-    <p>
-      Build those on top when something actually asks for them. That is what a
-      lower layer is for, and it is why there is no control plane to adopt
-      first. The comparison is <code>libvirt</code>, not OpenStack.
-    </p>
-  </div>
-</section>
-
-<!-- quick start ------------------------------------------------------------ -->
-
-<!-- tabindex="-1" so the skip link moves keyboard focus here, not just the
-     scroll position; -1 keeps it out of the normal tab order. -->
-<section class="wrap" id="quick-start" tabindex="-1" aria-labelledby="quick-h">
-  <p class="rule"><span class="eyebrow">Quick start</span></p>
-  <div class="prose">
-    <h2 id="quick-h">A running sandbox in a dozen lines.</h2>
-    <p>
-      Needs Linux, Docker, and gVisor registered as the <code>runsc</code>
-      runtime —
-      <a href="https://docs.openblox.sh/getting-started/#prerequisites">how to register it</a>.
-    </p>
-  </div>
-
-  <div class="block">
-    <button class="copy" type="button" hidden>Copy</button>
-<pre><code>go get github.com/blox-eng/openblox</code></pre>
-  </div>
-
-  <div class="block">
-    <button class="copy" type="button" hidden>Copy</button>
-<pre><code>backend, err := docker.New()
-if err != nil {
-    return err
-}
-defer backend.Close()
-
-<span class="c-com">// No options: no network, non-root, read-only rootfs, capped
-// CPU/memory/PIDs, gVisor runtime, reaped when idle.</span>
-sb, err := backend.Create(ctx, <span class="c-str">"session-1"</span>,
-    sandbox.WithImage(<span class="c-str">"ghcr.io/blox-eng/openblox-sandbox:latest"</span>))
-if err != nil {
-    return err
-}
-
-res, err := sb.Exec(ctx, sandbox.Command{
-    Argv: []string{<span class="c-str">"python3"</span>, <span class="c-str">"-c"</span>, <span class="c-str">"print(6 * 7)"</span>},
-})
-fmt.Println(string(res.Stdout)) <span class="c-com">// 42</span></code></pre>
-  </div>
-
-  <div class="prose">
-    <p>
-      That image is the
-      <a href="https://github.com/blox-eng/openblox/blob/main/image/README.md">reference sandbox userland</a>;
-      any image meeting
-      <a href="https://docs.openblox.sh/image/">the contract</a> works.
-    </p>
-    <p>
-      One caveat before production: importing the library means
-      <strong>your process holds the Docker socket, which is root-equivalent on
-      the host</strong>. Run the <code>openbloxd</code> daemon there instead —
-      it owns the socket, and your application talks to it over a Unix socket
-      with the same <code>Backend</code> interface and no Docker access.
-      <a href="https://docs.openblox.sh/production/">Running in production</a>
-      covers deployment, verification, compatibility and upgrades.
-    </p>
-  </div>
-</section>
-
-<!-- when not to ------------------------------------------------------------ -->
-
-<section class="wrap" aria-labelledby="notfor-h">
-  <p class="rule"><span class="eyebrow">Limits</span></p>
-  <div class="prose">
-    <h2 id="notfor-h">When not to use it.</h2>
-    <p>
-      None of these are gaps waiting to be filled. Most are placement rather
-      than isolation, which the rule above puts on your side of the line; the
-      rest are trades made deliberately.
-    </p>
-  </div>
-  <ul class="notfor">
-    <li><b>You need tenants isolated from each other at the API.</b> Every caller of one <code>openbloxd</code> can reach every sandbox; tenancy is yours to enforce in front of it.</li>
-    <li><b>You need a fleet.</b> One host, one daemon. No scheduling, no fairness.</li>
-    <li><b>You need a separate kernel per workload</b> (hardware virtualisation), or protection from side channels between co-resident sandboxes.</li>
-    <li><b>You need snapshots, fork, pause/resume, or sub-second cold starts.</b></li>
-    <li><b>You cannot run Linux with gVisor</b>, or cannot keep <code>runsc</code> patched.</li>
-  </ul>
-</section>
-
-</main>
-
-<footer>
-  <div class="wrap">
-    <div class="footer-grid">
-      <div>
-        <h3>Read</h3>
-        <ul>
-          <li><a href="https://docs.openblox.sh/">Documentation</a></li>
-          <li><a href="https://docs.openblox.sh/getting-started/">Getting started</a></li>
-          <li><a href="https://docs.openblox.sh/production/">Running in production</a></li>
-          <li><a href="https://docs.openblox.sh/security/">Security model</a></li>
-        </ul>
-      </div>
-      <div>
-        <h3>Source</h3>
-        <ul>
-          <li><a href="https://github.com/blox-eng/openblox">Repository</a></li>
-          <li><a href="https://pkg.go.dev/github.com/blox-eng/openblox">Go reference</a></li>
-          <li><a href="https://github.com/blox-eng/openblox/blob/main/ARCHITECTURE.md">Architecture</a></li>
-          <li><a href="https://github.com/blox-eng/openblox/blob/main/CHANGELOG.md">Changelog</a></li>
-        </ul>
-      </div>
-      <div>
-        <h3>Security</h3>
-        <ul>
-          <li><a href="https://github.com/blox-eng/openblox/blob/main/THREAT_MODEL.md">Threat model</a></li>
-          <li><a href="https://github.com/blox-eng/openblox/blob/main/SECURITY.md">Reporting a vulnerability</a></li>
-          <li><a href="mailto:security@openblox.sh">security@openblox.sh</a></li>
-        </ul>
-      </div>
-      <div>
-        <h3>Ask</h3>
-        <ul>
-          <li><a href="https://discord.gg/ksxTebDjj">Discord</a></li>
-          <li><a href="https://github.com/blox-eng/openblox/issues">Issues</a></li>
-          <li><a href="https://github.com/blox-eng/openblox/blob/main/CONTRIBUTING.md">Contributing</a></li>
-        </ul>
-      </div>
-    </div>
-    <p class="colophon">
-      MIT licensed. No analytics, no trackers, no cookies — the fonts are served
-      from this domain and the page makes no third-party requests.
-    </p>
-  </div>
-</footer>
 
 <script src="app.js" defer></script>
 

@@ -1,10 +1,20 @@
 # www — openblox.sh
 
-The landing page. Hand-written static HTML with no build step and no
-dependencies: `index.html`, one stylesheet, one script for progressive
-enhancement, and the marks and fonts it serves itself. Open `index.html` in a
-browser, or `python3 -m http.server --directory www` for a server that resolves
-the root path the way the host does.
+The landing page: one screen, no scroll. Hand-written static HTML with no build
+step and no dependencies — `index.html`, one stylesheet, one script, and the
+marks and fonts it serves itself. Open `index.html` in a browser, or
+`python3 -m http.server --directory www` for a server that resolves the root
+path the way the host does.
+
+`install.sh` is served from here too, at the URL the page's own install command
+prints. It is in the repository rather than pasted into a hosting dashboard so
+that the script people are asked to pipe into a shell goes through the same
+review and the same checks as everything else — and so "read it first", which
+the page links, reaches something a reader can diff against its history.
+
+The argument for openblox — the two-tier guarantee, the isolation-versus-
+placement rule, what it does not do — lives in the documentation. This page's
+job is to say what openblox is and get out of the way.
 
 The reference documentation is a separate site — MkDocs, in `docs/`, deployed to
 `docs.openblox.sh` by `.github/workflows/docs.yml`. This directory is not that

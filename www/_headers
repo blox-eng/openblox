@@ -14,6 +14,13 @@
   # would then be unreachable rather than merely unencrypted.
   Strict-Transport-Security: max-age=15552000
 
+# The landing page tells people to read this before piping it into a shell, so
+# it has to open in a browser rather than download, and a fix to it has to
+# reach them in minutes rather than at the end of a cache lifetime.
+/install.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
 # A weight of a typeface does not change once it is published. If one is ever
 # replaced it gets a new filename, so a year is safe here and only here.
 /assets/fonts/*
