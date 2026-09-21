@@ -53,6 +53,13 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   Production keeps the by-hand download-and-verify sequence beside the
   one-liner, because watching each step succeed on its own is the point when
   what you are installing is a policy broker.
+- **The social card matches the site again.** It still carried the wording from
+  before the landing page existed, so every link unfurl of `openblox.sh` showed
+  a description the page itself no longer used. It now leads with what openblox
+  does and carries the site's motto, and `make social-preview` renders it from
+  [`social-preview.svg`](.github/assets/social-preview.svg) to the two PNGs that
+  ship — the one GitHub serves for the repository and the one `og:image` points
+  at — so the two cannot drift apart by hand again.
 - The README and the landing page no longer claim "under 3,000 lines of Go".
   The `loc` badge, which is measured from the source on every deploy, had
   already reached 3,348 — so the one number in the prose was being contradicted
