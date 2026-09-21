@@ -5,10 +5,34 @@
 
   /* ---- install tabs -------------------------------------------------- */
 
+  /* The runtime named in the subhead is a control: clicking it walks the
+     approved runtimes, and the line under the install command follows.
+
+     Both are attributed, because both are someone else's work. They are not
+     presented as interchangeable: gVisor is the default and the one CI
+     exercises, and SECURITY.md is explicit that on anything else you are
+     trusting that runtime's evidence rather than openblox's — so the stronger
+     option says as much rather than implying parity. runc is deliberately not
+     in this list; it is not an option, it is the absence of one. */
+  var RUNTIMES = [
+    {
+      name: 'gVisor',
+      href: 'https://gvisor.dev',
+      tail: ''
+    },
+    {
+      name: 'Kata',
+      href: 'https://katacontainers.io',
+      tail: ' — a separate kernel per sandbox, stronger than the default; gVisor is what CI exercises'
+    }
+  ];
+  var runtime = 0;
+
   var COMMANDS = {
     't-daemon': {
       cmd: 'curl -fsSL https://openblox.sh/install.sh | sh',
-      note: 'Linux · amd64 or arm64 · needs Docker with gVisor',
+      note: 'Linux · amd64 or arm64 · needs Docker with ',
+      runtime: true,
       read: true
     },
     't-source': {
@@ -29,14 +53,38 @@
   var platform = document.getElementById('platform');
   var readit = document.getElementById('readit');
 
+  var current = 't-daemon';
+  var runtimeBtn = document.getElementById('runtime');
+
+  /* Built from nodes rather than innerHTML: the note carries a link, and a
+     string assembled with markup is a habit that outlives the one safe case. */
+  function renderNote(c) {
+    platform.textContent = c.note;
+    if (!c.runtime) return;
+    var r = RUNTIMES[runtime];
+    var a = document.createElement('a');
+    a.href = r.href;
+    a.rel = 'noopener';
+    a.textContent = r.name;
+    platform.appendChild(a);
+    if (r.tail) platform.appendChild(document.createTextNode(r.tail));
+  }
+
   function select(id) {
+    current = id;
     tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.id === id)); });
     var c = COMMANDS[id];
     cmdtext.textContent = c.cmd;
-    platform.textContent = c.note;
+    renderNote(c);
     readit.hidden = !c.read;
     panel.setAttribute('aria-labelledby', id);
   }
+
+  runtimeBtn.addEventListener('click', function () {
+    runtime = (runtime + 1) % RUNTIMES.length;
+    runtimeBtn.textContent = RUNTIMES[runtime].name;
+    renderNote(COMMANDS[current]);
+  });
   tabs.forEach(function (t) {
     t.addEventListener('click', function () { select(t.id); });
     t.addEventListener('keydown', function (e) {
