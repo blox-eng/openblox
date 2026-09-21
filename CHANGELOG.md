@@ -13,6 +13,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-21
+
 ### Added
 
 - Releases now attach `THIRD_PARTY_LICENSES.txt`: the full licence text of every
@@ -251,7 +253,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
 
-[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/blox-eng/openblox/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/blox-eng/openblox/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/blox-eng/openblox/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/blox-eng/openblox/compare/v0.6.0...v0.6.1
