@@ -39,6 +39,20 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   function invoked on its last line, so a truncated download does nothing
   instead of running half a script. `go install` and `go get` still work and
   are still on the landing page.
+- **The README leads with installing, and says where the installer comes from.**
+  The landing page's first instruction is to pipe a script from `openblox.sh`
+  into a shell, and the audience for a sandboxing project is the one that will
+  refuse to do that without reading it — but nothing in the repository said the
+  script was `www/install.sh`, so there was no way to tell that the URL serves
+  what the repository contains. Both the README and
+  [Running in production](https://docs.openblox.sh/production/) now name that
+  file and link it, and both fetch the script once and run it from disk rather
+  than piping `curl` into `sh` — otherwise the bytes a reader inspects are not
+  the bytes that run, which is a poor thing to teach from this repository in
+  particular.
+  Production keeps the by-hand download-and-verify sequence beside the
+  one-liner, because watching each step succeed on its own is the point when
+  what you are installing is a policy broker.
 - The README and the landing page no longer claim "under 3,000 lines of Go".
   The `loc` badge, which is measured from the source on every deploy, had
   already reached 3,348 — so the one number in the prose was being contradicted
