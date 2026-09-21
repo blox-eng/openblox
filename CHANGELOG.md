@@ -15,6 +15,20 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ### Changed
 
+- **The documentation moved to `docs.openblox.sh`.** Same pages, same MkDocs
+  build, same workflow — only the domain changed. `openblox.sh` is now a
+  landing page that says what openblox is before a reader has to infer it from
+  a documentation nav. Every documentation URL that used to sit on the apex
+  (`/getting-started/`, `/production/`, `/security/`, `/image/`,
+  `/contributing/`) redirects permanently to the same path on the subdomain,
+  deep anchors included, so nothing you have linked or bookmarked breaks. The
+  shields.io badge endpoints under `/badges/` moved with the site and redirect
+  the same way; the README's badge URLs now point at the subdomain directly.
+  `security@openblox.sh` and `conduct@openblox.sh` are unaffected — the mail
+  records stay on the apex.
+- The project now has a [Discord](https://discord.gg/ksxTebDjj), linked from
+  the README, the landing page and the documentation, so a question that is not
+  an issue has somewhere to go.
 - After cutting a tag, the release workflow now opens the `docs:` PR that
   promotes `[Unreleased]` to that version, instead of leaving it for a
   maintainer. Only the heading and compare link are machine-written; the entries

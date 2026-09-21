@@ -1,13 +1,15 @@
 name: Docs
 
-# Builds the documentation site and deploys it to GitHub Pages at openblox.sh.
+# Builds the documentation site and deploys it to GitHub Pages at docs.openblox.sh.
 #
 # A pull request builds but does not deploy, so a broken docs build is a red check
 # rather than a broken site. Only main deploys.
 #
 # This workflow also publishes the badge endpoints the README reads. They are
 # measured from the Go source, which is why pkg/** is in the trigger: leave it
-# out and the badges freeze at whatever the last docs edit happened to see.
+# out and the badges freeze at whatever the last docs edit happened to see. The
+# badges moved to docs.openblox.sh with the rest of the site; openblox.sh
+# redirects the old /badges/ URLs so cached shields.io requests still land.
 
 on:
   push:

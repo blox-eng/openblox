@@ -1,6 +1,6 @@
 site_name: openblox
 site_description: Self-hosted sandboxes for running untrusted, AI-generated code under gVisor. A small Go library and daemon over Docker.
-site_url: https://openblox.sh
+site_url: https://docs.openblox.sh
 repo_url: https://github.com/blox-eng/openblox
 repo_name: blox-eng/openblox
 edit_uri: edit/main/docs/
@@ -79,3 +79,7 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/blox-eng/openblox
+      name: openblox on GitHub
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/ksxTebDjj
+      name: Ask a question on Discord

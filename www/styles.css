@@ -1,0 +1,624 @@
+/* openblox.sh — the landing page.
+ *
+ * One page, one column, one idea per section. The project's claim is that it is
+ * short enough to read; the site it announces should not take longer.
+ *
+ * Two accents carry the argument and nothing else carries them:
+ *   --grep-*   a highlighter, for a relaxation the library makes VISIBLE
+ *   --sealed-* a lock, for the same relaxation the daemon makes UNREACHABLE
+ * They appear together exactly once, in the two-tier diptych, which is the
+ * whole reason they exist. Using them anywhere else would spend the contrast.
+ */
+
+/* ---------------------------------------------------------------- fonts --- */
+
+/* Self-hosted: a landing page for a project about not handing your workload to
+   someone else should not phone a font CDN on every visit. Latin subset only. */
+@font-face {
+  font-family: 'Plex Sans';
+  src: url('assets/fonts/plex-sans-var.woff2') format('woff2');
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Condensed';
+  src: url('assets/fonts/plex-sans-condensed-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Mono';
+  src: url('assets/fonts/plex-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plex Mono';
+  src: url('assets/fonts/plex-mono-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------------- tokens -- */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #f4f5f1;
+  --surface: #fffffe;
+  --ink: #0e1113;
+  --muted: #5a605c;
+  --rule: #dbddd4;
+
+  --grep-bg: #f6df93;
+  --grep-ink: #3c2f05;
+  --grep-edge: #b98a12;
+
+  --sealed-bg: #e7e5f3;
+  --sealed-ink: #2f2a63;
+  --sealed-edge: #6b64b8;
+
+  --sans: 'Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Plex Condensed', 'Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --mono: 'Plex Mono', ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Menlo, monospace;
+
+  --gutter: clamp(1.25rem, 4vw, 3rem);
+  --measure: 66ch;
+  --step: clamp(3.5rem, 8vw, 6rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0d0f10;
+    --surface: #15181a;
+    --ink: #e7eae3;
+    --muted: #949c97;
+    --rule: #262c2f;
+
+    --grep-bg: #4d3d0e;
+    --grep-ink: #f7e3ab;
+    --grep-edge: #d7a92f;
+
+    --sealed-bg: #211e42;
+    --sealed-ink: #bdb7f2;
+    --sealed-edge: #7d76cf;
+  }
+}
+
+/* The toggle wins in both directions, so neither palette is defined only
+   inside a media query. */
+:root[data-theme='dark'] {
+  --bg: #0d0f10;
+  --surface: #15181a;
+  --ink: #e7eae3;
+  --muted: #949c97;
+  --rule: #262c2f;
+
+  --grep-bg: #4d3d0e;
+  --grep-ink: #f7e3ab;
+  --grep-edge: #d7a92f;
+
+  --sealed-bg: #211e42;
+  --sealed-ink: #bdb7f2;
+  --sealed-edge: #7d76cf;
+}
+
+/* ----------------------------------------------------------------- base --- */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 1.0625rem/1.65 var(--sans);
+  font-feature-settings: 'ss02' on;
+  -webkit-font-smoothing: antialiased;
+}
+
+img, svg { max-width: 100%; }
+
+a {
+  color: inherit;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 120ms ease;
+}
+a:hover { text-decoration-color: currentColor; }
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+code, pre { font-family: var(--mono); }
+
+.wrap {
+  width: 100%;
+  max-width: 68rem;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.prose { max-width: var(--measure); }
+
+.skip {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.skip:focus {
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  left: var(--gutter);
+  top: 0.75rem;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  padding: 0.5rem 0.75rem;
+  font: 500 0.8125rem var(--mono);
+}
+
+/* --------------------------------------------------------------- header --- */
+
+.masthead {
+  border-bottom: 1px solid var(--rule);
+}
+
+.masthead .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 4rem;
+  padding-block: calc(0.75rem + env(safe-area-inset-top, 0px)) 0.75rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font: 600 1.25rem/1 var(--display);
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+.brand img { width: 24px; height: 24px; display: block; }
+
+.theme {
+  background: none;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  padding: 0.3rem 0.55rem;
+  font: 500 0.75rem/1 var(--mono);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.theme:hover { color: var(--ink); border-color: var(--ink); }
+
+.masthead nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  font: 500 0.8125rem/1 var(--mono);
+  letter-spacing: 0.02em;
+}
+
+/* ----------------------------------------------------------------- hero --- */
+
+.hero { padding-block: clamp(3rem, 9vw, 6rem) 0; }
+
+.eyebrow {
+  font: 500 0.75rem/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+h1 {
+  font: 600 clamp(2.5rem, 7vw, 4.75rem)/0.98 var(--display);
+  letter-spacing: -0.022em;
+  margin: 1.25rem 0 0;
+  max-width: 18ch;
+  text-wrap: balance;
+}
+
+.lead {
+  font-size: clamp(1.0625rem, 1.6vw, 1.3125rem);
+  line-height: 1.55;
+  margin: 1.5rem 0 0;
+  max-width: 54ch;
+}
+
+.audience {
+  margin: 1rem 0 0;
+  max-width: 54ch;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  margin-top: 2rem;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.7rem 1.4rem;
+  background: var(--ink);
+  color: var(--bg);
+  font: 500 0.9375rem/1 var(--sans);
+  text-decoration: none;
+  border: 1px solid var(--ink);
+  transition: opacity 120ms ease;
+}
+.btn:hover { opacity: 0.85; }
+
+.btn-quiet {
+  font: 500 0.9375rem/1 var(--sans);
+  text-decoration-color: var(--rule);
+}
+
+.status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 2.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--rule);
+  font: 400 0.8125rem/1.3 var(--mono);
+  color: var(--muted);
+}
+.status b { color: var(--ink); font-weight: 500; }
+
+/* -------------------------------------------------------------- defaults -- */
+
+/* The hero's argument, made as an artifact rather than a claim: the call with
+   no options, and the list of everything that call already refused. */
+
+.defaults {
+  padding-block: 0;
+  overflow: hidden;
+  margin-top: clamp(3rem, 7vw, 5rem);
+  border: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.defaults-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.defaults-head .eyebrow { color: var(--ink); }
+.defaults-head span:last-child { font: 400 0.8125rem/1 var(--mono); color: var(--muted); }
+
+.defaults pre { margin: 0; }
+
+.defaults-list {
+  list-style: none;
+  margin: 0 -1px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
+}
+
+.defaults-list li {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.defaults-list b {
+  display: block;
+  font: 500 0.75rem/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+
+.defaults-foot {
+  margin: 0;
+  padding: 1rem 1.25rem;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.defaults-foot code { color: var(--ink); font-size: 0.9em; }
+
+/* -------------------------------------------------------------- sections -- */
+
+/* The section rule carries the section's own vocabulary term. The label is the
+   word the docs use for the thing below it, not a decorative number. */
+
+section { padding-block: var(--step); }
+
+.rule {
+  margin: 0 0 2.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.rule::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+h2 {
+  font: 600 clamp(1.75rem, 3.6vw, 2.5rem)/1.06 var(--display);
+  letter-spacing: -0.015em;
+  margin: 0 0 1.25rem;
+  max-width: 22ch;
+  text-wrap: balance;
+}
+
+.prose p { margin: 0 0 1.1rem; }
+.prose p:last-child { margin-bottom: 0; }
+
+/* ---------------------------------------------------------------- layer --- */
+
+.stack {
+  margin: 2rem 0;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  max-width: 44rem;
+}
+
+.stack div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1.5rem;
+  padding: 0.9rem 1.25rem;
+  font: 500 0.9375rem/1.4 var(--mono);
+}
+.stack div + div { border-top: 1px solid var(--rule); }
+.stack div span { font: 400 0.8125rem/1.4 var(--sans); color: var(--muted); }
+
+.stack .here {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+blockquote {
+  margin: 2.25rem 0;
+  padding-left: 1.25rem;
+  border-left: 3px solid var(--ink);
+  font: 600 clamp(1.25rem, 2.4vw, 1.75rem)/1.25 var(--display);
+  letter-spacing: -0.01em;
+  max-width: 30ch;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+  max-width: 44rem;
+}
+.split dt {
+  font: 500 0.75rem/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.split dd { margin: 0; font-size: 0.9375rem; line-height: 1.55; }
+
+/* --------------------------------------------------------------- tiers ---- */
+
+/* The signature. The same relaxation, written the same way twice: accepted by
+   the library and refused by the daemon. The difference is the product. */
+
+.tiers {
+  display: grid;
+  /* Wide enough that neither panel's code wraps or scrolls at desktop widths:
+     the two must be read side by side for the comparison to land. */
+  grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+}
+
+.tier {
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.tier-head {
+  margin: 0;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+  font: 500 0.75rem/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tier pre { margin: 0; flex: 1; }
+
+.tier-verdict {
+  margin: 0;
+  padding: 0.9rem 1.25rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+.tier-verdict b { display: block; font-weight: 500; margin-bottom: 0.25rem; }
+
+.tier-visible .tier-head { background: var(--grep-bg); color: var(--grep-ink); }
+.tier-visible .tier-verdict b { color: var(--grep-edge); }
+
+.tier-sealed .tier-head { background: var(--sealed-bg); color: var(--sealed-ink); }
+.tier-sealed .tier-verdict b { color: var(--sealed-edge); }
+
+/* The highlighter itself: one relaxation, marked the way grep would mark it. */
+mark {
+  background: var(--grep-bg);
+  color: var(--grep-ink);
+  padding: 0.1em 0.2em;
+  margin: -0.1em -0.2em;
+  border-radius: 1px;
+}
+
+.struck {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--sealed-edge);
+  text-decoration-thickness: 2px;
+}
+
+.verdict {
+  margin: 2rem 0 0;
+  font-size: 1.0625rem;
+  max-width: var(--measure);
+}
+
+/* ----------------------------------------------------------------- code --- */
+
+pre {
+  overflow-x: auto;
+  padding: 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  tab-size: 4;
+}
+pre code { display: block; white-space: pre; }
+
+.c-com { color: var(--muted); }
+.c-str { color: var(--muted); }
+
+.block {
+  position: relative;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  margin: 1.5rem 0;
+}
+
+.copy {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  font: 500 0.6875rem/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.copy:hover { color: var(--ink); border-color: var(--ink); }
+
+/* ------------------------------------------------------------- not-for ---- */
+
+.notfor {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  max-width: 46rem;
+}
+.notfor li {
+  padding: 1rem 0;
+  border-top: 1px solid var(--rule);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+.notfor li:last-child { border-bottom: 1px solid var(--rule); }
+.notfor b { font-weight: 500; }
+
+/* --------------------------------------------------------------- footer --- */
+
+footer {
+  border-top: 1px solid var(--rule);
+  padding-block: 2.5rem calc(3rem + env(safe-area-inset-bottom, 0px));
+  font-size: 0.9375rem;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  gap: 2rem;
+}
+
+.footer-grid h3 {
+  font: 500 0.75rem/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.9rem;
+}
+
+.footer-grid ul { list-style: none; margin: 0; padding: 0; }
+.footer-grid li + li { margin-top: 0.5rem; }
+
+.colophon {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* --------------------------------------------------------------- motion --- */
+
+/* One orchestrated entrance, on the hero only. Everything below it is already
+   on screen by the time you reach it, so animating it would only add latency. */
+@media (prefers-reduced-motion: no-preference) {
+  .rise {
+    animation: rise 620ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  }
+  .rise:nth-child(2) { animation-delay: 60ms; }
+  .rise:nth-child(3) { animation-delay: 120ms; }
+  .rise:nth-child(4) { animation-delay: 180ms; }
+  .rise:nth-child(5) { animation-delay: 240ms; }
+  .rise:nth-child(6) { animation-delay: 300ms; }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(0.75rem); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------- narrow ----- */
+
+/* Go does not wrap, so code blocks scroll rather than reflow — each in its own
+   container, so the page body never does. Below the fold of a phone the type
+   comes down a step to shorten the scroll rather than hide it. */
+@media (max-width: 40rem) {
+  pre { padding: 1rem; font-size: 0.8125rem; }
+  .defaults-head,
+  .defaults-foot,
+  .defaults-list li,
+  .tier-head,
+  .tier-verdict,
+  .stack div { padding-inline: 1rem; }
+  blockquote { max-width: none; }
+}
