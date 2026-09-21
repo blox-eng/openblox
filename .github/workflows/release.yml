@@ -56,8 +56,15 @@ jobs:
     # Read-only on purpose. The one write — creating the tag and release — goes
     # through RELEASE_TOKEN in a step of our own, and checkout runs with
     # persist-credentials: false so the built-in token has no consumer left.
+    #
+    # The changelog job below needs write scopes. It is a separate job so that
+    # granting them does not widen this one, which is the job holding the
+    # release token.
     permissions:
       contents: read
+    outputs:
+      version: ${{ steps.semrel.outputs.version }}
+      sha: ${{ github.event.workflow_run.head_sha }}
     steps:
       # Tag only the commit CI verified. workflow_run checks out the tip of main
       # at the time THIS workflow starts, which is a newer, unverified commit if
@@ -129,3 +136,93 @@ jobs:
             --target "$SHA" \
             --title "v${VERSION}" \
             --notes-file "$RUNNER_TEMP/notes.md"
+
+  # Record the release in CHANGELOG.md.
+  #
+  # The changelog is written by hand and the prose is the point — it says why a
+  # change was made, which no commit subject carries — so nothing here generates
+  # content. It promotes the section already written: the entries stay put, only
+  # the heading above them and the link definitions below it change.
+  #
+  # That mechanical half is what kept being left undone, and since #46 leaving it
+  # undone blocks every subsequent pull request on a failing Lint. Doing it here
+  # means the release that creates the problem also opens its fix.
+  #
+  # A pull request, not a push to main: the ruleset requires one, with status
+  # checks and no bypass actors, so a direct push is rejected outright — and it
+  # would be rejected AFTER the tag and release already exist, losing only the
+  # changelog commit and failing the job at a point where the release itself
+  # cannot be undone. Granting a bypass would let every workflow in this
+  # repository push to main unreviewed, which is a poor trade for a docs commit.
+  changelog:
+    name: Promote changelog
+    needs: release
+    if: needs.release.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Pushing the branch, and opening the pull request for it.
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The released commit, not the tip: main may have moved on, and this
+          # branch must carry that release's changelog and nothing else.
+          ref: ${{ needs.release.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Promote the Unreleased section and open a pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # The script validates VERSION itself and refuses anything that is not
+          # plain semver, so it never reaches git or gh as a branch name unchecked.
+          .github/scripts/promote-changelog.sh "$VERSION" "$(date -u +%Y-%m-%d)"
+
+          # Already recorded — a re-run, or a maintainer who stamped it by hand
+          # before this job got there. Not a failure.
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md already records v${VERSION} — nothing to open."
+            exit 0
+          fi
+
+          branch="docs/changelog-v${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add CHANGELOG.md
+          git commit -m "docs: pin the current release, v${VERSION}"
+          git push origin "$branch"
+
+          # Spelled out rather than --fill: whoever finds this pull request did
+          # not run the release, and the first thing they need to know is that
+          # merging it is not urgent and cannot break anything.
+          body="$(printf '%s\n' \
+            "Opened by the Release workflow after cutting v${VERSION}." \
+            "" \
+            "Moves the \`## [Unreleased]\` entries under a dated \`## [${VERSION}]\`" \
+            "heading and adds its compare link. No prose changed — this is the" \
+            "mechanical half of RELEASING.md §8." \
+            "" \
+            "The tag, the GitHub release and its assets already exist; this only" \
+            "records them. Until it merges, \`changelog-guard.sh\` fails Lint on" \
+            "every other pull request, so merging it unblocks them.")"
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "docs: pin the current release, v${VERSION}" \
+            --body "$body"
+
+          # The release has already shipped by this point, so a repository that
+          # forbids Actions from opening pull requests, or has auto-merge off,
+          # must not turn a successful release into a red workflow. Warn and
+          # leave the work for a human; changelog-guard.sh is the backstop that
+          # makes sure it is not forgotten.
+          gh pr merge "$branch" --squash --auto \
+            || echo "::warning::Auto-merge unavailable; merge the changelog pull request by hand."

@@ -13,6 +13,17 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Changed
+
+- After cutting a tag, the release workflow now opens the `docs:` PR that
+  promotes `[Unreleased]` to that version, instead of leaving it for a
+  maintainer. Only the heading and compare link are machine-written; the entries
+  themselves stay hand-written, because the prose is the point. This closes a
+  gap the changelog guard could report but not fix: every release blocked the
+  next PR's Lint until someone did it by hand.
+
+## [0.8.1] - 2026-09-21
+
 ### Fixed
 
 - An operation against a stopped sandbox no longer flattens into an opaque
@@ -266,7 +277,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
 
-[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/blox-eng/openblox/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/blox-eng/openblox/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/blox-eng/openblox/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/blox-eng/openblox/compare/v0.6.1...v0.6.2
