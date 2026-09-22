@@ -33,9 +33,12 @@ Runtimes are ordered, not binary. `runc` reaches the host kernel in full and is 
 for untrusted code; gVisor reaches a user-space kernel; a microVM runtime such as Kata
 reaches a separate guest kernel and is a **stronger** boundary than the default, at a
 higher cost per sandbox. openblox does not rank them — it checks only that the runtime
-is registered — so a deployment that has chosen a microVM runtime is supported, with the
-caveat that the threat model's gVisor-specific rows and every test behind it are written
-against `runsc`. See [SECURITY.md](https://github.com/blox-eng/openblox/blob/main/SECURITY.md#the-isolation-runtime).
+is registered — so a deployment that has chosen a microVM runtime is supported. Kata on
+amd64 is measured by openblox — the conformance suite, in a workflow that does not gate
+merges — with one defence-in-depth layer lost: `/dev/shm` is not `noexec,nosuid` in its
+guest. See
+[THREAT_MODEL.md](https://github.com/blox-eng/openblox/blob/main/THREAT_MODEL.md#under-kata)
+and [SECURITY.md](https://github.com/blox-eng/openblox/blob/main/SECURITY.md#the-isolation-runtime).
 
 ### No network interface at all
 

@@ -172,21 +172,19 @@ on. Under Kata the guest reaches its own kernel inside a VM, so B1 and B2 above
 do not apply; the boundary is the hypervisor. arm64 is not measured.
 
 19 of 21 Core properties pass, and both host-local properties pass. The two
-failures are below; all others pass, one host-local property measuring
-something other than it does under gVisor.
+failures are below.
 
 | Property | Result | Class | What it means |
 |---|---|---|---|
 | `writable-mounts-are-noexec-nosuid` | FAIL | Real difference | The guest's `/dev/shm` is mounted `rw,relatime`, without `noexec` or `nosuid`, and a binary the guest copied there executed. `/tmp` and `/workspace`, which openblox mounts itself with `nosuid,nodev,noexec`, kept their flags. `/dev/shm` is left to Docker's default mount, whose flags `runsc` honours and Kata's guest does not show. Under Kata the guest can therefore run a binary it wrote, and setuid on that path is left to `no-new-privileges`. A defence-in-depth layer is lost, not the boundary: the guest already runs arbitrary code, as a non-root user with no capabilities (`no-capabilities` passes). Residual; the possible follow-up is for openblox to mount `/dev/shm` itself with the same flags. |
 | `crashed-sandbox-recovers-through-create` | FAIL | gVisor-shaped | The property crashes the sandbox with `kill -9 1` from inside the guest, which assumes the guest can kill its own init. gVisor allows that; Linux, which is Kata's guest kernel, does not deliver SIGKILL to a PID namespace's init from inside that namespace, so the sandbox was still running 20 s later and the property failed before reaching its claim. Two consequences: the self-inflicted stop in *Guest stopping its own sandbox* above does not work this way under Kata, and the claim itself — `Exec` on a crashed sandbox fails promptly with `ErrStopped`, `Create` brings it back — is unmeasured under Kata. |
 
-`host-retains-no-process-goroutine-or-descriptor` passes, but its host `/proc`
-scan measures something different under Kata. Guest processes never appear in
-the host's `/proc`; the process its positive control finds naming the live
-sandbox is one of Kata's host-side processes (the shim, QEMU, `virtiofsd`),
-whose command lines carry the container ID. Under Kata the property shows that
-those are gone after `Destroy`, not that guest processes are — the VM boundary
-keeps those off the host in the first place.
+`host-retains-no-process-goroutine-or-descriptor` passed. The predicted
+"cannot measure" outcome did not hold: its positive control still matched, as
+it does under gVisor, a host process whose command line carries the container
+ID — that is a runtime's own host-side process (shim, sandbox/gofer under
+gVisor; shim, QEMU or `virtiofsd` under Kata), not a guest process, under
+either runtime. Which process matched was not recorded.
 
 Predictions made before the first run
 ([specs/2026-09-22-kata-evidence.md](specs/2026-09-22-kata-evidence.md)):
