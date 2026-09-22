@@ -35,6 +35,14 @@ var negativeControlExemptions = map[string]string{
 		"support renamed-argv0 dispatch, so the attack step never runs at all — the probe " +
 		"exits with no marker regardless of whether the mount is noexec. The confound is " +
 		"missing/incompatible host tooling, not isolation.",
+	"argv-is-never-a-shell-builtin": "badBackend's Exec calls Go's exec.Command(cmd.Argv[0], " +
+		"cmd.Argv[1:]...) directly (see badSandbox.Exec in bad_backend_test.go) — it never " +
+		"wraps argv in a shell, the same absence of a shell the property is checking for. " +
+		"argv[0] \"exit\" is looked up via exec.LookPath as a program named exit, which does " +
+		"not exist on a stock host, so Start fails and the property's err==nil&&ExitCode==3 " +
+		"check never has a chance to observe a shell builtin running. The confound is that " +
+		"badBackend, despite isolating nothing, happens to share the property's own " +
+		"never-use-a-shell mechanism for Exec — not a gap in isolation.",
 }
 
 // A conformance suite that passes vacuously certifies nothing while looking

@@ -131,6 +131,11 @@ var core = []property{
 	{"timeout-kill-is-scoped-to-its-own-command", propTimeoutKillIsScopedToItsCommand},
 	{"known-escape-setsid-survives-the-timeout-kill", propSetsidEscapesTheTimeoutKill},
 	{"output-flood-is-capped-and-the-command-completes", propOutputFloodIsCapped},
+	{"sandboxes-share-no-state", propSandboxesShareNoState},
+	{"crashed-sandbox-recovers-through-create", propCrashedSandboxRecoversThroughCreate},
+	{"stopped-sandbox-is-replaced-by-create", propStoppedSandboxIsReplacedByCreate},
+	{"argv-is-never-a-shell-builtin", propArgvIsNeverAShellBuiltin},
+	{"destroy-removes-the-sandbox", propDestroyRemovesTheSandbox},
 }
 
 var hostLocal []property

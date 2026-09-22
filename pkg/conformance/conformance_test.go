@@ -32,3 +32,9 @@ func TestCoreHasNoDuplicateNames(t *testing.T) {
 		seen[p.name] = true
 	}
 }
+
+func TestCoreIsTheClaimedSize(t *testing.T) {
+	if len(core) != 21 {
+		t.Errorf("core has %d properties, want 21 — update the spec and this test together", len(core))
+	}
+}
