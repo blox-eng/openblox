@@ -72,4 +72,12 @@ func requireKataApplied(t *testing.T) {
 	if got := inspect.HostConfig.Runtime; got != kataRuntime {
 		t.Fatalf("runtime = %q, want %q: this run would measure the wrong boundary", got, kataRuntime)
 	}
+
+	// Destroy the preflight sandbox now rather than leaving it running for
+	// the rest of the suite: t.Cleanup above remains as the safety net for
+	// the failure paths, but the success path should not leak a VM for the
+	// whole run.
+	if err := b.Destroy(ctx, name); err != nil {
+		t.Fatalf("Destroy preflight sandbox = %v", err)
+	}
 }

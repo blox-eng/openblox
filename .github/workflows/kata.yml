@@ -22,7 +22,9 @@ on:
     paths:
       - 'pkg/conformance/**'
       - 'pkg/docker/**'
+      - 'pkg/sandbox/**'
       - '.github/workflows/kata.yml'
+      - '.github/scripts/kata-summary.sh'
   # Kata, the runner image and KVM availability all drift independently of
   # this repository.
   schedule:
@@ -31,7 +33,9 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only cancel in-flight PR runs on a new push. Main-branch runs are evidence
+  # for a releasable commit and must not cancel each other.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -149,4 +153,4 @@ jobs:
         with:
           name: kata-conformance-results
           path: kata-results.json
-          if-no-files-found: error
+          if-no-files-found: warn

@@ -2,6 +2,7 @@
 # Usage: kata-summary.sh <go test -json file>  — prints a markdown table; exits 1 if
 # the run produced no property results at all.
 set -euo pipefail
+[ -s "$1" ] || { echo "**The suite did not run.** An earlier step (KVM, install or verify) failed; see the job log."; exit 1; }
 rows=$(jq -rR '
   fromjson? |
   select(.Test != null
