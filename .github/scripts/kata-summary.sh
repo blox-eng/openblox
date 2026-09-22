@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Usage: render.sh <go test -json file>  — prints a markdown table; exits 1 if
+# Usage: kata-summary.sh <go test -json file>  — prints a markdown table; exits 1 if
 # the run produced no property results at all.
 set -euo pipefail
-rows=$(jq -r '
+rows=$(jq -rR '
+  fromjson? |
   select(.Test != null
          and (.Test | test("^TestConformanceKata/[^/]+/[^/]+$"))
          and (.Action == "pass" or .Action == "fail" or .Action == "skip"))
