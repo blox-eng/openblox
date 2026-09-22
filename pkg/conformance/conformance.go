@@ -138,4 +138,7 @@ var core = []property{
 	{"destroy-removes-the-sandbox", propDestroyRemovesTheSandbox},
 }
 
-var hostLocal []property
+var hostLocal = []property{
+	{"host-retains-no-process-goroutine-or-descriptor", propHostRetainsNothing},
+	{"host-files-are-invisible-to-the-guest", propHostFilesAreInvisible},
+}

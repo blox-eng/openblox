@@ -38,3 +38,23 @@ func TestCoreIsTheClaimedSize(t *testing.T) {
 		t.Errorf("core has %d properties, want 21 — update the spec and this test together", len(core))
 	}
 }
+
+// TestTiersAreDisjoint asserts the real invariant: every property name
+// appears exactly once across the two tiers combined. A plain check that the
+// two name sets don't intersect would miss a name duplicated within a single
+// tier (already covered separately by TestCoreHasNoDuplicateNames, but
+// hostLocal has no such test of its own), so this counts occurrences instead.
+func TestTiersAreDisjoint(t *testing.T) {
+	count := map[string]int{}
+	for _, p := range core {
+		count[p.name]++
+	}
+	for _, p := range hostLocal {
+		count[p.name]++
+	}
+	for name, n := range count {
+		if n != 1 {
+			t.Errorf("%q appears %d times across core and hostLocal combined; a property must be in exactly one tier", name, n)
+		}
+	}
+}
