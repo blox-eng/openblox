@@ -114,6 +114,8 @@ func preflight(t *testing.T, cfg Config) {
 	}
 }
 
-var core []property
+var core = []property{
+	{"no-control-plane-socket", propNoControlPlaneSocket},
+}
 
 var hostLocal []property
