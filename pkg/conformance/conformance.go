@@ -116,6 +116,9 @@ func preflight(t *testing.T, cfg Config) {
 
 var core = []property{
 	{"no-control-plane-socket", propNoControlPlaneSocket},
+	{"no-host-private-or-metadata-addresses", propNoHostOrMetadataAddresses},
+	{"loopback-is-not-the-hosts", propLoopbackIsNotTheHosts},
+	{"only-a-loopback-interface", propOnlyLoopbackInterface},
 }
 
 var hostLocal []property
