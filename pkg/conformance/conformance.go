@@ -125,6 +125,12 @@ var core = []property{
 	{"no-capabilities", propNoCapabilities},
 	{"writable-mounts-are-noexec-nosuid", propWritableMountsAreNoexecNosuid},
 	{"create-refuses-root", propCreateRefusesRoot},
+	{"timed-out-command-kills-its-children", propTimedOutCommandKillsChildren},
+	{"cancelled-command-is-not-reported-as-timeout", propCancelledCommandIsNotATimeout},
+	{"kill-group-waits-for-a-late-group-record", propKillGroupWaitsForLateRecord},
+	{"timeout-kill-is-scoped-to-its-own-command", propTimeoutKillIsScopedToItsCommand},
+	{"known-escape-setsid-survives-the-timeout-kill", propSetsidEscapesTheTimeoutKill},
+	{"output-flood-is-capped-and-the-command-completes", propOutputFloodIsCapped},
 }
 
 var hostLocal []property
