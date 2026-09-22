@@ -33,9 +33,18 @@ import "testing"
 // to document around it. Once "the control happens to be correct here" is an
 // acceptable reason, the list has no ceiling: for any property, badBackend
 // could be made incidentally correct and then documented why, and the
-// negative control would stop meaning anything. Under this rule the list
-// stays at 2 of 21, structurally bounded by how much of the host this suite
-// cannot itself control.
+// negative control would stop meaning anything. Under this rule the list is
+// 1 of 21, structurally bounded by how much of the host this suite cannot
+// itself control.
+//
+// It was 2. "writable-mounts-are-noexec-nosuid" was exempted because its
+// probe copied /bin/busybox to a renamed path and invoked it, which busybox
+// refuses (it resolves its applet from argv[0]), so the attack step never ran
+// on any host. That was never really a host confound: it was a probe that
+// could not attack anywhere, which proves nothing about any implementation.
+// The probe now copies the shell — the one binary a POSIX userland must have
+// — and the property fails against badBackend the way an ordinary Core
+// property should, so the exemption is gone.
 var negativeControlExemptions = map[string]string{
 	"cannot-write-kernel-knobs": "badBackend runs the probe as the test process's own " +
 		"unprivileged uid, with no isolation boundary of its own. The kernel denies the " +
@@ -43,13 +52,6 @@ var negativeControlExemptions = map[string]string{
 		"denial an unprivileged process gets on any host, isolated or not. The confound is " +
 		"privilege, not isolation, so this property's absence of a marker proves nothing " +
 		"about containment when run against badBackend.",
-	"writable-mounts-are-noexec-nosuid": "badBackend runs the probe as the test " +
-		"process's own unprivileged uid, and the probe's attack step depends on copying " +
-		"/bin/busybox to a renamed path and invoking it as a multi-call binary. On a stock " +
-		"CI runner (and on some developer hosts) that binary is either absent or does not " +
-		"support renamed-argv0 dispatch, so the attack step never runs at all — the probe " +
-		"exits with no marker regardless of whether the mount is noexec. The confound is " +
-		"missing/incompatible host tooling, not isolation.",
 }
 
 // A conformance suite that passes vacuously certifies nothing while looking

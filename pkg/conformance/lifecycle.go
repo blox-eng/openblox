@@ -19,7 +19,14 @@ func propSandboxesShareNoState(t *testing.T, cfg Config) {
 	a := create(t, cfg, b, "openblox-conf-iso-a", sandbox.WithEnv("TENANT_TOKEN=a-secret"))
 	other := create(t, cfg, b, "openblox-conf-iso-b")
 
-	run(t, a, `echo a-data > /workspace/f; echo a-data > /tmp/f; echo a-data > /dev/shm/f 2>/dev/null; true`)
+	// A's writes have to land before B's inability to see them means anything:
+	// if none of them did, B reads nothing for a reason that has nothing to do
+	// with isolation, and every check below passes on an absence.
+	planted := run(t, a, `echo a-data > /workspace/f; echo a-data > /tmp/f; echo a-data > /dev/shm/f 2>/dev/null
+cat /workspace/f /tmp/f 2>/dev/null`)
+	if !strings.Contains(planted, "a-data") {
+		t.Fatalf("%s: sandbox A could not write the state B is about to be checked for: %q", cfg.Name, planted)
+	}
 
 	out := run(t, other, `cat /workspace/f /tmp/f /dev/shm/f 2>/dev/null; env`)
 	for _, leaked := range []string{"a-data", "a-secret", "host-secret-value"} {
@@ -27,7 +34,13 @@ func propSandboxesShareNoState(t *testing.T, cfg Config) {
 			t.Errorf("%s: sandbox B sees %q", cfg.Name, leaked)
 		}
 	}
-	if out := run(t, a, `env`); strings.Contains(out, "host-secret-value") {
+	aEnv := run(t, a, `env`)
+	// Same reasoning as the files: B not seeing a-secret proves nothing unless
+	// A was actually given it.
+	if !strings.Contains(aEnv, "a-secret") {
+		t.Fatalf("%s: sandbox A was not given the environment B is being checked for: %q", cfg.Name, aEnv)
+	}
+	if strings.Contains(aEnv, "host-secret-value") {
 		t.Errorf("%s: the calling process's environment leaked into the sandbox", cfg.Name)
 	}
 
@@ -49,7 +62,12 @@ func propCrashedSandboxRecoversThroughCreate(t *testing.T, cfg Config) {
 	name := "openblox-conf-crash"
 	sb := create(t, cfg, b, name)
 
-	_, _ = sb.Exec(ctx, sandbox.Command{Argv: []string{"kill", "-9", "1"}, Timeout: 10 * time.Second})
+	// Through an explicit shell, not as bare argv: the reference image ships no
+	// kill binary, and propArgvIsNeverAShellBuiltin guarantees argv never
+	// reaches the shell's own builtin, so `Argv: []string{"kill", ...}` could
+	// not deliver the signal there at all. The guest reaching for a shell to
+	// signal init is what this property is about anyway.
+	_, _ = sb.Exec(ctx, sandbox.Command{Argv: []string{"sh", "-c", "kill -9 1"}, Timeout: 10 * time.Second})
 
 	deadline := time.Now().Add(20 * time.Second)
 	for {

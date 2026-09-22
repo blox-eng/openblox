@@ -33,20 +33,51 @@ func propWritableMountsAreNoexecNosuid(t *testing.T, cfg Config) {
 	b := cfg.New(t)
 	sb := create(t, cfg, b, "openblox-conf-noexec")
 
-	out := run(t, sb, `
-for d in /tmp /workspace /dev/shm; do
-  cp /bin/busybox "$d/bb" 2>/dev/null || continue
-  chmod 4755 "$d/bb" 2>/dev/null
-  "$d/bb" true 2>/dev/null && echo "EXECUTED $d"
-done
-su -c id root </dev/null 2>/dev/null | grep -q 'uid=0' && echo ESCALATED
-`)
+	out := run(t, sb, noexecProbe)
+	if strings.Contains(out, "NO_SHELL_BINARY") {
+		t.Fatalf("%s: probe cannot locate a shell binary to copy, so its attack step cannot run: %q", cfg.Name, out)
+	}
+	if strings.Contains(out, "NO_SU") {
+		t.Fatalf("%s: probe requires su, which the pinned reference image must provide: %q", cfg.Name, out)
+	}
+	if !strings.Contains(out, "COPIED ") {
+		t.Fatalf("%s: the probe could not plant its binary on any writable mount, so nothing below attempted to execute one: %q", cfg.Name, out)
+	}
 	for _, marker := range []string{"EXECUTED", "ESCALATED"} {
 		if strings.Contains(out, marker) {
 			t.Errorf("%s: %s: %q", cfg.Name, marker, out)
 		}
 	}
 }
+
+// noexecProbe plants a copy of the shell on each writable mount, makes it
+// setuid, and runs it.
+//
+// It copies the shell rather than /bin/busybox, which the original form used.
+// busybox resolves its applet from argv[0], so a copy named anything else is
+// not a valid applet and refuses to run — the attack step failed
+// deterministically, on every host and every image, whatever the mount flags
+// were, and the property passed on an absent marker. A probe whose attack
+// cannot run proves nothing about any implementation. The shell is the one
+// binary a POSIX userland must have, and command -v finds it wherever that
+// userland keeps it; COPIED and the NO_ markers make every way this can fail
+// to attack visible to the assertion instead of silent.
+const noexecProbe = `
+src=$(command -v sh 2>/dev/null)
+[ -n "$src" ] && [ -f "$src" ] || echo NO_SHELL_BINARY
+command -v su >/dev/null 2>&1 || echo NO_SU
+for d in /tmp /workspace /dev/shm; do
+  if cp "$src" "$d/planted" 2>/dev/null; then
+    echo "COPIED $d"
+  else
+    echo "NOCOPY $d"
+    continue
+  fi
+  chmod 4755 "$d/planted" 2>/dev/null
+  "$d/planted" -c 'exit 0' 2>/dev/null && echo "EXECUTED $d"
+done
+su -c id root </dev/null 2>/dev/null | grep -q 'uid=0' && echo ESCALATED
+`
 
 func propCreateRefusesRoot(t *testing.T, cfg Config) {
 	b := cfg.New(t)

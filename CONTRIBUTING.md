@@ -43,12 +43,13 @@ make test-integration
 ```
 
 CI runs them on every PR, on hosted amd64 and arm64 runners with gVisor
-installed — including the adversarial suite in
-`pkg/docker/adversarial_integration_test.go`. If you cannot run them locally,
+installed — including the conformance suite (`pkg/conformance`, run against
+this repo's backend by `pkg/docker/conformance_integration_test.go`). If you
+cannot run them locally,
 at least keep them compiling (`go vet -tags integration ./...`) and let CI run
 them.
 
-A security-relevant change should come with an adversarial test that fails
+A security-relevant change should come with a conformance property that fails
 without it. Phrase the attack so the test fails closed: print a marker only when
 the attack *succeeds*, and assert the marker is absent — so a probe that silently
 fails to run can never read as containment.
