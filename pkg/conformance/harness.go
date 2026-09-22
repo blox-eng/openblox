@@ -37,6 +37,12 @@ func run(t *testing.T, sb sandbox.Sandbox, script string) string {
 // than a skip: walk's preflight already proved the runtime could provide a
 // sandbox before this property's t.Run started, so its disappearance now is
 // a real fault, not the legitimate abort. See preflight's doc comment.
+//
+// name is reserved: it must never be preflightSandboxName. A property that
+// reused it would be racing preflight's own create/destroy of that name,
+// which by the time any property runs has already completed — but the
+// collision is still a property author's mistake to avoid, not something
+// this function guards against.
 func create(t *testing.T, cfg Config, b sandbox.Backend, name string, opts ...sandbox.CreateOption) sandbox.Sandbox {
 	t.Helper()
 	opts = append([]sandbox.CreateOption{sandbox.WithImage(image())}, opts...)
