@@ -29,6 +29,26 @@ type Config struct {
 
 	// Name identifies the implementation in output.
 	Name string
+
+	// run namespaces every sandbox this run creates. Unexported because it is
+	// the suite's bookkeeping, not a knob: walk sets it, and a caller cannot
+	// pin two runs to the same value. See sbName.
+	run string
+}
+
+// sbName qualifies a property's sandbox name with this run's namespace.
+//
+// The names are otherwise fixed strings, which collide the moment two runs
+// share a host: `go test ./...` builds and runs packages in parallel, so two
+// consumers of this suite in one module race each other for
+// "openblox-conf-net" on the same daemon. The failure is not a clean one —
+// each run destroys sandboxes the other is still measuring — so it reads as a
+// flaky isolation property rather than as two tests colliding.
+func (c Config) sbName(base string) string {
+	if c.run == "" {
+		return base
+	}
+	return base + "-" + c.run
 }
 
 // newBackend constructs a Backend for one property (or for preflight) and
@@ -75,6 +95,10 @@ func walk(t *testing.T, cfg Config, tier string, ps []property) {
 	if cfg.Name == "" {
 		t.Fatal("conformance: Config.Name is required")
 	}
+	// Per walk, not per process: two tiers, or two backends, can legitimately
+	// run concurrently in one binary, and they must not share sandbox names
+	// either. See Config.sbName.
+	cfg.run = newPlantedSuffix()
 	// An overridden image fails the run outright, rather than announcing
 	// itself and hoping someone reads it.
 	//
@@ -216,7 +240,8 @@ const preflightSandboxName = "openblox-conformance-preflight"
 func preflight(t *testing.T, cfg Config) {
 	t.Helper()
 	b := newBackend(t, cfg)
-	_, err := b.Create(t.Context(), preflightSandboxName, sandbox.WithImage(image()))
+	name := cfg.sbName(preflightSandboxName)
+	_, err := b.Create(t.Context(), name, sandbox.WithImage(image()))
 	if err != nil {
 		if errors.Is(err, sandbox.ErrRuntimeUnavailable) {
 			// Announced on stderr as well as through t.Skipf: go test drops a
@@ -227,11 +252,11 @@ func preflight(t *testing.T, cfg Config) {
 				cfg.Name, err)
 			t.Skipf("conformance: %s: the host cannot provide the required runtime (%v); no property can be measured", cfg.Name, err)
 		}
-		t.Fatalf("conformance: %s: preflight Create(%q) = %v", cfg.Name, preflightSandboxName, err)
+		t.Fatalf("conformance: %s: preflight Create(%q) = %v", cfg.Name, name, err)
 	}
-	t.Cleanup(func() { _ = b.Destroy(context.WithoutCancel(t.Context()), preflightSandboxName) })
-	if err := b.Destroy(t.Context(), preflightSandboxName); err != nil {
-		t.Fatalf("conformance: %s: preflight Destroy(%q) = %v; the backend's Destroy is unreliable, so every property's own cleanup is suspect", cfg.Name, preflightSandboxName, err)
+	t.Cleanup(func() { _ = b.Destroy(context.WithoutCancel(t.Context()), name) })
+	if err := b.Destroy(t.Context(), name); err != nil {
+		t.Fatalf("conformance: %s: preflight Destroy(%q) = %v; the backend's Destroy is unreliable, so every property's own cleanup is suspect", cfg.Name, name, err)
 	}
 }
 

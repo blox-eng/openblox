@@ -40,7 +40,7 @@ var networkProbeTargets = []networkTarget{
 // metadata, and private ranges — over TCP, HTTPS and IPv6.
 func propNoHostOrMetadataAddresses(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-net")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-net"))
 
 	// The probe works: a loopback listener inside the sandbox is reachable.
 	if out := run(t, cfg, sb, `nc -l -p 18080 >/dev/null 2>&1 & sleep 1; nc -z -w 2 127.0.0.1 18080 && echo LOOPBACK_OK`); !strings.Contains(out, "LOOPBACK_OK") {
@@ -171,7 +171,7 @@ func propLoopbackIsNotTheHosts(t *testing.T, cfg Config) {
 	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-hostlo")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-hostlo"))
 
 	// port comes from the OS via net.Listen, never from the guest or a
 	// caller; shellQuote still makes that interpolation explicit.
@@ -182,7 +182,7 @@ func propLoopbackIsNotTheHosts(t *testing.T, cfg Config) {
 
 func propOnlyLoopbackInterface(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-ifaces")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-ifaces"))
 
 	// Fail closed. strings.Split("", "\n") is [""], so an empty read would run
 	// the loop zero times and the property would pass having verified nothing

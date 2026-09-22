@@ -87,18 +87,18 @@ func rewriteScratch(s string) string {
 }
 
 // detachedEscapeMarker is the one marker sweepDetachedMarkers needs to look
-// for: propSetsidEscapesTheTimeoutKill's "setsid sleep 3136 ...". Every other
-// process-lifecycle property's marker is already reachable by reapGroup's
+// for: propSetsidEscapesTheTimeoutKill's detached "sleep <detachedSleep>". Every
+// other process-lifecycle property's marker is already reachable by reapGroup's
 // pgid-targeted kill — only setsid moves its child into a new session and
 // process group, structurally escaping that. Narrow on purpose: a sweep
 // covering the other markers too would be sweeping processes reapGroup
 // already handles, for no benefit, at the cost of a wider blast radius on
 // whatever else happens to be running on the machine.
-const detachedEscapeMarker = "3136"
+var detachedEscapeMarker = detachedSleep
 
 // sweepDetachedMarkers kills any leftover host process that is exactly
-// "sleep 3136" — argv[0] a "sleep" binary and argv[1] the marker, nothing
-// else — by scanning /proc directly. It exists for
+// "sleep <detachedSleep>" — argv[0] a "sleep" binary and argv[1] this run's own
+// marker, nothing else — by scanning /proc directly. It exists for
 // propSetsidEscapesTheTimeoutKill: a setsid-detached process starts its own
 // new session and process group, so it is not reachable by reapGroup's
 // pgid-targeted kill — the same reason it survives openblox's own timeout
@@ -108,9 +108,9 @@ const detachedEscapeMarker = "3136"
 //
 // The match is on exact argv, not a substring of the raw cmdline: this
 // runs against whatever /proc the developer's own machine has, and a
-// substring match ("sleep" and "3136" anywhere in the line) would also kill
-// an unrelated "sleep 31360" or a script whose path happens to contain
-// "3136" — unprompted destruction of a process this suite has no business
+// substring match (the marker anywhere in the line) would also kill an
+// unrelated longer sleep, or a script whose path happens to contain the
+// digits — unprompted destruction of a process this suite has no business
 // touching, on a public repo strangers will run `go test ./...` in without
 // having read this file.
 func sweepDetachedMarkers() {
@@ -139,26 +139,75 @@ func sweepDetachedMarkers() {
 	}
 }
 
+// trackedProc is a pid plus the thing that makes it an identity rather than
+// a number: the process's start time, field 22 of /proc/<pid>/stat.
+//
+// A pid alone is not a lifetime-bound handle. Every process here is started
+// with Setpgid, so reapAllTracked kills the group with Kill(-pid) — and if the
+// process has already exited and the kernel has handed its pid to something
+// else, that negated pid names a stranger's process group. On a busy machine
+// pid reuse is ordinary, and the blast radius is a SIGKILL to a process group
+// this suite has no business touching. Start time is what distinguishes the
+// process we launched from whatever now holds its number.
+type trackedProc struct {
+	pid   int
+	start string
+}
+
 var (
 	trackedMu sync.Mutex
-	tracked   []int
+	tracked   []trackedProc
 )
 
 // trackForReap records pid so TestMain's reapAllTracked can kill its whole
-// process group once the run is over.
+// process group once the run is over. A process that has already gone by the
+// time it is recorded is not tracked at all: there is nothing left to kill,
+// and its pid is already eligible for reuse.
 func trackForReap(pid int) {
+	start, ok := procStart(pid)
+	if !ok {
+		return
+	}
 	trackedMu.Lock()
-	tracked = append(tracked, pid)
+	tracked = append(tracked, trackedProc{pid: pid, start: start})
 	trackedMu.Unlock()
 }
 
 func reapAllTracked() {
 	trackedMu.Lock()
 	defer trackedMu.Unlock()
-	for _, pid := range tracked {
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
+	for _, p := range tracked {
+		// Re-read rather than trust the number: if the process is gone, or is
+		// now a different process wearing the same pid, this group is not ours
+		// to kill.
+		if cur, ok := procStart(p.pid); !ok || cur != p.start {
+			continue
+		}
+		_ = syscall.Kill(-p.pid, syscall.SIGKILL)
 	}
 	tracked = nil
+}
+
+// procStart reads a process's start time from /proc/<pid>/stat.
+//
+// The comm field is parenthesised and may itself contain spaces and
+// parentheses, so the fields are counted from the last ')' rather than from
+// the start of the line: after it, the first field is state (field 3), which
+// puts starttime (field 22) at index 19.
+func procStart(pid int) (string, bool) {
+	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return "", false
+	}
+	i := strings.LastIndexByte(string(raw), ')')
+	if i < 0 {
+		return "", false
+	}
+	f := strings.Fields(string(raw)[i+1:])
+	if len(f) < 20 {
+		return "", false
+	}
+	return f[19], true
 }
 
 // badBackend is the negative control: it satisfies sandbox.Backend and

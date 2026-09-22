@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -41,6 +42,28 @@ func newPlantedSuffix() string {
 		panic("conformance: cannot make planted probe paths unique: " + err.Error())
 	}
 	return fmt.Sprintf("%d-%x", os.Getpid(), b)
+}
+
+// detachedSleep is how long propSetsidEscapesTheTimeoutKill's detached process
+// sleeps, and so the marker that identifies it.
+//
+// Unique per test process, for the same reason the planted paths are. Against
+// the negative control that process is a real host process, and the sweep that
+// cleans it up matches on argv: a fixed "sleep 3136" meant the sweep would
+// SIGKILL a stranger's own "sleep 3136" — an ordinary thing to have running —
+// on a repo they cloned only to run `go test ./...` in.
+//
+// Six digits, disjoint from the 313x markers the other process properties use,
+// and decimal by construction: splicing it into the probe's shell string
+// cannot introduce shell syntax. Roughly an hour, which outlives any run.
+var detachedSleep = newDetachedSleep()
+
+func newDetachedSleep() string {
+	var b [2]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("conformance: cannot make the detached probe marker unique: " + err.Error())
+	}
+	return strconv.Itoa(800000 + (int(b[0])<<8|int(b[1]))%100000)
 }
 
 // The artifacts probes plant. Basenames where the probe writes the same name

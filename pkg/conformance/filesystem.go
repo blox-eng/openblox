@@ -23,7 +23,7 @@ var controlPlaneSockets = []string{
 
 func propNoControlPlaneSocket(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-sockets")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-sockets"))
 
 	// Both assertions below read an absent marker as containment, so establish
 	// first that the two mechanisms which produce those markers work at all in
@@ -67,7 +67,7 @@ func shellQuote(s string) string {
 // would be reconfiguring the kernel the sandbox runs on.
 func propCannotWriteKernelKnobs(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-procsys")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-procsys"))
 
 	// CONTROL_WROTE and CONTROL_READ are the same two mechanisms the four
 	// attempts below use, aimed at a path that must work. Without them a shell
@@ -93,7 +93,7 @@ cat /proc/kcore >/dev/null 2>&1 && echo READ_KCORE
 
 func propNoBlockDevices(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-dev")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-dev"))
 
 	// Each of the three attempts below is read as contained when its marker is
 	// absent, so prove first that each one can run: that /dev is populated and
@@ -128,7 +128,7 @@ mount -t tmpfs none /tmp 2>/dev/null && echo MOUNTED
 // host's, and never past what that user may read.
 func propNoTraversalOutOfGuest(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-traverse")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-traverse"))
 	ctx := t.Context()
 
 	// The reads below are read as contained when they return nothing, so the

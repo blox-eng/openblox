@@ -16,8 +16,8 @@ import (
 func propSandboxesShareNoState(t *testing.T, cfg Config) {
 	t.Setenv("OPENBLOX_HOST_SECRET", "host-secret-value")
 	b := newBackend(t, cfg)
-	a := create(t, cfg, b, "openblox-conf-iso-a", sandbox.WithEnv("TENANT_TOKEN=a-secret"))
-	other := create(t, cfg, b, "openblox-conf-iso-b")
+	a := create(t, cfg, b, cfg.sbName("openblox-conf-iso-a"), sandbox.WithEnv("TENANT_TOKEN=a-secret"))
+	other := create(t, cfg, b, cfg.sbName("openblox-conf-iso-b"))
 
 	// A's writes have to land before B's inability to see them means anything:
 	// if none of them did, B reads nothing for a reason that has nothing to do
@@ -44,10 +44,10 @@ cat /workspace/`+plantedFile+` /tmp/`+plantedFile+` 2>/dev/null`)
 		t.Errorf("%s: the calling process's environment leaked into the sandbox", cfg.Name)
 	}
 
-	if err := b.Destroy(t.Context(), "openblox-conf-iso-a"); err != nil {
+	if err := b.Destroy(t.Context(), cfg.sbName("openblox-conf-iso-a")); err != nil {
 		t.Fatalf("%s: Destroy = %v", cfg.Name, err)
 	}
-	again := create(t, cfg, b, "openblox-conf-iso-a")
+	again := create(t, cfg, b, cfg.sbName("openblox-conf-iso-a"))
 	if out := run(t, cfg, again, `cat /workspace/`+plantedFile+` /tmp/`+plantedFile+` 2>/dev/null; env`); strings.Contains(out, "a-data") || strings.Contains(out, "a-secret") {
 		t.Errorf("%s: a re-created sandbox inherited its predecessor's state: %q", cfg.Name, out)
 	}
@@ -59,7 +59,7 @@ cat /workspace/`+plantedFile+` /tmp/`+plantedFile+` 2>/dev/null`)
 func propCrashedSandboxRecoversThroughCreate(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
 	ctx := t.Context()
-	name := "openblox-conf-crash"
+	name := cfg.sbName("openblox-conf-crash")
 	sb := create(t, cfg, b, name)
 
 	// Through an explicit shell, not as bare argv: the reference image ships no
@@ -82,7 +82,7 @@ func propCrashedSandboxRecoversThroughCreate(t *testing.T, cfg Config) {
 	}
 
 	start := time.Now()
-	if _, err := sb.Exec(ctx, sandbox.Command{Argv: []string{"true"}}); !errors.Is(err, sandbox.ErrStopped) {
+	if _, err := sb.Exec(ctx, sandbox.Command{Argv: []string{"true"}, Timeout: probeTimeout}); !errors.Is(err, sandbox.ErrStopped) {
 		t.Errorf("%s: Exec on a crashed sandbox = %v, want ErrStopped", cfg.Name, err)
 	}
 	if time.Since(start) > 10*time.Second {
@@ -104,7 +104,7 @@ func propCrashedSandboxRecoversThroughCreate(t *testing.T, cfg Config) {
 func propStoppedSandboxIsReplacedByCreate(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
 	ctx := t.Context()
-	const name = "openblox-conf-restart"
+	name := cfg.sbName("openblox-conf-restart")
 	sb := create(t, cfg, b, name, sandbox.WithLabel("policy", "old"))
 
 	if err := sb.Stop(ctx); err != nil {
@@ -133,9 +133,9 @@ func propStoppedSandboxIsReplacedByCreate(t *testing.T, cfg Config) {
 // called exit — which does not exist — not the shell's exit.
 func propArgvIsNeverAShellBuiltin(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-builtin")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-builtin"))
 
-	res, err := sb.Exec(t.Context(), sandbox.Command{Argv: []string{"exit", "3"}})
+	res, err := sb.Exec(t.Context(), sandbox.Command{Argv: []string{"exit", "3"}, Timeout: probeTimeout})
 	if err == nil && res.ExitCode == 3 {
 		t.Errorf("%s: argv[0] \"exit\" ran as the shell builtin", cfg.Name)
 	}
@@ -149,7 +149,7 @@ func propDestroyRemovesTheSandbox(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
 	ctx := t.Context()
 
-	const name = "openblox-conf-destroy"
+	name := cfg.sbName("openblox-conf-destroy")
 	if _, err := b.Create(ctx, name, sandbox.WithImage(image())); err != nil {
 		t.Fatalf("%s: Create = %v", cfg.Name, err)
 	}

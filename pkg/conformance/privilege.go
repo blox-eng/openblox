@@ -11,7 +11,7 @@ import (
 
 func propNoCapabilities(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-caps")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-caps"))
 
 	out := run(t, cfg, sb, `grep -E '^Cap(Inh|Prm|Eff|Bnd|Amb):' /proc/self/status; id -u; id -g`)
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -32,7 +32,7 @@ func propNoCapabilities(t *testing.T, cfg Config) {
 // binary it wrote nor plant a setuid one.
 func propWritableMountsAreNoexecNosuid(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-noexec")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-noexec"))
 
 	out := run(t, cfg, sb, noexecProbe)
 	if strings.Contains(out, "NO_SHELL_BINARY") {
@@ -141,10 +141,10 @@ done
 func propCreateRefusesRoot(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
 	for _, user := range []string{"0:0", "root", "1000:0"} {
-		_, err := b.Create(t.Context(), "openblox-conf-root",
+		_, err := b.Create(t.Context(), cfg.sbName("openblox-conf-root"),
 			sandbox.WithImage(image()), sandbox.WithUser(user))
 		if !errors.Is(err, sandbox.ErrInvalid) {
-			_ = b.Destroy(t.Context(), "openblox-conf-root")
+			_ = b.Destroy(t.Context(), cfg.sbName("openblox-conf-root"))
 			t.Errorf("%s: Create(user %q) = %v, want ErrInvalid", cfg.Name, user, err)
 		}
 	}

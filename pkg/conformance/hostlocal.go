@@ -32,35 +32,66 @@ func propHostRetainsNothing(t *testing.T, cfg Config) {
 	ctx := t.Context()
 	var ids []string
 
-	cycle := func(i int) {
-		name := fmt.Sprintf("openblox-conf-leak-%d", i)
+	// probe is the warm-up cycle's extra duty: prove, while a sandbox is
+	// still alive, that scanning /proc for its ID can find it at all. Without
+	// that, a backend whose host processes never carry the ID makes the scan
+	// below find nothing for a reason that has nothing to do with leaking,
+	// and the property passes having measured no process at all.
+	cycle := func(i int, probe bool) {
+		name := cfg.sbName(fmt.Sprintf("openblox-conf-leak-%d", i))
 		sb, err := b.Create(ctx, name, sandbox.WithImage(image()))
 		if err != nil {
 			t.Fatalf("%s: Create #%d = %v", cfg.Name, i, err)
 		}
-		ids = append(ids, sb.Info().ID)
+		id := sb.Info().ID
+		if id == "" {
+			t.Fatalf("%s: Info().ID is empty; every scan below would match every process on the host", cfg.Name)
+		}
+		ids = append(ids, id)
 		_, _ = sb.Exec(ctx, sandbox.Command{Argv: []string{"sh", "-c", "sleep 5 & echo hi"}, Timeout: time.Second})
-		_ = sb.WriteFile(ctx, "/workspace/"+plantedFile, 0o644, strings.NewReader("data"))
-		if rc, err := sb.ReadFile(ctx, "/workspace/"+plantedFile); err == nil {
-			_ = rc.Close()
+		// The file path is part of what the descriptor count is meant to
+		// cover, so a backend that cannot write or read is not a cycle that
+		// measured less — it is a cycle that measured something else.
+		if err := sb.WriteFile(ctx, "/workspace/"+plantedFile, 0o644, strings.NewReader("data")); err != nil {
+			t.Fatalf("%s: WriteFile #%d = %v; the descriptor count would not cover the file path", cfg.Name, i, err)
+		}
+		rc, err := sb.ReadFile(ctx, "/workspace/"+plantedFile)
+		if err != nil {
+			t.Fatalf("%s: ReadFile #%d = %v; the descriptor count would not cover the file path", cfg.Name, i, err)
+		}
+		_ = rc.Close()
+		if probe {
+			pid, err := hostProcServing(id)
+			if err != nil {
+				t.Fatalf("%s: %v", cfg.Name, err)
+			}
+			if pid == "" {
+				t.Fatalf("%s: no host process mentions live sandbox %s, so an absent match after Destroy would prove nothing about process leaks on this backend", cfg.Name, shortID(id))
+			}
 		}
 		if err := b.Destroy(ctx, name); err != nil {
 			t.Fatalf("%s: Destroy #%d = %v", cfg.Name, i, err)
 		}
 	}
+	// Fails closed: an unreadable /proc/self/fd would otherwise count zero
+	// descriptors before and after, and zero growth over zero reads is a pass
+	// that measured nothing.
 	processLocal := func() (goroutines, fds int) {
-		entries, _ := os.ReadDir("/proc/self/fd")
+		entries, err := os.ReadDir("/proc/self/fd")
+		if err != nil {
+			t.Fatalf("%s: read /proc/self/fd = %v; descriptor growth cannot be measured", cfg.Name, err)
+		}
 		return runtime.NumGoroutine(), len(entries)
 	}
 
 	// One warm-up cycle, so connection pools and lazily started goroutines are
 	// part of the baseline rather than counted as growth.
-	cycle(-1)
+	cycle(-1, true)
 	time.Sleep(2 * time.Second)
 	g0, f0 := processLocal()
 
 	for i := range hostLeakIterations {
-		cycle(i)
+		cycle(i, false)
 	}
 	time.Sleep(3 * time.Second) // let fire-and-forget bookkeeping execs finish
 	g1, f1 := processLocal()
@@ -74,18 +105,51 @@ func propHostRetainsNothing(t *testing.T, cfg Config) {
 		t.Errorf("%s: file descriptors grew %d -> %d", cfg.Name, f0, f1)
 	}
 
-	procs, _ := os.ReadDir("/proc")
-	for _, p := range procs {
+	for _, id := range ids {
+		pid, err := hostProcServing(id)
+		if err != nil {
+			t.Fatalf("%s: %v", cfg.Name, err)
+		}
+		if pid != "" {
+			t.Errorf("%s: host process %s still serves destroyed container %s", cfg.Name, pid, shortID(id))
+		}
+	}
+}
+
+// hostProcServing returns the pid of a host process whose command line
+// mentions id, or "" if none does.
+//
+// It fails closed on an unreadable /proc: being unable to look is not the same
+// as having looked and found nothing, and this property reads "found nothing"
+// as containment. An individual unreadable cmdline is skipped rather than
+// fatal — processes exit while the scan walks them, and treating that as a
+// failure would make the property flaky instead of strict.
+func hostProcServing(id string) (string, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return "", fmt.Errorf("read /proc = %w; a host process leak cannot be measured, and an unmeasured scan must not read as containment", err)
+	}
+	for _, p := range entries {
 		cmdline, err := os.ReadFile("/proc/" + p.Name() + "/cmdline")
 		if err != nil {
 			continue
 		}
-		for _, id := range ids {
-			if strings.Contains(string(cmdline), id) {
-				t.Errorf("%s: host process %s still serves destroyed container %s", cfg.Name, p.Name(), id[:12])
-			}
+		if strings.Contains(string(cmdline), id) {
+			return p.Name(), nil
 		}
 	}
+	return "", nil
+}
+
+// shortID trims a sandbox ID for an error message. Backend IDs have no
+// guaranteed length: the suite measures other people's implementations, so a
+// fixed id[:12] would panic on a short ID at exactly the moment a leak was
+// found — turning the one real finding into a crash.
+func shortID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }
 
 // propHostFilesAreInvisible is the assertion TestSandboxCannotSeeTheDockerSocketOrHostFiles
@@ -103,13 +167,13 @@ func propHostFilesAreInvisible(t *testing.T, cfg Config) {
 	defer func() { _ = os.Remove(marker.Name()) }()
 
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-hostfiles")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-hostfiles"))
 
 	// The marker's path goes through Argv, not a shell string: it is a
 	// runtime-generated temp path, not a package constant, so it must never
 	// be interpolated into a script the way the fixed control-plane socket
 	// paths are.
-	res, err := sb.Exec(t.Context(), sandbox.Command{Argv: []string{"test", "-e", marker.Name()}})
+	res, err := sb.Exec(t.Context(), sandbox.Command{Argv: []string{"test", "-e", marker.Name()}, Timeout: probeTimeout})
 	if err == nil && res.ExitCode == 0 {
 		t.Errorf("%s: host temp file %s is visible inside the sandbox", cfg.Name, marker.Name())
 	}

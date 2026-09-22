@@ -25,7 +25,7 @@ func countProcs(t *testing.T, cfg Config, sb sandbox.Sandbox, marker string) int
 	// Processes come and go while the loop runs, so a read can fail; stderr
 	// is silenced above so a failed read is silent too, and only stdout is
 	// parsed.
-	res, err := sb.Exec(t.Context(), sandbox.Command{Argv: []string{"sh", "-c", script}})
+	res, err := sb.Exec(t.Context(), sandbox.Command{Argv: []string{"sh", "-c", script}, Timeout: probeTimeout})
 	if err != nil {
 		t.Fatalf("%s: count processes matching %q: Exec = %v", cfg.Name, marker, err)
 	}
@@ -40,7 +40,7 @@ func countProcs(t *testing.T, cfg Config, sb sandbox.Sandbox, marker string) int
 // and anything it started, would burn the sandbox's CPU until it was reaped.
 func propTimedOutCommandKillsChildren(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-timeoutkill")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-timeoutkill"))
 
 	_, err := sb.Exec(t.Context(), sandbox.Command{
 		Argv:    []string{"sh", "-c", "sleep 3131 & sleep 3132 & while :; do :; done"},
@@ -66,11 +66,11 @@ func propTimedOutCommandKillsChildren(t *testing.T, cfg Config) {
 // one.
 func propCancelledCommandIsNotATimeout(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-cancel")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-cancel"))
 
 	ctx, cancel := context.WithCancel(t.Context())
 	time.AfterFunc(time.Second, cancel)
-	_, err := sb.Exec(ctx, sandbox.Command{Argv: []string{"sleep", "3133"}})
+	_, err := sb.Exec(ctx, sandbox.Command{Argv: []string{"sleep", "3133"}, Timeout: probeTimeout})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("%s: Exec = %v, want context.Canceled", cfg.Name, err)
 	}
@@ -120,7 +120,7 @@ func propCancelledCommandIsNotATimeout(t *testing.T, cfg Config) {
 // test.
 func propKillGroupWaitsForLateRecord(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-killwait")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-killwait"))
 
 	const marker = "sleep 3137"
 	const livenessMarker = "sleep 3138"
@@ -169,7 +169,7 @@ func propKillGroupWaitsForLateRecord(t *testing.T, cfg Config) {
 // another command timing out.
 func propTimeoutKillIsScopedToItsCommand(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-killscope")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-killscope"))
 	ctx := t.Context()
 
 	if err := sb.StartProcess(ctx, "server", sandbox.Command{Argv: []string{"sleep", "3135"}}); err != nil {
@@ -196,31 +196,33 @@ func propTimeoutKillIsScopedToItsCommand(t *testing.T, cfg Config) {
 // that legible to someone reading only the output.
 func propSetsidEscapesTheTimeoutKill(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-setsid")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-setsid"))
 
 	// The pinned reference image is not caller-configurable, so its absence
 	// of setsid is a hard failure, not a reason to skip: Core never skips.
 	if out := run(t, cfg, sb, "command -v setsid || echo MISSING"); strings.Contains(out, "MISSING") {
 		t.Fatalf("%s: probe requires setsid, which the pinned reference image must provide: %q", cfg.Name, out)
 	}
+	detached := "sleep " + detachedSleep
 	_, err := sb.Exec(t.Context(), sandbox.Command{
-		Argv:    []string{"sh", "-c", "setsid sleep 3136 </dev/null >/dev/null 2>&1 & while :; do :; done"},
+		Argv:    []string{"sh", "-c", "setsid " + detached + " </dev/null >/dev/null 2>&1 & while :; do :; done"},
 		Timeout: time.Second,
 	})
 	if !errors.Is(err, sandbox.ErrTimeout) {
 		t.Fatalf("%s: Exec = %v, want ErrTimeout", cfg.Name, err)
 	}
-	if n := countProcs(t, cfg, sb, "sleep 3136"); n != 1 {
+	if n := countProcs(t, cfg, sb, detached); n != 1 {
 		t.Errorf("%s: setsid process count = %d; if the kill now reaches it, update ErrTimeout's documentation", cfg.Name, n)
 	}
 }
 
 func propOutputFloodIsCapped(t *testing.T, cfg Config) {
 	b := newBackend(t, cfg)
-	sb := create(t, cfg, b, "openblox-conf-flood")
+	sb := create(t, cfg, b, cfg.sbName("openblox-conf-flood"))
 
 	res, err := sb.Exec(t.Context(), sandbox.Command{
-		Argv: []string{"sh", "-c", `head -c 50000000 /dev/zero; head -c 50000000 /dev/zero >&2; exit 4`},
+		Argv:    []string{"sh", "-c", `head -c 50000000 /dev/zero; head -c 50000000 /dev/zero >&2; exit 4`},
+		Timeout: probeTimeout,
 	})
 	if err != nil {
 		t.Fatalf("%s: Exec = %v", cfg.Name, err)
