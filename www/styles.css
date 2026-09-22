@@ -170,6 +170,27 @@
   }
   .sub b { color: var(--ink); font-weight: 500; }
 
+  /* The runtime in the subhead is a button, not decoration: it walks the
+     approved runtimes and the line under the install command follows. It is
+     styled as the surrounding sentence plus an underline, because a control
+     that reads as a control invites the click that makes it discoverable —
+     and it stays legible as plain text for anyone who never tries it. */
+  #runtime {
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    color: var(--ink);
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 0.22em;
+    transition: color 130ms ease;
+  }
+  #runtime:hover { color: var(--accent); }
+
   .install { margin-top: clamp(1.25rem, 3vh, 1.75rem); max-width: 40rem; }
 
   .tabs {
@@ -269,7 +290,19 @@
   .foot a { text-decoration: none; }
   .foot a:hover { color: var(--ink); }
   .attrib { display: inline-flex; align-items: center; gap: 0.45rem; text-decoration: none; }
-  .attrib svg { width: 14px; height: 14px; fill: currentColor; display: block; }
+  /* The Blox mark, drawn as a mask rather than an <img>: the file is a single
+     path with fill="currentColor", which an <img> resolves in its own context
+     and renders black — wrong on the dark theme. A mask takes its colour from
+     the text beside it, so the attribution stays one object in both themes.
+     CSP governs this under img-src, which is 'self'; the file is served here. */
+  .attrib .mark {
+    width: 13px;
+    height: 14px;
+    flex: none;
+    background-color: currentColor;
+    -webkit-mask: url(assets/blox-mark.svg) center / contain no-repeat;
+    mask: url(assets/blox-mark.svg) center / contain no-repeat;
+  }
   .foot-right { display: flex; align-items: center; gap: 1rem; }
 
   /* ---- 404 ------------------------------------------------------------

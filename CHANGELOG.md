@@ -71,8 +71,27 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   the page makes, and the Content-Security-Policy names its script host and its
   collection host in separate directives rather than widening to admit both.
 
+### Added
+
+- **The runtime named on openblox.sh is a control, and both runtimes are
+  credited.** Clicking `gVisor` in the subhead walks the approved runtimes and
+  the line under the install command follows it, each one linking to its own
+  project — neither was attributed before, which was an oversight for two pieces
+  of someone else's work the whole design rests on. The two are deliberately not
+  presented as equals: selecting Kata says it is a separate kernel per sandbox
+  and stronger than the default, and in the same breath that gVisor is what CI
+  exercises, which is what
+  [`SECURITY.md`](SECURITY.md#the-isolation-runtime) says at greater length.
+  `runc` is not in the rotation; it is not an option, it is the absence of one.
+
 ### Fixed
 
+- **The footer carries the real Blox Engineering mark.** It had been a
+  hand-drawn hexagon standing in for a logo that exists. The mark is a single
+  path with `fill="currentColor"`, which an `<img>` resolves in its own context
+  and paints black — wrong on the dark theme — so it is drawn as a CSS mask
+  tinted by the text beside it, and the attribution stays one object in both
+  themes.
 - **openblox.sh answers a missing page with a 404 instead of the landing page.**
   Cloudflare Pages falls back to `index.html` when nothing matches, so every
   mistyped or retired URL returned `200` with the front page — a soft 404, which

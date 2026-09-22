@@ -61,7 +61,8 @@
     <div>
       <h1>Run untrusted, AI-generated code on your own hardware.</h1>
       <p class="sub">
-        A Go library over Docker and gVisor, small enough to read in an
+        A Go library over Docker and <button type="button" id="runtime"
+        aria-describedby="platform">gVisor</button>, small enough to read in an
         afternoon. <b>No control plane, no database, no scheduler</b> — a
         sandbox is a container, and the container is the state.
       </p>
@@ -77,7 +78,7 @@
           <button class="copy" id="copy" aria-label="Copy the command">Copy</button>
         </div>
         <p class="meta">
-          <span id="platform">Linux · amd64 or arm64 · needs Docker with gVisor</span>
+          <span id="platform" aria-live="polite">Linux · amd64 or arm64 · needs Docker with gVisor</span>
           <a href="/install.sh" id="readit">read the script first ↗</a>
         </p>
       </div>
@@ -96,7 +97,7 @@
 
   <footer class="chrome foot">
     <a class="attrib" href="https://bloxng.com">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 22 7.5v9L12 22 2 16.5v-9Zm0 2.3L4 8.6v6.8l8 4.3 8-4.3V8.6Z"/></svg>
+      <span class="mark" aria-hidden="true"></span>
       Blox Engineering
     </a>
     <span class="foot-right">
