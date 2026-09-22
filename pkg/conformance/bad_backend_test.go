@@ -162,6 +162,21 @@ func reapGroup(pid int) {
 	trackForReap(pid)
 }
 
+// shellQuoteArgv joins argv into a single POSIX shell command line, each
+// argument wrapped in single quotes with any embedded single quote escaped
+// by closing the quote, emitting an escaped quote, then reopening it.
+// Unlike the package's shellQuote (which panics on a single quote or
+// newline, because every caller there is a fixed probe constant), this must
+// handle arbitrary argv values from any property, so it escapes rather than
+// refuses.
+func shellQuoteArgv(argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, a := range argv {
+		quoted[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+	}
+	return strings.Join(quoted, " ")
+}
+
 func (badSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result, error) {
 	if err := cmd.Validate(); err != nil {
 		return sandbox.Result{}, err
@@ -176,7 +191,27 @@ func (badSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result
 		defer cancel()
 	}
 
-	c := exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
+	// Spliced through "sh -c", not exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
+	// directly: this is load-bearing, not cosmetic. It models the honest
+	// shape of a careless-but-quoting backend — openblox's own docker
+	// backend wraps argv in a shell too, to record the process group, and
+	// this is that same shape minus the `exec "$0" "$@"` precaution that
+	// keeps shell builtins out. Without a shell in the middle, badBackend
+	// could never fail propArgvIsNeverAShellBuiltin no matter how little it
+	// isolates, which is a defect in the control, not a fact about the
+	// property. The quoting shellQuoteArgv does is equally load-bearing in
+	// the other direction: a naive strings.Join(argv, " ") was tried and
+	// rejected because it breaks other properties into vacuous passes for
+	// reasons that have nothing to do with isolation — loopback-is-not-the-
+	// hosts and only-a-loopback-interface stop parsing their own probe
+	// output correctly, countProcs' `for f in /proc/[0-9]*/cmdline; do ...`
+	// pattern degenerates, the output-flood probe keeps 0 bytes, and
+	// no-capabilities' grep invocation errors out — each one a new hole a
+	// naive join would force into negativeControlExemptions. Correct
+	// per-argument quoting avoids all of it: verified empirically, this
+	// splice changes nothing about any of the other 20 properties' pass/
+	// fail reasons.
+	c := exec.Command("sh", "-c", shellQuoteArgv(cmd.Argv))
 	c.Env = append(os.Environ(), cmd.Env...)
 	c.Dir = cmd.Dir
 	c.Stdin = cmd.Stdin

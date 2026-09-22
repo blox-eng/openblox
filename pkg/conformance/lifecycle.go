@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -134,6 +135,12 @@ func propDestroyRemovesTheSandbox(t *testing.T, cfg Config) {
 	if _, err := b.Create(ctx, name, sandbox.WithImage(image())); err != nil {
 		t.Fatalf("%s: Create = %v", cfg.Name, err)
 	}
+	// This property calls b.Create directly, bypassing the create() helper
+	// that normally registers this cleanup, because it needs to Destroy
+	// itself mid-test and assert on the aftermath. Register the backstop
+	// anyway: if the explicit Destroy below fatals, this still runs, so a
+	// failure here doesn't leak the sandbox for the rest of the suite.
+	t.Cleanup(func() { _ = b.Destroy(context.WithoutCancel(t.Context()), name) })
 	if err := b.Destroy(ctx, name); err != nil {
 		t.Fatalf("%s: Destroy = %v", cfg.Name, err)
 	}
