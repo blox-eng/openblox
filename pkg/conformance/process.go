@@ -86,24 +86,72 @@ func propCancelledCommandIsNotATimeout(t *testing.T, cfg Config) {
 // chance to record itself as running: an implementation that only started
 // looking for what to kill after some bookkeeping step of its own would leave
 // exactly the command whose kill raced that bookkeeping running past its
-// deadline. This drives the timeout to the shortest duration the interface
-// still resolves reliably, which puts the command and its kill in the
-// tightest race a caller outside the backend can force.
+// deadline.
 //
 // The original form of this property staged the race directly against
 // openblox's docker backend: it reached into the unexported dockerSandbox to
 // call killGroup before the unexported exec wrapper had written its own
-// process-group record. That is not expressible here. Core properties run
-// against any sandbox.Backend, and this package depends on nothing but
-// pkg/sandbox, so there is no backend-specific hook left to reach into. An
-// effectively-immediate Timeout is the closest black-box equivalent: it
-// forces the same "the kill starts looking before there is anything to find"
-// window through the public interface alone.
+// process-group record, then waited past the moment that record would have
+// appeared to confirm the kill still found it. That is not expressible here.
+// Core properties run against any sandbox.Backend, and this package depends
+// on nothing but pkg/sandbox, so there is no backend-specific hook left to
+// reach into, and no way to wait past a moment this package has no means to
+// observe.
+//
+// What follows only approximates that window, on a best-effort basis: an
+// effectively-immediate Timeout, which puts the exec and the kill as close
+// together as the interface still resolves reliably, but does not force the
+// original's specific ordering. Two ways this can be weaker than the name
+// suggests, and neither is detected by anything in this package:
+//   - if a real backend's own bookkeeping reliably lands before this Timeout
+//     fires, the race the name refers to never happens, and the property
+//     silently degenerates into a shorter-timeout duplicate of
+//     propTimedOutCommandKillsChildren;
+//   - the exact Timeout value is a guess at how long an exec create/attach
+//     round trip takes before the command itself ever runs; too short for a
+//     slower backend or a loaded host, and the property fails for a reason
+//     that has nothing to do with a late group record.
+//
+// What the liveness check below does guarantee, independent of whether the
+// race above is actually won: the final assertion cannot pass just because
+// the command never got the chance to exist in the first place. Without it,
+// a backend that killed the exec before "sh" ever reached "exec" would also
+// show countProcs == 0 — green, for a reason unrelated to the kill under
+// test.
 func propKillGroupWaitsForLateRecord(t *testing.T, cfg Config) {
 	b := cfg.New(t)
 	sb := create(t, cfg, b, "openblox-conf-killwait")
 
 	const marker = "sleep 3137"
+	const livenessMarker = "sleep 3138"
+
+	// Prove this backend and this Argv shape can reach a running process at
+	// all before trusting an absence below to mean anything: the same
+	// command, under a generous Timeout, on a marker distinct from the real
+	// run so the two cannot be confused with each other.
+	liveCtx, liveCancel := context.WithCancel(t.Context())
+	liveDone := make(chan struct{})
+	go func() {
+		defer close(liveDone)
+		_, _ = sb.Exec(liveCtx, sandbox.Command{
+			Argv:    []string{"sh", "-c", "exec " + livenessMarker},
+			Timeout: 10 * time.Second,
+		})
+	}()
+	seen := false
+	for range 50 {
+		if countProcs(t, sb, livenessMarker) > 0 {
+			seen = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	liveCancel()
+	<-liveDone
+	if !seen {
+		t.Fatalf("%s: probe never observed %q running; the tight-timeout race below would prove nothing", cfg.Name, livenessMarker)
+	}
+
 	_, err := sb.Exec(t.Context(), sandbox.Command{
 		Argv:    []string{"sh", "-c", "exec " + marker},
 		Timeout: 100 * time.Millisecond,

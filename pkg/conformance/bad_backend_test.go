@@ -17,13 +17,11 @@ import (
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
 
-// TestMain guarantees badSandbox's cleanup actually runs. reapGroup's delayed
-// goroutine races the test binary's own exit: a fast run can finish and exit
-// before that delay elapses, which would kill every pending goroutine —
-// reapGroup's included — mid-sleep, leaking the very process it exists to
-// clean up. This waits for every tracked process to be reaped, then sweeps
-// for the one kind of leak reapGroup cannot reach at all, before the binary
-// is allowed to exit.
+// TestMain is where every process badSandbox starts actually gets cleaned
+// up: reapGroup only records a pid, so nothing is killed until m.Run() has
+// finished and every property has already recorded its result. This also
+// sweeps for the one kind of leak reapGroup cannot reach at all, before the
+// binary is allowed to exit.
 func TestMain(m *testing.M) {
 	code := m.Run()
 	reapAllTracked()
@@ -31,19 +29,33 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// detachableMarkers are the process-lifecycle properties' own sleep markers
-// (see process.go) that can end up running detached from any pgid badSandbox
-// still has a handle to.
-var detachableMarkers = []string{"3131", "3132", "3133", "3135", "3136", "3137"}
+// detachedEscapeMarker is the one marker sweepDetachedMarkers needs to look
+// for: propSetsidEscapesTheTimeoutKill's "setsid sleep 3136 ...". Every other
+// process-lifecycle property's marker is already reachable by reapGroup's
+// pgid-targeted kill — only setsid moves its child into a new session and
+// process group, structurally escaping that. Narrow on purpose: a sweep
+// covering the other markers too would be sweeping processes reapGroup
+// already handles, for no benefit, at the cost of a wider blast radius on
+// whatever else happens to be running on the machine.
+const detachedEscapeMarker = "3136"
 
-// sweepDetachedMarkers kills any leftover host process matching one of
-// detachableMarkers by scanning /proc directly. It exists for
+// sweepDetachedMarkers kills any leftover host process that is exactly
+// "sleep 3136" — argv[0] a "sleep" binary and argv[1] the marker, nothing
+// else — by scanning /proc directly. It exists for
 // propSetsidEscapesTheTimeoutKill: a setsid-detached process starts its own
 // new session and process group, so it is not reachable by reapGroup's
 // pgid-targeted kill — the same reason it survives openblox's own timeout
 // kill in the real backend. This is a host-hygiene backstop run once after
 // the whole suite, not a substitute for that property's own assertions,
 // which have already run and recorded their result long before this fires.
+//
+// The match is on exact argv, not a substring of the raw cmdline: this
+// runs against whatever /proc the developer's own machine has, and a
+// substring match ("sleep" and "3136" anywhere in the line) would also kill
+// an unrelated "sleep 31360" or a script whose path happens to contain
+// "3136" — unprompted destruction of a process this suite has no business
+// touching, on a public repo strangers will run `go test ./...` in without
+// having read this file.
 func sweepDetachedMarkers() {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -54,20 +66,19 @@ func sweepDetachedMarkers() {
 		if err != nil {
 			continue
 		}
-		cmdline, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
+		raw, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
 		if err != nil {
 			continue
 		}
-		line := string(cmdline)
-		if !strings.Contains(line, "sleep") {
+		argv := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
+		if len(argv) != 2 || argv[1] != detachedEscapeMarker {
 			continue
 		}
-		for _, m := range detachableMarkers {
-			if strings.Contains(line, m) {
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-				break
-			}
+		prog := argv[0]
+		if prog != "sleep" && !strings.HasSuffix(prog, "/sleep") {
+			continue
 		}
+		_ = syscall.Kill(pid, syscall.SIGKILL)
 	}
 }
 
@@ -76,8 +87,8 @@ var (
 	tracked   []int
 )
 
-// trackForReap records pid so TestMain can guarantee it is killed even if
-// reapGroup's own delayed goroutine never gets to run.
+// trackForReap records pid so TestMain's reapAllTracked can kill its whole
+// process group once the run is over.
 func trackForReap(pid int) {
 	trackedMu.Lock()
 	tracked = append(tracked, pid)
@@ -133,27 +144,22 @@ func (s badSandbox) Info() sandbox.Info {
 	return sandbox.Info{Name: s.name, State: sandbox.StateRunning}
 }
 
-// reapDelay bounds how long a probe's process is allowed to linger on the
-// host running the test after Exec or StartProcess returns. badSandbox
-// deliberately does not stop what it starts on its own — a process or process
-// group it leaked is exactly what the process-lifecycle properties must
-// observe to correctly fail here — but a probe left entirely unreaped could
-// hold a busy loop or a multi-minute sleep on the host for as long as it was
-// written to run. Every property's own assertions run within a moment of the
-// call that started the leak, so this delay is chosen to run comfortably
-// after those assertions, never before them.
-const reapDelay = 5 * time.Second
-
-// reapGroup kills pid's whole process group after reapDelay. It exists only
-// for host hygiene: it must never fire before a property has had the chance
-// to observe what badSandbox leaked, or that observation — the entire point
-// of the negative control for these properties — would be cut short.
+// reapGroup registers pid's whole process group to be killed once the whole
+// test binary is done with it — see TestMain / reapAllTracked. It never
+// kills anything itself, and in particular never on a timer: an earlier
+// version of this function fired its own kill 5 seconds after Exec or
+// StartProcess returned, which held only because every timeout property
+// Fatalfs at the ErrTimeout check before it ever reaches countProcs. That
+// made the 5-second margin load-bearing but invisible — if badSandbox's
+// error handling ever changed to return ErrTimeout, or a slow host pushed a
+// property's own countProcs past 5 seconds, the timer could kill the
+// process out from under the property and fabricate a green result for the
+// wrong reason. Routing all cleanup through TestMain, after every test has
+// already run and recorded its result, removes that window entirely: no
+// process this backend starts is ever killed while a property could still
+// be observing it.
 func reapGroup(pid int) {
 	trackForReap(pid)
-	go func() {
-		time.Sleep(reapDelay)
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
-	}()
 }
 
 func (badSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result, error) {
@@ -175,11 +181,12 @@ func (badSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result
 	c.Dir = cmd.Dir
 	c.Stdin = cmd.Stdin
 	// Grouped so a background child a probe starts ("cmd &") can be reaped by
-	// pgid once the property is done observing it; see reapGroup. Killing the
-	// direct process on cancellation still only reaches this one pid, not the
-	// group — badBackend leaking a backgrounded child is the correct, honest
-	// behaviour of a backend with no isolation, and reapGroup only cleans it
-	// up after the fact.
+	// pgid once the whole test binary is done with it; see reapGroup. Killing
+	// the direct process on cancellation still only reaches this one pid, not
+	// the group — badBackend leaking a backgrounded child is the correct,
+	// honest behaviour of a backend with no isolation, and reapGroup's
+	// cleanup, deferred to TestMain, never interferes with a property
+	// observing that leak.
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// c.Output()/exec.CommandContext cannot be used here: a probe that
@@ -284,8 +291,8 @@ func (badSandbox) StartProcess(_ context.Context, _ string, cmd sandbox.Command)
 	}
 	// badSandbox tracks nothing about a background process once started, the
 	// same way it isolates nothing about it while running: nobody else calls
-	// Wait, so this reaps it rather than leaving a zombie once reapGroup's
-	// signal lands.
+	// Wait, so this reaps it rather than leaving a zombie once TestMain's
+	// cleanup kills it.
 	go func() { _ = c.Wait() }()
 	reapGroup(c.Process.Pid)
 	return nil
