@@ -1,11 +1,16 @@
 package conformance
 
 import (
-	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+// networkTarget is one host:port a probe attempts to reach.
+type networkTarget struct {
+	host, port string
+}
 
 // networkProbeTargets are the addresses an attacker actually wants: the
 // host's own services, the Docker bridge, cloud metadata, and private
@@ -14,14 +19,14 @@ import (
 // Suite-owned and not configurable: a Config field for probe targets would
 // turn a testing library into a request-forgery gadget running inside
 // someone else's isolation boundary and reporting what it reached.
-var networkProbeTargets = []string{
-	"169.254.169.254 80", // cloud metadata
-	"172.17.0.1 2375",    // Docker bridge gateway, plaintext API port
-	"172.17.0.1 22",      // host via the bridge
-	"10.0.0.1 80",
-	"192.168.0.1 80",
-	"1.1.1.1 443", // HTTPS egress
-	"8.8.8.8 53",  // DNS over TCP to a public resolver
+var networkProbeTargets = []networkTarget{
+	{"169.254.169.254", "80"}, // cloud metadata
+	{"172.17.0.1", "2375"},    // Docker bridge gateway, plaintext API port
+	{"172.17.0.1", "22"},      // host via the bridge
+	{"10.0.0.1", "80"},
+	{"192.168.0.1", "80"},
+	{"1.1.1.1", "443"}, // HTTPS egress
+	{"8.8.8.8", "53"},  // DNS over TCP to a public resolver
 }
 
 // The egress test covers one public address. These targets are the ones an
@@ -37,9 +42,11 @@ func propNoHostOrMetadataAddresses(t *testing.T, cfg Config) {
 	}
 
 	for _, target := range networkProbeTargets {
-		out := run(t, sb, fmt.Sprintf(`nc -z -w 2 %s && echo REACHED`, target))
+		// host and port are package constants, so this interpolation cannot
+		// carry anything a caller supplied.
+		out := run(t, sb, `nc -z -w 2 `+shellQuote(target.host)+` `+shellQuote(target.port)+` && echo REACHED`)
 		if strings.Contains(out, "REACHED") {
-			t.Errorf("%s: sandbox reached %s", cfg.Name, target)
+			t.Errorf("%s: sandbox reached %s:%s", cfg.Name, target.host, target.port)
 		}
 	}
 
@@ -72,13 +79,15 @@ func propLoopbackIsNotTheHosts(t *testing.T, cfg Config) {
 			_ = c.Close()
 		}
 	}()
-	port := ln.Addr().(*net.TCPAddr).Port
+	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 
 	b := cfg.New(t)
 	sb := create(t, cfg, b, "openblox-conf-hostlo")
 
-	if out := run(t, sb, fmt.Sprintf(`nc -z -w 2 127.0.0.1 %d && echo REACHED`, port)); strings.Contains(out, "REACHED") {
-		t.Errorf("%s: sandbox reached a listener on the HOST's loopback (port %d)", cfg.Name, port)
+	// port comes from the OS via net.Listen, never from the guest or a
+	// caller; shellQuote still makes that interpolation explicit.
+	if out := run(t, sb, `nc -z -w 2 127.0.0.1 `+shellQuote(port)+` && echo REACHED`); strings.Contains(out, "REACHED") {
+		t.Errorf("%s: sandbox reached a listener on the HOST's loopback (port %s)", cfg.Name, port)
 	}
 }
 
