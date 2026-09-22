@@ -87,6 +87,17 @@ const preflightSandboxName = "openblox-conformance-preflight"
 // different, real failure — not this one. create reports that with
 // t.Fatalf, not a skip, because the runtime's disappearance after preflight
 // passed is not evidence of anything the suite is trying to measure.
+//
+// The probe sandbox does not outlive this function: it is destroyed
+// immediately, not via t.Cleanup on the parent t, because a t.Cleanup there
+// would only fire after every property in the tier (and, under the
+// documented Run-then-RunHostLocal usage, potentially the next tier too) has
+// finished. Until then, a property that reasons about Backend.List would see
+// an entry no property created. A t.Cleanup is still registered, right
+// before the immediate destroy, purely as a backstop against that destroy
+// itself failing — it must never mask that failure, so an immediate destroy
+// error is still reported via t.Fatalf: a backend whose Destroy is
+// unreliable here makes every property's own cleanup suspect too.
 func preflight(t *testing.T, cfg Config) {
 	t.Helper()
 	b := cfg.New(t)
@@ -98,6 +109,9 @@ func preflight(t *testing.T, cfg Config) {
 		t.Fatalf("conformance: %s: preflight Create(%q) = %v", cfg.Name, preflightSandboxName, err)
 	}
 	t.Cleanup(func() { _ = b.Destroy(context.WithoutCancel(t.Context()), preflightSandboxName) })
+	if err := b.Destroy(t.Context(), preflightSandboxName); err != nil {
+		t.Fatalf("conformance: %s: preflight Destroy(%q) = %v; the backend's Destroy is unreliable, so every property's own cleanup is suspect", cfg.Name, preflightSandboxName, err)
+	}
 }
 
 var core []property
