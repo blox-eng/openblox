@@ -10,10 +10,10 @@ import (
 )
 
 func propNoCapabilities(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-caps")
 
-	out := run(t, sb, `grep -E '^Cap(Inh|Prm|Eff|Bnd|Amb):' /proc/self/status; id -u; id -g`)
+	out := run(t, cfg, sb, `grep -E '^Cap(Inh|Prm|Eff|Bnd|Amb):' /proc/self/status; id -u; id -g`)
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 7 {
 		t.Fatalf("%s: unexpected probe output: %q", cfg.Name, out)
@@ -31,10 +31,10 @@ func propNoCapabilities(t *testing.T, cfg Config) {
 // Every writable mount is noexec and nosuid, so the guest can neither run a
 // binary it wrote nor plant a setuid one.
 func propWritableMountsAreNoexecNosuid(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-noexec")
 
-	out := run(t, sb, noexecProbe)
+	out := run(t, cfg, sb, noexecProbe)
 	if strings.Contains(out, "NO_SHELL_BINARY") {
 		t.Fatalf("%s: probe cannot locate a shell binary to copy, so its attack step cannot run: %q", cfg.Name, out)
 	}
@@ -57,7 +57,7 @@ func propWritableMountsAreNoexecNosuid(t *testing.T, cfg Config) {
 	// marker cannot fire from a non-root uid whatever the mount flags are,
 	// because su demands a password — a leg that was green because it could
 	// not run, which is the very class this suite exists to find.
-	mountinfo := run(t, sb, `cat /proc/self/mountinfo`)
+	mountinfo := run(t, cfg, sb, `cat /proc/self/mountinfo`)
 	if strings.TrimSpace(mountinfo) == "" {
 		t.Fatalf("%s: the guest's own mount table is empty, so the flags below cannot be checked", cfg.Name)
 	}
@@ -118,23 +118,28 @@ func mountOptionsFor(mountinfo, dir string) (string, bool) {
 // binary a POSIX userland must have, and command -v finds it wherever that
 // userland keeps it; COPIED, NOCOPY and NO_SHELL_BINARY make every way this
 // can fail to attack visible to the assertion instead of silent.
-const noexecProbe = `
+//
+// The planted copy carries this run's unique suffix and is removed afterwards
+// — see plantedSuffix, which explains why a fixed name here was a host-side
+// privilege-escalation hazard rather than a tidiness problem. The chmod stays:
+// it is the nosuid half of what this property measures.
+var noexecProbe = `
 src=$(command -v sh 2>/dev/null)
 [ -n "$src" ] && [ -f "$src" ] || echo NO_SHELL_BINARY
 for d in /tmp /workspace /dev/shm; do
-  if cp "$src" "$d/planted" 2>/dev/null; then
+  if cp "$src" "$d/` + plantedBinary + `" 2>/dev/null; then
     echo "COPIED $d"
   else
     echo "NOCOPY $d"
     continue
   fi
-  chmod 4755 "$d/planted" 2>/dev/null
-  "$d/planted" -c 'exit 0' 2>/dev/null && echo "EXECUTED $d"
+  chmod 4755 "$d/` + plantedBinary + `" 2>/dev/null
+  "$d/` + plantedBinary + `" -c 'exit 0' 2>/dev/null && echo "EXECUTED $d"
 done
 `
 
 func propCreateRefusesRoot(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	for _, user := range []string{"0:0", "root", "1000:0"} {
 		_, err := b.Create(t.Context(), "openblox-conf-root",
 			sandbox.WithImage(image()), sandbox.WithUser(user))

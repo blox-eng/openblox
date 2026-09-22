@@ -15,26 +15,26 @@ import (
 // name can see.
 func propSandboxesShareNoState(t *testing.T, cfg Config) {
 	t.Setenv("OPENBLOX_HOST_SECRET", "host-secret-value")
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	a := create(t, cfg, b, "openblox-conf-iso-a", sandbox.WithEnv("TENANT_TOKEN=a-secret"))
 	other := create(t, cfg, b, "openblox-conf-iso-b")
 
 	// A's writes have to land before B's inability to see them means anything:
 	// if none of them did, B reads nothing for a reason that has nothing to do
 	// with isolation, and every check below passes on an absence.
-	planted := run(t, a, `echo a-data > /workspace/f; echo a-data > /tmp/f; echo a-data > /dev/shm/f 2>/dev/null
-cat /workspace/f /tmp/f 2>/dev/null`)
+	planted := run(t, cfg, a, `echo a-data > /workspace/`+plantedFile+`; echo a-data > /tmp/`+plantedFile+`; echo a-data > /dev/shm/`+plantedFile+` 2>/dev/null
+cat /workspace/`+plantedFile+` /tmp/`+plantedFile+` 2>/dev/null`)
 	if !strings.Contains(planted, "a-data") {
 		t.Fatalf("%s: sandbox A could not write the state B is about to be checked for: %q", cfg.Name, planted)
 	}
 
-	out := run(t, other, `cat /workspace/f /tmp/f /dev/shm/f 2>/dev/null; env`)
+	out := run(t, cfg, other, `cat /workspace/`+plantedFile+` /tmp/`+plantedFile+` /dev/shm/`+plantedFile+` 2>/dev/null; env`)
 	for _, leaked := range []string{"a-data", "a-secret", "host-secret-value"} {
 		if strings.Contains(out, leaked) {
 			t.Errorf("%s: sandbox B sees %q", cfg.Name, leaked)
 		}
 	}
-	aEnv := run(t, a, `env`)
+	aEnv := run(t, cfg, a, `env`)
 	// Same reasoning as the files: B not seeing a-secret proves nothing unless
 	// A was actually given it.
 	if !strings.Contains(aEnv, "a-secret") {
@@ -48,7 +48,7 @@ cat /workspace/f /tmp/f 2>/dev/null`)
 		t.Fatalf("%s: Destroy = %v", cfg.Name, err)
 	}
 	again := create(t, cfg, b, "openblox-conf-iso-a")
-	if out := run(t, again, `cat /workspace/f /tmp/f 2>/dev/null; env`); strings.Contains(out, "a-data") || strings.Contains(out, "a-secret") {
+	if out := run(t, cfg, again, `cat /workspace/`+plantedFile+` /tmp/`+plantedFile+` 2>/dev/null; env`); strings.Contains(out, "a-data") || strings.Contains(out, "a-secret") {
 		t.Errorf("%s: a re-created sandbox inherited its predecessor's state: %q", cfg.Name, out)
 	}
 }
@@ -57,7 +57,7 @@ cat /workspace/f /tmp/f 2>/dev/null`)
 // harms nothing but the guest itself; what matters is that it surfaces as a
 // prompt error rather than a hang, and that Create brings the sandbox back.
 func propCrashedSandboxRecoversThroughCreate(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	ctx := t.Context()
 	name := "openblox-conf-crash"
 	sb := create(t, cfg, b, name)
@@ -93,7 +93,7 @@ func propCrashedSandboxRecoversThroughCreate(t *testing.T, cfg Config) {
 	if err != nil {
 		t.Fatalf("%s: Create after crash = %v", cfg.Name, err)
 	}
-	if out := run(t, back, "echo back"); !strings.Contains(out, "back") {
+	if out := run(t, cfg, back, "echo back"); !strings.Contains(out, "back") {
 		t.Errorf("%s: sandbox not usable after Create brought it back: %q", cfg.Name, out)
 	}
 }
@@ -102,7 +102,7 @@ func propCrashedSandboxRecoversThroughCreate(t *testing.T, cfg Config) {
 // anyway, and reviving it would bring back the policy it was created under
 // instead of the one asked for now.
 func propStoppedSandboxIsReplacedByCreate(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	ctx := t.Context()
 	const name = "openblox-conf-restart"
 	sb := create(t, cfg, b, name, sandbox.WithLabel("policy", "old"))
@@ -123,7 +123,7 @@ func propStoppedSandboxIsReplacedByCreate(t *testing.T, cfg Config) {
 	if got := back.Info().Labels["policy"]; got != "new" {
 		t.Errorf("%s: policy label = %q, want the options passed to this Create", cfg.Name, got)
 	}
-	if out := run(t, back, "echo ok"); !strings.Contains(out, "ok") {
+	if out := run(t, cfg, back, "echo ok"); !strings.Contains(out, "ok") {
 		t.Errorf("%s: Exec after replacement: %q", cfg.Name, out)
 	}
 }
@@ -132,7 +132,7 @@ func propStoppedSandboxIsReplacedByCreate(t *testing.T, cfg Config) {
 // now wraps it to record its process group. "exit 3" as argv names a program
 // called exit — which does not exist — not the shell's exit.
 func propArgvIsNeverAShellBuiltin(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-builtin")
 
 	res, err := sb.Exec(t.Context(), sandbox.Command{Argv: []string{"exit", "3"}})
@@ -146,7 +146,7 @@ func propArgvIsNeverAShellBuiltin(t *testing.T, cfg Config) {
 // property is that the interface stops reporting it, which any implementation
 // can be asked.
 func propDestroyRemovesTheSandbox(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	ctx := t.Context()
 
 	const name = "openblox-conf-destroy"

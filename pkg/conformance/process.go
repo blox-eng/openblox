@@ -15,7 +15,7 @@ import (
 // command line. The pattern brackets the marker's first character so it
 // matches the marker but not this probe's own command line, which contains
 // the pattern text rather than the marker itself.
-func countProcs(t *testing.T, sb sandbox.Sandbox, marker string) int {
+func countProcs(t *testing.T, cfg Config, sb sandbox.Sandbox, marker string) int {
 	t.Helper()
 	pattern := "[" + marker[:1] + "]" + marker[1:]
 	// pattern is always built from a package constant passed by the caller;
@@ -27,11 +27,11 @@ func countProcs(t *testing.T, sb sandbox.Sandbox, marker string) int {
 	// parsed.
 	res, err := sb.Exec(t.Context(), sandbox.Command{Argv: []string{"sh", "-c", script}})
 	if err != nil {
-		t.Fatalf("count processes: %v", err)
+		t.Fatalf("%s: count processes matching %q: Exec = %v", cfg.Name, marker, err)
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(string(res.Stdout)))
 	if err != nil {
-		t.Fatalf("count processes: %q", res.Stdout)
+		t.Fatalf("%s: count processes matching %q: unparseable probe output %q", cfg.Name, marker, res.Stdout)
 	}
 	return n
 }
@@ -39,7 +39,7 @@ func countProcs(t *testing.T, sb sandbox.Sandbox, marker string) int {
 // A timeout that only stops the caller waiting is not a timeout: the command,
 // and anything it started, would burn the sandbox's CPU until it was reaped.
 func propTimedOutCommandKillsChildren(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-timeoutkill")
 
 	_, err := sb.Exec(t.Context(), sandbox.Command{
@@ -49,14 +49,14 @@ func propTimedOutCommandKillsChildren(t *testing.T, cfg Config) {
 	if !errors.Is(err, sandbox.ErrTimeout) {
 		t.Fatalf("%s: Exec = %v, want ErrTimeout", cfg.Name, err)
 	}
-	if n := countProcs(t, sb, "sleep 313"); n != 0 {
+	if n := countProcs(t, cfg, sb, "sleep 313"); n != 0 {
 		t.Errorf("%s: %d child processes outlived the timeout", cfg.Name, n)
 	}
-	if n := countProcs(t, sb, "while :; do :; done"); n != 0 {
+	if n := countProcs(t, cfg, sb, "while :; do :; done"); n != 0 {
 		t.Errorf("%s: the timed-out command itself is still running (%d)", cfg.Name, n)
 	}
 	// The sandbox stays usable, as ErrTimeout promises.
-	if out := run(t, sb, "echo alive"); !strings.Contains(out, "alive") {
+	if out := run(t, cfg, sb, "echo alive"); !strings.Contains(out, "alive") {
 		t.Errorf("%s: sandbox unusable after a timeout: %q", cfg.Name, out)
 	}
 }
@@ -65,7 +65,7 @@ func propTimedOutCommandKillsChildren(t *testing.T, cfg Config) {
 // stop the command the same way a timeout does, and must not be reported as
 // one.
 func propCancelledCommandIsNotATimeout(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-cancel")
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -77,7 +77,7 @@ func propCancelledCommandIsNotATimeout(t *testing.T, cfg Config) {
 	if errors.Is(err, sandbox.ErrTimeout) {
 		t.Fatalf("%s: Exec = %v, cancellation must not also report ErrTimeout", cfg.Name, err)
 	}
-	if n := countProcs(t, sb, "sleep 3133"); n != 0 {
+	if n := countProcs(t, cfg, sb, "sleep 3133"); n != 0 {
 		t.Errorf("%s: cancelled command still running (%d)", cfg.Name, n)
 	}
 }
@@ -119,7 +119,7 @@ func propCancelledCommandIsNotATimeout(t *testing.T, cfg Config) {
 // show countProcs == 0 — green, for a reason unrelated to the kill under
 // test.
 func propKillGroupWaitsForLateRecord(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-killwait")
 
 	const marker = "sleep 3137"
@@ -140,7 +140,7 @@ func propKillGroupWaitsForLateRecord(t *testing.T, cfg Config) {
 	}()
 	seen := false
 	for range 50 {
-		if countProcs(t, sb, livenessMarker) > 0 {
+		if countProcs(t, cfg, sb, livenessMarker) > 0 {
 			seen = true
 			break
 		}
@@ -159,7 +159,7 @@ func propKillGroupWaitsForLateRecord(t *testing.T, cfg Config) {
 	if !errors.Is(err, sandbox.ErrTimeout) {
 		t.Fatalf("%s: Exec = %v, want ErrTimeout", cfg.Name, err)
 	}
-	if n := countProcs(t, sb, marker); n != 0 {
+	if n := countProcs(t, cfg, sb, marker); n != 0 {
 		t.Errorf("%s: the kill gave up before a record of the command existed: %d still running", cfg.Name, n)
 	}
 }
@@ -168,7 +168,7 @@ func propKillGroupWaitsForLateRecord(t *testing.T, cfg Config) {
 // background process started earlier — a preview server, say — must survive
 // another command timing out.
 func propTimeoutKillIsScopedToItsCommand(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-killscope")
 	ctx := t.Context()
 
@@ -179,7 +179,7 @@ func propTimeoutKillIsScopedToItsCommand(t *testing.T, cfg Config) {
 	if !errors.Is(err, sandbox.ErrTimeout) {
 		t.Fatalf("%s: Exec = %v, want ErrTimeout", cfg.Name, err)
 	}
-	if n := countProcs(t, sb, "sleep 3135"); n != 1 {
+	if n := countProcs(t, cfg, sb, "sleep 3135"); n != 1 {
 		t.Errorf("%s: background process count = %d after an unrelated timeout, want 1", cfg.Name, n)
 	}
 }
@@ -195,12 +195,12 @@ func propTimeoutKillIsScopedToItsCommand(t *testing.T, cfg Config) {
 // measures, openblox's own included — and this property's name is what makes
 // that legible to someone reading only the output.
 func propSetsidEscapesTheTimeoutKill(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-setsid")
 
 	// The pinned reference image is not caller-configurable, so its absence
 	// of setsid is a hard failure, not a reason to skip: Core never skips.
-	if out := run(t, sb, "command -v setsid || echo MISSING"); strings.Contains(out, "MISSING") {
+	if out := run(t, cfg, sb, "command -v setsid || echo MISSING"); strings.Contains(out, "MISSING") {
 		t.Fatalf("%s: probe requires setsid, which the pinned reference image must provide: %q", cfg.Name, out)
 	}
 	_, err := sb.Exec(t.Context(), sandbox.Command{
@@ -210,13 +210,13 @@ func propSetsidEscapesTheTimeoutKill(t *testing.T, cfg Config) {
 	if !errors.Is(err, sandbox.ErrTimeout) {
 		t.Fatalf("%s: Exec = %v, want ErrTimeout", cfg.Name, err)
 	}
-	if n := countProcs(t, sb, "sleep 3136"); n != 1 {
+	if n := countProcs(t, cfg, sb, "sleep 3136"); n != 1 {
 		t.Errorf("%s: setsid process count = %d; if the kill now reaches it, update ErrTimeout's documentation", cfg.Name, n)
 	}
 }
 
 func propOutputFloodIsCapped(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-flood")
 
 	res, err := sb.Exec(t.Context(), sandbox.Command{

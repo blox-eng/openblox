@@ -63,8 +63,8 @@ func TestRuntimeUnavailableAbortsRunOnce(t *testing.T) {
 	creates := 0
 	cfg := Config{
 		Name: "fake-unavailable",
-		New: func(*testing.T) sandbox.Backend {
-			return unavailableBackend{creates: &creates}
+		New: func() (sandbox.Backend, error) {
+			return unavailableBackend{creates: &creates}, nil
 		},
 	}
 
@@ -216,7 +216,7 @@ func TestPreflightDestroysItsSandboxImmediately(t *testing.T) {
 	t.Cleanup(func() { core = orig })
 
 	b := newTrackingBackend()
-	cfg := Config{Name: "tracking", New: func(*testing.T) sandbox.Backend { return b }}
+	cfg := Config{Name: "tracking", New: func() (sandbox.Backend, error) { return b, nil }}
 
 	Run(t, cfg)
 
@@ -228,5 +228,34 @@ func TestPreflightDestroysItsSandboxImmediately(t *testing.T) {
 		if info.Name == preflightSandboxName {
 			t.Fatalf("List() = %v; preflight sandbox %q is still live immediately after Run returned, want it destroyed before any property could observe it", infos, preflightSandboxName)
 		}
+	}
+}
+
+// TestASkippedPropertyFailsTheTier is the second half of the ruling that
+// removed *testing.T from Config.New. The signature change makes the
+// measured party unable to skip the suite that measures it — there is no
+// *testing.T to call Skip on — but a property could still reach a skip by
+// some other route: a helper, a future probe, a t.Skip left behind. A
+// skipped property measured nothing, so a tier containing one must not
+// report success.
+//
+// Run out of band via testing.RunTests, for the same reason
+// propertyFails does: the failure being asserted is a real failure, and
+// observing it in-process would fail this package's own run.
+func TestASkippedPropertyFailsTheTier(t *testing.T) {
+	orig := core
+	core = []property{
+		{name: "measures", fn: func(*testing.T, Config) {}},
+		{name: "skips", fn: func(t *testing.T, _ Config) { t.Skip("a helper decided this could not run") }},
+	}
+	t.Cleanup(func() { core = orig })
+
+	b := newTrackingBackend()
+	cfg := Config{Name: "skipper", New: func() (sandbox.Backend, error) { return b, nil }}
+
+	passed := testing.RunTests(func(_, _ string) (bool, error) { return true, nil },
+		[]testing.InternalTest{{Name: "subject", F: func(t *testing.T) { Run(t, cfg) }}})
+	if passed {
+		t.Error("a Core run with one skipped property reported success; a skipped property is not a passing one")
 	}
 }

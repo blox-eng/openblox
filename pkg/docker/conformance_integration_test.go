@@ -20,15 +20,7 @@ import (
 func TestConformance(t *testing.T) {
 	cfg := conformance.Config{
 		Name: "docker",
-		New: func(t *testing.T) sandbox.Backend {
-			t.Helper()
-			b, err := New()
-			if err != nil {
-				t.Fatalf("New() = %v", err)
-			}
-			t.Cleanup(func() { _ = b.Close() })
-			return b
-		},
+		New:  func() (sandbox.Backend, error) { return New() },
 	}
 	conformance.Run(t, cfg)
 	conformance.RunHostLocal(t, cfg)

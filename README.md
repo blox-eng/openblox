@@ -169,11 +169,17 @@ your own backend to find out how it scores — it does not skip:
 
 ```go
 func TestConformance(t *testing.T) {
-    cfg := conformance.Config{Name: "mine", New: newBackend}
+    cfg := conformance.Config{
+        Name: "mine",
+        New:  func() (sandbox.Backend, error) { return mypkg.New() },
+    }
     conformance.Run(t, cfg)
     conformance.RunHostLocal(t, cfg)
 }
 ```
+
+`New` takes no `*testing.T` on purpose: the suite, not the implementation,
+decides what a construction failure means, and there is nothing to skip with.
 
 It has only ever run against `pkg/docker`. See the package doc for what each
 tier covers.
@@ -218,9 +224,9 @@ The badges above are measured from the source on every deploy, not typed here.
 Three direct dependencies (`docker/docker`, `containerd/errdefs`, `yaml.v3`).
 
 CI runs lint, race-enabled tests, CodeQL and `govulncheck` (gating on newly
-reachable vulnerabilities), plus the integration, conformance and adversarial
-suites against a real gVisor runtime on amd64 and arm64 — including attacks on
-the network, filesystem, privileges, resource caps and timeouts.
+reachable vulnerabilities), plus the integration and conformance suites against
+a real gVisor runtime on amd64 and arm64 — including attacks on the network,
+filesystem, privileges, resource caps and timeouts.
 
 Every release is cut by CI from a verified commit. The `openbloxd` binaries are
 reproducible and ship with SBOMs; binaries and the sandbox image carry Sigstore-signed

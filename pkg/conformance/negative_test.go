@@ -34,10 +34,11 @@ import "testing"
 // acceptable reason, the list has no ceiling: for any property, badBackend
 // could be made incidentally correct and then documented why, and the
 // negative control would stop meaning anything. Under this rule the list is
-// 1 of 21, structurally bounded by how much of the host this suite cannot
-// itself control.
+// 2 of 21, structurally bounded by how much of the host this suite cannot
+// itself control — and both entries name the same fact about the machine:
+// the suite runs as an unprivileged user.
 //
-// It was 2. "writable-mounts-are-noexec-nosuid" was exempted because its
+// It was 2, then 1, then 2 again. "writable-mounts-are-noexec-nosuid" was exempted because its
 // probe copied /bin/busybox to a renamed path and invoked it, which busybox
 // refuses (it resolves its applet from argv[0]), so the attack step never ran
 // on any host. That was never really a host confound: it was a probe that
@@ -45,7 +46,30 @@ import "testing"
 // The probe now copies the shell — the one binary a POSIX userland must have
 // — and the property fails against badBackend the way an ordinary Core
 // property should, so the exemption is gone.
+//
+// It became 2 again during the final review, and the second entry is worth
+// reading as a worked example of the rule rather than an exception to it.
+// "no-traversal-out-of-the-guest" was counted as covered while proving
+// nothing: it failed only because its own positive control fatalled — the
+// host has no /workspace, so `ln -s /etc/shadow /workspace/link` could not
+// run and its three traversal reads and its hostile-filename assertion never
+// executed. That was a defect in the control, so the control was fixed
+// (badSandbox now serves the guest scratch from a per-run host directory and
+// creates parents inside it; see guestRoot in bad_backend_test.go). With the
+// probe actually running, what is left is a genuine host confound, which is
+// what the entry below records.
 var negativeControlExemptions = map[string]string{
+	"no-traversal-out-of-the-guest": "every target this property's traversal reaches is " +
+		"root-only on the host — /etc/shadow (0640 root:shadow) through both symlinks, and " +
+		"/etc itself for the write-through-a-symlink leg. badBackend does traverse: it follows " +
+		"the symlinks straight out to the host's own files, with no boundary of any kind. The " +
+		"kernel then denies the read and the write for lack of privilege, the same denial an " +
+		"unprivileged process gets on any host, isolated or not. The confound is privilege, " +
+		"not isolation — run the suite as root and this property fails against badBackend the " +
+		"way an ordinary Core property should. The remaining leg, the hostile file name, does " +
+		"execute and correctly finds no injection: badSandbox.WriteFile is an os call with no " +
+		"shell in it, and making it quote badly on purpose would be modelling a different " +
+		"carelessness than 'no isolation'.",
 	"cannot-write-kernel-knobs": "badBackend runs the probe as the test process's own " +
 		"unprivileged uid, with no isolation boundary of its own. The kernel denies the " +
 		"/proc and /sys writes and the /proc/kcore read for lack of privilege — the same " +
@@ -107,16 +131,19 @@ func TestEveryCorePropertyFailsAgainstNoIsolation(t *testing.T) {
 // testing.RunTests is deprecated but is the only stdlib way to run a
 // func(*testing.T) and observe its result without changing property's
 // signature away from *testing.T — which the spec fixes via Config.New.
+//
+// A panicking property is not caught here, and deliberately not: testing runs
+// each function in its own goroutine and tRunner re-panics after marking the
+// test failed, so a recover on this goroutine could never see it anyway. An
+// earlier version wrapped this call in `defer func() { _ = recover() }()`,
+// which was inert — the comment claimed a containment that did not exist. A
+// property that panics crashes the whole run, loudly, which is the right
+// outcome for a probe that is broken rather than merely unsatisfied.
 func propertyFails(p property) bool {
-	var failed bool
-	func() {
-		defer func() { _ = recover() }()
-		inner := testing.RunTests(func(_, _ string) (bool, error) { return true, nil },
-			[]testing.InternalTest{{
-				Name: p.name,
-				F:    func(t *testing.T) { p.fn(t, Config{Name: "no-isolation", New: newBadBackend}) },
-			}})
-		failed = !inner
-	}()
-	return failed
+	inner := testing.RunTests(func(_, _ string) (bool, error) { return true, nil },
+		[]testing.InternalTest{{
+			Name: p.name,
+			F:    func(t *testing.T) { p.fn(t, Config{Name: "no-isolation", New: newBadBackend}) },
+		}})
+	return !inner
 }

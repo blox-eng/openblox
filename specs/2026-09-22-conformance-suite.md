@@ -271,7 +271,7 @@ backend.
 
 ## What implementation changed (2026-09-22, after Tasks 1–8)
 
-This spec was written before any code existed. Four things below turned out
+This spec was written before any code existed. The things below turned out
 wrong once `pkg/conformance` was actually built. They are recorded here rather
 than silently edited into the sections above, because the plan should stay
 readable as the argument that was actually followed, warts included.
@@ -359,9 +359,11 @@ genuine host confounds — were closed by fixing the probes instead. Without
 this rule the list has no ceiling: for any property, `badBackend` could be
 made incidentally correct and then documented why, and the negative control
 would stop meaning anything. Under the rule it is structurally bounded by how
-much of the host this suite cannot itself control — today, one entry
-(`cannot-write-kernel-knobs`, exempted because an unprivileged test process
-gets the same denial an unprivileged process gets on any host).
+much of the host this suite cannot itself control — at the time of Task 8, one
+entry (`cannot-write-kernel-knobs`, exempted because an unprivileged test
+process gets the same denial an unprivileged process gets on any host). The
+final review added a second, for the same host fact; see *The negative control
+was covering a property it proved nothing about* below.
 
 ### The migration risk was right, and here is what actually happened
 
@@ -403,3 +405,130 @@ image in the abstract — it was found by running the suite against the pinned
 digest and watching properties that should have been red stay green. That is
 the failure mode a digest pin and a negative control exist to catch, and this
 migration is the evidence that they do.
+
+
+### `Config.New` takes no `*testing.T` (final review)
+
+*The public surface* fixed the signature `New func(t *testing.T)
+sandbox.Backend`. Implementation overrode it: it is now `New func()
+(sandbox.Backend, error)`.
+
+The reason is the spec's own thesis. `New` is called inside every property's
+subtest, so the `*testing.T` it received was a lever handed directly to the
+party being measured: a `New` that returned a real backend for the preflight
+and then called `t.Skip()` skipped all 21 Core properties, and `go test`
+printed `ok`, exited 0, and — without `-v` — printed nothing at all. The
+package's headline promise, "nothing in Core skips", was false as written and
+could be falsified in four lines by the implementation it was measuring.
+Removing the parameter removes the lever at compile time: there is nothing to
+skip with and nothing to fail with, and the suite, not the implementation,
+decides what a construction failure means. It fails the run, loudly, because a
+backend that cannot be constructed has not conformed. The suite registers the
+`Close` cleanup itself, which also made the one consumer
+(`pkg/docker/conformance_integration_test.go`) shorter.
+
+This was a breaking change to a public API, taken deliberately at the last
+cheap moment: the package is unreleased, has exactly one consumer, and the
+whole design is about removing levers.
+
+Belt and braces, because a property could still reach a skip by some other
+route (a helper, a future probe, a stray `t.Skip`): `walk` counts skipped
+subtests and fails the tier if the count is non-zero. A skipped property
+measured nothing, and a tier that measured nothing is not a passing one.
+`TestASkippedPropertyFailsTheTier` holds that.
+
+### Two announcements that a default `go test` was discarding
+
+The preflight escape hatch (a host that cannot provide the runtime skips the
+whole run) and the `OPENBLOX_CONFORMANCE_IMAGE` warning both used `t.Logf`,
+which `go test` discards on a passing, non-verbose run. So a backend whose
+`Create` always returned `ErrRuntimeUnavailable` produced `ok`, exit 0 and
+zero output, and `OPENBLOX_CONFORMANCE_IMAGE=my/rigged go test ./...` produced
+the same — making `image.go`'s claim that "a run that uses it announces the
+fact, so an overridden run cannot be presented as a conformant one" untrue,
+and propagating that inaccuracy into `hostlocal.go`, which cites it to justify
+why `hostLeakIterations` is not an environment variable.
+
+Both now go through `announce`, which writes to stderr and, when stderr has
+been redirected away from a terminal, also to `/dev/tty`. The second channel
+is not belt and braces but necessity: `go test ./...` in package-list mode
+buffers a passing package's stdout *and* stderr and prints neither, so stderr
+alone would still have been swallowed in the exact case the warning is for.
+`/dev/tty` is the one channel `go test` cannot intercept. Where there is no
+controlling terminal — CI — there is no such channel, and what remains is the
+`-v` output; `announce`'s doc comment says so rather than overclaiming.
+
+### The negative control was covering a property it proved nothing about
+
+`TestEveryCorePropertyFailsAgainstNoIsolation` asserted that each non-exempt
+property *fails* against `badBackend`, but not *why*.
+`no-traversal-out-of-the-guest` failed only because its own positive control
+fatalled: the host has no `/workspace`, so `ln -s /etc/shadow
+/workspace/link` could not run, and its three traversal reads and its
+hostile-filename assertion never executed at all — while the coverage line
+counted it as covered. That is the vacuity class this suite exists to catch,
+occurring inside the mechanism built to catch it.
+
+Under the boundary rule this is a defect in the control, so the control was
+fixed rather than exempted. `badSandbox` now serves the guest scratch prefix
+`/workspace` from a per-run host temp directory, and creates parent
+directories inside it (the hostile file name deliberately contains `/`
+characters, and returning `ENOENT` for it fatalled the property's own
+positive control a second time). Only `/workspace` is rerooted: `/etc/shadow`,
+the control-plane sockets, `/proc`, `/sys`, `/dev`, `/tmp` and `/dev/shm` stay
+literal host paths, because a property that reads a *host* path must still see
+the host — that is the entire content of "this backend isolates nothing". A
+blanket chroot-style reroot would have given `badBackend` a filesystem
+boundary, which is isolation, and would have converted real failures into
+vacuous passes.
+
+With the probe actually running, the property genuinely passes against
+`badBackend`, and for a reason the boundary rule does admit: every target its
+traversal reaches is root-only on the host (`/etc/shadow` is `0640
+root:shadow`; `/etc` is not writable), and the suite runs unprivileged.
+`badBackend` *does* traverse — it follows the symlinks straight out to the
+host's own files with no boundary of any kind — and the kernel then denies the
+read and the write for lack of privilege, exactly as it would on any host,
+isolated or not. Run the suite as root and the property fails against
+`badBackend` the way an ordinary Core property should. So the exemption list
+went from 1 entry to 2, both naming the same fact about the machine: the suite
+runs as an unprivileged user. The coverage line now reads **"Core: 21
+properties; negative control covers 19"**, which is 2 fewer than it claimed
+before and 20 more honest.
+
+### A setuid shell, left on the host, by an untagged unit test
+
+`noexecProbe` copies the shell to each writable mount and `chmod 4755`s it —
+that is the attack `writable-mounts-are-noexec-nosuid` measures, and it is
+load-bearing. Against `badBackend` it ran directly on the host, from
+`bad_backend_test.go`, which carries no build tag: a plain `go test ./...` or
+`make test` left `/tmp/planted` and `/dev/shm/planted` behind, along with
+`/tmp/f`, `/dev/shm/f` and `/tmp/openblox-conf-knob-control`. Unprivileged
+that is litter. As root — a rootful dev container, a root CI shell, `sudo make
+test` — `/tmp/planted` is a root-owned setuid shell in a world-writable
+directory: a local privilege escalation planted by running the project's own
+tests, in a public repository whose README invites strangers to run them. The
+fixed names also silently clobbered anything already at those paths.
+
+The fix follows the care `sweepDetachedMarkers` already took with leaked
+processes: every path a probe plants now carries a per-run unique suffix
+(`plantedSuffix`, pid plus random hex, so it can only ever match this
+process's own files), and `TestMain` removes them all after `m.Run()` via
+`sweepPlantedArtifacts`, alongside the per-run `/workspace` directory. The
+`chmod` stays. This also closes the separately deferred "the `chmod` failure
+is swallowed" item: the artifact no longer survives the run either way.
+
+### Documentation the branch had outrun
+
+`README.md` and `RELEASING.md` both advertised "the integration, conformance
+and adversarial suites" after this branch deleted the adversarial suite. On a
+branch whose thesis is documentation honesty, that had to go. `CONTRIBUTING.md`
+gained the other half of the same honesty: `make test` now dials
+`172.17.0.1:22`, `172.17.0.1:2375`, `10.0.0.1:80`, `192.168.0.1:80`,
+`169.254.169.254:80`, `1.1.1.1:443`, `8.8.8.8:53` and
+`[2606:4700:4700::1111]:443` from the contributor's own machine, as the
+contributor, because the negative control runs `badBackend` on the host —
+where previously those dials only happened inside a sandbox under `-tags
+integration`. The control's value depends on always running, so it is not
+hidden behind a build tag; it is documented instead, along with what it writes
+to `/tmp` and `/dev/shm` and removes again.

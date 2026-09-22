@@ -22,7 +22,7 @@ var controlPlaneSockets = []string{
 }
 
 func propNoControlPlaneSocket(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-sockets")
 
 	// Both assertions below read an absent marker as containment, so establish
@@ -30,14 +30,14 @@ func propNoControlPlaneSocket(t *testing.T, cfg Config) {
 	// this sandbox: an existence test that must say PRESENT, and a read that
 	// must say READ. Without this a missing `[` or a missing cat would make
 	// every check below pass having attempted nothing.
-	if out := run(t, sb, `[ -e /etc ] && echo PRESENT; cat /etc/hostname >/dev/null 2>&1 && echo READ`); !strings.Contains(out, "PRESENT") || !strings.Contains(out, "READ") {
+	if out := run(t, cfg, sb, `[ -e /etc ] && echo PRESENT; cat /etc/hostname >/dev/null 2>&1 && echo READ`); !strings.Contains(out, "PRESENT") || !strings.Contains(out, "READ") {
 		t.Fatalf("%s: the probe's own existence test and read do not work, so the absences below would prove nothing: %q", cfg.Name, out)
 	}
 
 	for _, p := range controlPlaneSockets {
 		// The path is a package constant, so this interpolation cannot carry
 		// anything a caller supplied.
-		if out := run(t, sb, `[ -e `+shellQuote(p)+` ] && echo PRESENT`); strings.Contains(out, "PRESENT") {
+		if out := run(t, cfg, sb, `[ -e `+shellQuote(p)+` ] && echo PRESENT`); strings.Contains(out, "PRESENT") {
 			t.Errorf("%s: %s is visible inside the sandbox", cfg.Name, p)
 		}
 	}
@@ -45,10 +45,10 @@ func propNoControlPlaneSocket(t *testing.T, cfg Config) {
 	// World-readable on the host, root-only in the image: either way the
 	// sandbox user must not read it. A file that is not there cannot be read
 	// either, which is not the same claim, so require it to exist first.
-	if out := run(t, sb, `[ -e /etc/shadow ] && echo PRESENT`); !strings.Contains(out, "PRESENT") {
+	if out := run(t, cfg, sb, `[ -e /etc/shadow ] && echo PRESENT`); !strings.Contains(out, "PRESENT") {
 		t.Fatalf("%s: /etc/shadow is absent, so failing to read it says nothing about permissions: %q", cfg.Name, out)
 	}
-	if out := run(t, sb, `cat /etc/shadow >/dev/null 2>&1 && echo READ`); strings.Contains(out, "READ") {
+	if out := run(t, cfg, sb, `cat /etc/shadow >/dev/null 2>&1 && echo READ`); strings.Contains(out, "READ") {
 		t.Errorf("%s: sandbox user read /etc/shadow", cfg.Name)
 	}
 }
@@ -66,15 +66,15 @@ func shellQuote(s string) string {
 // /proc and /sys are gVisor's own synthetic views. A write through either
 // would be reconfiguring the kernel the sandbox runs on.
 func propCannotWriteKernelKnobs(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-procsys")
 
 	// CONTROL_WROTE and CONTROL_READ are the same two mechanisms the four
 	// attempts below use, aimed at a path that must work. Without them a shell
 	// that could not redirect, or a missing cat, would leave all four markers
 	// absent and the property would pass having attempted nothing.
-	out := run(t, sb, `
-echo 1 > /tmp/openblox-conf-knob-control 2>/dev/null && echo CONTROL_WROTE
+	out := run(t, cfg, sb, `
+echo 1 > `+shellQuote(knobControl)+` 2>/dev/null && echo CONTROL_WROTE
 cat /proc/self/status >/dev/null 2>&1 && echo CONTROL_READ
 echo 1 > /proc/sys/vm/drop_caches 2>/dev/null && echo WROTE_PROC_SYS
 echo 1 > /proc/sysrq-trigger 2>/dev/null && echo WROTE_SYSRQ
@@ -92,7 +92,7 @@ cat /proc/kcore >/dev/null 2>&1 && echo READ_KCORE
 }
 
 func propNoBlockDevices(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-dev")
 
 	// Each of the three attempts below is read as contained when its marker is
@@ -100,12 +100,12 @@ func propNoBlockDevices(t *testing.T, cfg Config) {
 	// the device test works (a char device must be found), and that mknod and
 	// mount are actually present. A missing binary would otherwise be
 	// indistinguishable from a denied syscall.
-	out := run(t, sb, `
+	out := run(t, cfg, sb, `
 for d in /dev/* /dev/*/*; do [ -c "$d" ] && echo CONTROL_CHAR && break; done
 command -v mknod >/dev/null 2>&1 || echo NO_MKNOD
 command -v mount >/dev/null 2>&1 || echo NO_MOUNT
 for d in /dev/* /dev/*/*; do [ -b "$d" ] && echo "BLOCK $d"; done
-mknod /tmp/sda b 8 0 2>/dev/null && echo MADE_NODE
+mknod `+shellQuote(plantedNode)+` b 8 0 2>/dev/null && echo MADE_NODE
 mount -t tmpfs none /tmp 2>/dev/null && echo MOUNTED
 `)
 	if !strings.Contains(out, "CONTROL_CHAR") {
@@ -127,7 +127,7 @@ mount -t tmpfs none /tmp 2>/dev/null && echo MOUNTED
 // a ".." can only resolve within the guest's own filesystem — never the
 // host's, and never past what that user may read.
 func propNoTraversalOutOfGuest(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-traverse")
 	ctx := t.Context()
 
@@ -135,7 +135,7 @@ func propNoTraversalOutOfGuest(t *testing.T, cfg Config) {
 	// symlinks they traverse have to exist first: an ln that silently failed
 	// would leave three paths that simply are not there, and the property
 	// would pass having traversed nothing.
-	out := run(t, sb, `ln -s /etc/shadow /workspace/link; ln -s / /workspace/root
+	out := run(t, cfg, sb, `ln -s /etc/shadow /workspace/link; ln -s / /workspace/root
 [ -L /workspace/link ] && [ -L /workspace/root ] && echo LINKED`)
 	if !strings.Contains(out, "LINKED") {
 		t.Fatalf("%s: the probe could not plant its symlinks, so nothing below traverses one: %q", cfg.Name, out)
@@ -160,11 +160,11 @@ func propNoTraversalOutOfGuest(t *testing.T, cfg Config) {
 		t.Errorf("%s: WriteFile through a symlink wrote into the read-only root filesystem", cfg.Name)
 	}
 	// A hostile file name is data, not syntax.
-	name := "/workspace/$(touch /tmp/pwned);`touch /tmp/pwned2`\n-rf"
+	name := "/workspace/$(touch " + injectedA + ");`touch " + injectedB + "`\n-rf"
 	if err := sb.WriteFile(ctx, name, 0o644, strings.NewReader("x")); err != nil {
 		t.Fatalf("%s: WriteFile(hostile name) = %v", cfg.Name, err)
 	}
-	if out := run(t, sb, `[ -e /tmp/pwned ] || [ -e /tmp/pwned2 ] && echo INJECTED`); strings.Contains(out, "INJECTED") {
+	if out := run(t, cfg, sb, `[ -e `+shellQuote(injectedA)+` ] || [ -e `+shellQuote(injectedB)+` ] && echo INJECTED`); strings.Contains(out, "INJECTED") {
 		t.Errorf("%s: a file name was executed as shell", cfg.Name)
 	}
 }

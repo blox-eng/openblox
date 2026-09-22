@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,7 +27,63 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	reapAllTracked()
 	sweepDetachedMarkers()
+	sweepPlantedArtifacts()
+	_ = os.RemoveAll(guestRoot)
 	os.Exit(code)
+}
+
+// guestScratch is the one guest-only path the suite's probes write into. It
+// exists inside any real sandbox and nowhere on a developer's host.
+const guestScratch = "/workspace"
+
+// guestRoot is the host directory badSandbox serves guestScratch from, made
+// once per run and removed by TestMain.
+//
+// This makes the control MORE capable of running attacks, not less. Before it,
+// every /workspace operation failed with ENOENT on the host, and
+// no-traversal-out-of-the-guest "failed" against badBackend only because its
+// own positive control fatalled on `ln: /workspace/link: No such file or
+// directory` — its three traversal reads and its hostile-filename assertion
+// never executed at all, while TestEveryCorePropertyFailsAgainstNoIsolation
+// counted the property as negative-control-covered. That is precisely the
+// vacuity this suite exists to catch, occurring inside the mechanism built to
+// catch it.
+//
+// Only guestScratch is rerooted, and deliberately so. /etc/shadow, the
+// control-plane sockets, /proc, /sys, /dev, /tmp and /dev/shm stay literal
+// host paths, because a property that reads a HOST path must still see the
+// host — that is the entire content of "this backend isolates nothing". A
+// blanket chroot-style reroot of every path would have given badBackend a
+// filesystem boundary, which is isolation, and would have turned real
+// failures into vacuous passes. Guest scratch is the one prefix with no host
+// meaning at all, so serving it from a real directory adds no boundary; it
+// only lets the attack land somewhere instead of erroring out before it runs.
+var guestRoot = func() string {
+	d, err := os.MkdirTemp("", "openblox-conf-badbackend-workspace-*")
+	if err != nil {
+		panic("conformance: negative control cannot provide " + guestScratch + ": " + err.Error())
+	}
+	return d
+}()
+
+// hostPath maps a guest path onto the host path badSandbox actually uses.
+// Everything outside guestScratch is returned unchanged.
+func hostPath(p string) string {
+	if p == guestScratch {
+		return guestRoot
+	}
+	if rest, ok := strings.CutPrefix(p, guestScratch+"/"); ok {
+		return guestRoot + "/" + rest
+	}
+	return p
+}
+
+// rewriteScratch applies hostPath's mapping inside a probe's shell script or
+// argv, where guest paths appear as text rather than as an argument to a file
+// call. The suite owns every probe string, and guestScratch appears in them
+// only as a path, so a plain textual replacement is exact here.
+func rewriteScratch(s string) string {
+	return strings.ReplaceAll(s, guestScratch, guestRoot)
 }
 
 // detachedEscapeMarker is the one marker sweepDetachedMarkers needs to look
@@ -109,9 +166,8 @@ func reapAllTracked() {
 // against it. It is test-only and must never be exported.
 type badBackend struct{}
 
-func newBadBackend(t *testing.T) sandbox.Backend {
-	t.Helper()
-	return badBackend{}
+func newBadBackend() (sandbox.Backend, error) {
+	return badBackend{}, nil
 }
 
 func (badBackend) Create(_ context.Context, name string, _ ...sandbox.CreateOption) (sandbox.Sandbox, error) {
@@ -211,7 +267,7 @@ func (badSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result
 	// per-argument quoting avoids all of it: verified empirically, this
 	// splice changes nothing about any of the other 20 properties' pass/
 	// fail reasons.
-	c := exec.Command("sh", "-c", shellQuoteArgv(cmd.Argv))
+	c := exec.Command("sh", "-c", rewriteScratch(shellQuoteArgv(cmd.Argv)))
 	c.Env = append(os.Environ(), cmd.Env...)
 	c.Dir = cmd.Dir
 	c.Stdin = cmd.Stdin
@@ -284,6 +340,12 @@ func (badSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result
 	// leaked child is exactly what the timeout/cancellation properties must
 	// be free to observe.
 	go func() {
+		// A backgrounded child that emits its marker later than this grace
+		// period loses it, which can only cost the negative control a
+		// failure it should have recorded — never manufacture one. No
+		// current probe emits that late; if one ever does, the symptom is a
+		// property that stops failing against badBackend, which
+		// TestEveryCorePropertyFailsAgainstNoIsolation reports.
 		time.Sleep(200 * time.Millisecond)
 		_ = stdoutR.Close()
 		_ = stderrR.Close()
@@ -303,7 +365,21 @@ func (badSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result
 }
 
 func (badSandbox) WriteFile(_ context.Context, path string, mode fs.FileMode, src io.Reader) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	host := hostPath(path)
+	// Parent directories are created, but only inside the guest scratch: a
+	// real backend materialises the file the caller asked for, so a
+	// badSandbox that returned ENOENT for a multi-segment guest path would
+	// fatal a property's own positive control and be counted as a negative
+	// control failure while having attempted nothing. That is what happened to
+	// no-traversal-out-of-the-guest's hostile-filename assertion, whose name
+	// deliberately contains "/" characters. Nothing outside guestScratch is
+	// created: a write to a host path must still meet the host's own answer.
+	if strings.HasPrefix(host, guestRoot+"/") {
+		if err := os.MkdirAll(filepath.Dir(host), 0o755); err != nil {
+			return err
+		}
+	}
+	f, err := os.OpenFile(host, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
@@ -313,11 +389,15 @@ func (badSandbox) WriteFile(_ context.Context, path string, mode fs.FileMode, sr
 }
 
 func (badSandbox) ReadFile(_ context.Context, path string) (io.ReadCloser, error) {
-	return os.Open(path)
+	return os.Open(hostPath(path))
 }
 
 func (badSandbox) StartProcess(_ context.Context, _ string, cmd sandbox.Command) error {
-	c := exec.Command(cmd.Argv[0], cmd.Argv[1:]...)
+	argv := make([]string, len(cmd.Argv))
+	for i, a := range cmd.Argv {
+		argv[i] = rewriteScratch(a)
+	}
+	c := exec.Command(argv[0], argv[1:]...)
 	c.Env = append(os.Environ(), cmd.Env...)
 	c.Dir = cmd.Dir
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

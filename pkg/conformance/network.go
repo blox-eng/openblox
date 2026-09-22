@@ -39,18 +39,18 @@ var networkProbeTargets = []networkTarget{
 // attacker actually wants: the host's own services, the Docker bridge, cloud
 // metadata, and private ranges — over TCP, HTTPS and IPv6.
 func propNoHostOrMetadataAddresses(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-net")
 
 	// The probe works: a loopback listener inside the sandbox is reachable.
-	if out := run(t, sb, `nc -l -p 18080 >/dev/null 2>&1 & sleep 1; nc -z -w 2 127.0.0.1 18080 && echo LOOPBACK_OK`); !strings.Contains(out, "LOOPBACK_OK") {
+	if out := run(t, cfg, sb, `nc -l -p 18080 >/dev/null 2>&1 & sleep 1; nc -z -w 2 127.0.0.1 18080 && echo LOOPBACK_OK`); !strings.Contains(out, "LOOPBACK_OK") {
 		t.Fatalf("%s: probe cannot reach the sandbox's own loopback, so its failures below would prove nothing: %q", cfg.Name, out)
 	}
 
 	for _, target := range networkProbeTargets {
 		// host and port are package constants, so this interpolation cannot
 		// carry anything a caller supplied.
-		out := run(t, sb, `nc -z -w 2 `+shellQuote(target.host)+` `+shellQuote(target.port)+` && echo REACHED`)
+		out := run(t, cfg, sb, `nc -z -w 2 `+shellQuote(target.host)+` `+shellQuote(target.port)+` && echo REACHED`)
 		if strings.Contains(out, "REACHED") {
 			t.Errorf("%s: sandbox reached %s:%s", cfg.Name, target.host, target.port)
 		}
@@ -62,7 +62,7 @@ func propNoHostOrMetadataAddresses(t *testing.T, cfg Config) {
 	// containment. python3 is in the image, and PYTHON_NET_OK below proves its
 	// socket layer works in this sandbox before any absence here is read as
 	// evidence of anything.
-	out := run(t, sb, egressProbe)
+	out := run(t, cfg, sb, egressProbe)
 	if strings.Contains(out, "NO_PYTHON") {
 		t.Fatalf("%s: probe requires python3, which the pinned reference image must provide: %q", cfg.Name, out)
 	}
@@ -170,18 +170,18 @@ func propLoopbackIsNotTheHosts(t *testing.T, cfg Config) {
 	}()
 	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-hostlo")
 
 	// port comes from the OS via net.Listen, never from the guest or a
 	// caller; shellQuote still makes that interpolation explicit.
-	if out := run(t, sb, `nc -z -w 2 127.0.0.1 `+shellQuote(port)+` && echo REACHED`); strings.Contains(out, "REACHED") {
+	if out := run(t, cfg, sb, `nc -z -w 2 127.0.0.1 `+shellQuote(port)+` && echo REACHED`); strings.Contains(out, "REACHED") {
 		t.Errorf("%s: sandbox reached a listener on the HOST's loopback (port %s)", cfg.Name, port)
 	}
 }
 
 func propOnlyLoopbackInterface(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-ifaces")
 
 	// Fail closed. strings.Split("", "\n") is [""], so an empty read would run
@@ -190,7 +190,7 @@ func propOnlyLoopbackInterface(t *testing.T, cfg Config) {
 	// the output would all read as "only lo". Requiring the loopback line to
 	// actually be there establishes the probe produced the table it is about
 	// to reason over.
-	out := run(t, sb, `cat /proc/net/dev`)
+	out := run(t, cfg, sb, `cat /proc/net/dev`)
 	sawLoopback := false
 	for _, line := range strings.Split(out, "\n") {
 		iface, _, found := strings.Cut(strings.TrimSpace(line), ":")

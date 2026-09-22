@@ -28,7 +28,7 @@ const hostLeakIterations = 15
 // processes still serving a destroyed sandbox — can only be measured on the
 // machine running the test, so it can never be a Core result.
 func propHostRetainsNothing(t *testing.T, cfg Config) {
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	ctx := t.Context()
 	var ids []string
 
@@ -40,8 +40,8 @@ func propHostRetainsNothing(t *testing.T, cfg Config) {
 		}
 		ids = append(ids, sb.Info().ID)
 		_, _ = sb.Exec(ctx, sandbox.Command{Argv: []string{"sh", "-c", "sleep 5 & echo hi"}, Timeout: time.Second})
-		_ = sb.WriteFile(ctx, "/workspace/f", 0o644, strings.NewReader("data"))
-		if rc, err := sb.ReadFile(ctx, "/workspace/f"); err == nil {
+		_ = sb.WriteFile(ctx, "/workspace/"+plantedFile, 0o644, strings.NewReader("data"))
+		if rc, err := sb.ReadFile(ctx, "/workspace/"+plantedFile); err == nil {
 			_ = rc.Close()
 		}
 		if err := b.Destroy(ctx, name); err != nil {
@@ -102,7 +102,7 @@ func propHostFilesAreInvisible(t *testing.T, cfg Config) {
 	_ = marker.Close()
 	defer func() { _ = os.Remove(marker.Name()) }()
 
-	b := cfg.New(t)
+	b := newBackend(t, cfg)
 	sb := create(t, cfg, b, "openblox-conf-hostfiles")
 
 	// The marker's path goes through Argv, not a shell string: it is a
