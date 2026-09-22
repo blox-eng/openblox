@@ -268,3 +268,138 @@ backend.
   the only thing making it worth running.
 - **The alpine-to-reference-image move** is the largest source of unplanned work
   in this design. See *Image integrity*.
+
+## What implementation changed (2026-09-22, after Tasks 1–8)
+
+This spec was written before any code existed. Four things below turned out
+wrong once `pkg/conformance` was actually built. They are recorded here rather
+than silently edited into the sections above, because the plan should stay
+readable as the argument that was actually followed, warts included.
+
+### A third non-portable property
+
+*What the non-portable properties become* named two rephrasings. There is a
+third: `propKillGroupWaitsForLateRecord` (`kill-group-waits-for-a-late-group-
+record`). The original test reached into `dockerSandbox`'s unexported `exec`
+and `killGroup` to force the specific race window between a command's process
+group being recorded and the kill that follows a timeout. Expressed only
+through `sandbox.Backend`, that hook does not exist, so the property is
+reinterpreted: it forces the race approximately, via a 100ms `Timeout` on the
+public `Exec`, chosen to put the exec and the kill as close together as the
+interface still resolves reliably. This is weaker than the original in two
+ways its doc comment (`pkg/conformance/process.go`) records: if a real
+backend's own bookkeeping reliably lands before the 100ms fires, the race
+never happens and the property silently degenerates into a shorter-timeout
+duplicate of `propTimedOutCommandKillsChildren`; and the 100ms figure is a
+guess at exec round-trip time that can simply be too short for a slower
+backend or a loaded host, failing for a reason unrelated to a late group
+record. It carries a liveness guard — a generously-timed exec on a distinct
+marker, checked to actually be running before the tight-timeout exec runs —
+so the property's pass cannot be explained by the command never existing in
+the first place, independent of whether the race itself was won.
+
+This means the extraction's arithmetic — "19 move unchanged, one is
+rephrased, one splits" — undercounts the rephrasing by one: it is two
+properties rephrased, not one, alongside the one split. Core is still 21;
+what changed is how many of those 21 required inventing a new way to observe
+the same claim through a narrower interface.
+
+### The host-local tier has two properties, not one
+
+*Tiers, and the no-skip rule* and *What the non-portable properties become*
+both describe host-local as the single half of `TestRepeatedLifecycleLeaksNothing`
+that measures the test process rather than the guest. Implementation found a
+second, independent host-local property while splitting the socket probe:
+`TestSandboxCannotSeeTheDockerSocketOrHostFiles` asserted two things under one
+name — a fixed control-plane socket path (portable, and rephrased into Core as
+`propNoControlPlaneSocket`) — and a host temp file planted by
+`os.CreateTemp` in the test process itself, checked to be invisible from
+inside the guest. That second assertion only means anything when the backend
+and the test share a machine, exactly like the leak check's host-side half, so
+it could not stay in Core either. It is now `propHostFilesAreInvisible`
+(`host-files-are-invisible-to-the-guest`).
+
+Host-local is therefore two properties: `host-retains-no-process-goroutine-or-
+descriptor` and `host-files-are-invisible-to-the-guest`. This was found and
+folded into the design during Task 4 (the socket-probe split) and Task 7 (the
+leak-check split), not left for this document to catch after the fact; it is
+recorded here because this spec's own tables still described one.
+
+### The negative control needed an exemption mechanism
+
+*The negative control* says Core properties must fail against `badBackend`,
+"property by property, not merely in aggregate," but does not say what happens
+when a property genuinely cannot be falsified by an unprivileged, unisolated
+test process — which turns out to happen. `negativeControlExemptions`, added
+in `negative_test.go` only, maps a property name to a written reason a real
+person can check independently. It is deliberately not reachable from
+`Config`, not environment-driven, and lives in a test file rather than
+production code — the same reasoning this spec already applied to keep the
+property selector and the probe targets out of `Config`. Every exempted
+property is asserted to still *pass* against `badBackend` (the outcome its
+listed confound predicts), and every entry is asserted to still name a real
+Core property, so a stale exemption fails loudly instead of quietly drifting.
+The suite's output now states both counts: `Core: 21 properties; negative
+control covers 20` (or fewer, if the list grows).
+
+**The boundary rule, which this spec did not anticipate needing:** an
+exemption may only ever name a confound in the **host environment** — never a
+property of `badBackend` itself, because a defect in the control is always
+fixable and the fix is always to fix `badBackend`. The distinction is kind,
+not count. "This host is unprivileged, so an unprivileged process gets the
+same `/proc`/`/sys` denial on any host, isolated or not" is a fact about the
+machine running the suite, outside anyone's control here — that one stays.
+"`badBackend` happens to not use a shell, so a probe built to attack a shell
+never ran" was a fact about code this package owns; the fix was to fix
+`badBackend` (see `shellQuoteArgv` and the shell-copy rewrite in
+`bad_backend_test.go` / `privilege.go`), not to document around it. The list
+went from 3 entries to 1 under this rule during Task 8, when the last two —
+which had been excusing gaps in `badBackend`'s own behavior rather than
+genuine host confounds — were closed by fixing the probes instead. Without
+this rule the list has no ceiling: for any property, `badBackend` could be
+made incidentally correct and then documented why, and the negative control
+would stop meaning anything. Under the rule it is structurally bounded by how
+much of the host this suite cannot itself control — today, one entry
+(`cannot-write-kernel-knobs`, exempted because an unprivileged test process
+gets the same denial an unprivileged process gets on any host).
+
+### The migration risk was right, and here is what actually happened
+
+*Image integrity* predicted "expect real failures" moving from `alpine:3.20`
+to the pinned reference image (Debian 12, `dash`, not BusyBox) and called that
+"the migration, not a surprise." It was right to flag it, and the actual
+outcome is worth recording because it is the strongest evidence available for
+why the suite pins by digest and treats a vacuous pass as the thing to fear,
+not a genuine failure:
+
+- **One property genuinely failed.** The reference image ships no `kill`
+  binary, so a probe that invoked `kill` directly as `Argv` could not deliver
+  a signal at all. `propCrashedSandboxRecoversThroughCreate` now signals
+  through an explicit `sh -c "kill -9 1"` — the shell's own builtin — which is
+  also closer to what a real guest attacker reaching for a shell would do.
+- **Three probes were passing vacuously, which is worse.** The reference
+  image ships neither `wget` nor `nslookup`, so the egress probe's HTTPS and
+  DNS attack steps never ran and their absent markers read as containment
+  that had not actually been measured; that probe now goes through `python3`,
+  which the image does provide, with its own socket layer checked to work
+  before any absence downstream is trusted. The reference image also has no
+  `/bin/busybox`, so the writable-mounts-are-`noexec`/`nosuid` probe's original
+  approach — copying `/bin/busybox` to a renamed path — could not run at all,
+  because BusyBox resolves its applet from `argv[0]` and refuses a renamed
+  copy; that probe now copies `/bin/sh`, the one binary a POSIX userland must
+  provide.
+- **Seven probes gained an explicit positive control** — a check, run before
+  the attack step, that the probe's own mechanism works at all (a loopback
+  listener really is reachable, a file really can be written and read, `/dev`
+  really is populated, environment really does propagate between sandboxes, a
+  background process really is observed running) — precisely because the
+  migration surfaced probes whose silent failure to run would otherwise have
+  been indistinguishable from a passing result. This is the same discipline
+  the deleted adversarial file already used in places; the migration is what
+  made it necessary everywhere a probe depends on the image's userland.
+
+None of this was hypothetical, and none of it was found by reasoning about the
+image in the abstract — it was found by running the suite against the pinned
+digest and watching properties that should have been red stay green. That is
+the failure mode a digest pin and a negative control exist to catch, and this
+migration is the evidence that they do.

@@ -95,27 +95,35 @@ more than a sandbox.
 "Tested" names the test that exercises the attack on a live gVisor host
 (`go test -tags integration`). "Unit" tests need no Docker.
 
+Where the defence is one of the properties `pkg/conformance`
+asserts against `sandbox.Backend`, "Tested" names the property as registered in
+`pkg/conformance/conformance.go`'s `core` slice (run here via `pkg/docker`'s
+`TestConformance`: `go test -tags integration -run TestConformance ./pkg/docker/`)
+or its `hostLocal` slice, marked **(host-local)** below — real coverage, opt-in,
+and never a Core result, because an implementation that cannot run it has not
+conformed any less. Everything else is an ordinary Go test name.
+
 ### Escape and privilege
 
 | Attack | Defence | Tested | Residual |
 |---|---|---|---|
 | Container escape via the host kernel | gVisor: guest syscalls never reach the host kernel directly (B1, B2). The configured runtime must be registered or `Create` fails (`ErrRuntimeUnavailable`); there is never a silent fallback to `runc`. This model assumes the default, `runsc`; under a microVM runtime the guest reaches a separate kernel instead and B1/B2 do not apply. | `TestSandboxRunsUnderGvisorKernel`, `TestCreateRejectsUnavailableRuntime` | A gVisor vulnerability. Keep `runsc` patched. |
 | gVisor vulnerability | Out of openblox's control. Defence in depth: non-root, no capabilities, read-only root, no network. | — | Real. gVisor has had and will have CVEs. |
-| Running as root | `Spec.Validate` refuses a user that is not an explicit, numeric, non-zero `uid:gid`. User names are refused because they resolve inside the untrusted image, and a bare uid because Docker then takes its primary and supplementary groups from that image — possibly group 0. `openbloxd` refuses such a profile at load. | `TestSpecValidateRefusesRootAndNamedUsers` (unit), `TestCreateRefusesRoot`, `TestBrokerRefusesARootProfile`, `TestLoadRejectsRootUser` (unit) | — |
-| Linux capabilities | `CapDrop: ALL`. | `TestSandboxHoldsNoCapabilities` (all five sets are zero) | — |
-| setuid / setgid binaries | `no-new-privileges`; every writable mount is `nosuid,noexec`; the root filesystem is read-only, so no new setuid binary can be placed. | `TestWritableMountsAreNoexecAndNosuid` | A setuid binary already in the image is inert under `no-new-privileges`; use images without them anyway. |
-| Namespace abuse, `mount`, device nodes | No capabilities, so no `mount`, `mknod`, `unshare` of privileged namespaces. No block devices are present. `/dev/fuse` is present in gVisor's `/dev` but mounting FUSE requires `CAP_SYS_ADMIN`. | `TestSandboxHasNoBlockDevicesAndCannotMakeOne` | — |
-| `/proc` and `/sys` abuse | Both are gVisor's synthetic views, not the host's. | `TestSandboxCannotWriteKernelKnobs` | Information about the guest itself is readable, as in any Linux process. |
-| Docker socket access | No host path is ever mounted into a sandbox (no `Binds`, no `Mounts`, not privileged). | `TestBuildConfigAppliesContainment` (unit), `TestSandboxCannotSeeTheDockerSocketOrHostFiles` | A deployment that adds a mount by other means defeats this. |
+| Running as root | `Spec.Validate` refuses a user that is not an explicit, numeric, non-zero `uid:gid`. User names are refused because they resolve inside the untrusted image, and a bare uid because Docker then takes its primary and supplementary groups from that image — possibly group 0. `openbloxd` refuses such a profile at load. | `TestSpecValidateRefusesRootAndNamedUsers` (unit), `create-refuses-root`, `TestBrokerRefusesARootProfile`, `TestLoadRejectsRootUser` (unit) | — |
+| Linux capabilities | `CapDrop: ALL`. | `no-capabilities` (all five sets are zero) | — |
+| setuid / setgid binaries | `no-new-privileges`; every writable mount is `nosuid,noexec`; the root filesystem is read-only, so no new setuid binary can be placed. | `writable-mounts-are-noexec-nosuid` | A setuid binary already in the image is inert under `no-new-privileges`; use images without them anyway. |
+| Namespace abuse, `mount`, device nodes | No capabilities, so no `mount`, `mknod`, `unshare` of privileged namespaces. No block devices are present. `/dev/fuse` is present in gVisor's `/dev` but mounting FUSE requires `CAP_SYS_ADMIN`. | `no-block-devices` | — |
+| `/proc` and `/sys` abuse | Both are gVisor's synthetic views, not the host's. | `cannot-write-kernel-knobs` | Information about the guest itself is readable, as in any Linux process. |
+| Docker socket access | No host path is ever mounted into a sandbox (no `Binds`, no `Mounts`, not privileged). | `TestBuildConfigAppliesContainment` (unit), `no-control-plane-socket` | A deployment that adds a mount by other means defeats this. |
 
 ### Network
 
 | Attack | Defence | Tested | Residual |
 |---|---|---|---|
-| Outbound HTTP/HTTPS, IPv4 and IPv6 | `NetworkMode: none` (default; `EgressNone`). | `TestSandboxHasNoEgressAndNoResolver`, `TestSandboxCannotReachHostPrivateOrMetadataAddresses` | — |
+| Outbound HTTP/HTTPS, IPv4 and IPv6 | `NetworkMode: none` (default; `EgressNone`). | `TestSandboxHasNoEgressAndNoResolver`, `no-host-private-or-metadata-addresses` | — |
 | DNS exfiltration | No interface, so no resolver path, even to a resolver named explicitly. | same | `/etc/resolv.conf` inside the sandbox is written by Docker from the host's and reveals the host's nameservers and search domains. Informational only; it is unusable without a network. |
-| Host loopback services | The sandbox's `127.0.0.1` is its own network namespace. | `TestSandboxLoopbackIsNotTheHosts` | — |
-| Private networks, Docker bridge, cloud metadata (`169.254.169.254`) | No route: only `lo` exists. | `TestSandboxCannotReachHostPrivateOrMetadataAddresses`, `TestSandboxHasOnlyALoopbackInterface` | — |
+| Host loopback services | The sandbox's `127.0.0.1` is its own network namespace. | `loopback-is-not-the-hosts` | — |
+| Private networks, Docker bridge, cloud metadata (`169.254.169.254`) | No route: only `lo` exists. | `no-host-private-or-metadata-addresses`, `only-a-loopback-interface` | — |
 | Egress with `EgressUnrestricted` / `egress: unrestricted` | **None.** The sandbox gets ordinary Docker bridge networking and can reach the internet, the LAN, the host's bridge address and cloud metadata. | — | Do not use it for untrusted code unless an external firewall you control constrains it. |
 | Previews as an inbound path | Previews reach a sandbox port over the Docker exec channel, not the network, and only with a valid token. Each (sandbox, port) has its own upstream connection pool, bounded in size and idle time, and the dialler refuses an address that does not match the authorised route. | `TestProxyNeverReusesAConnectionAcrossRoutes` (unit), `TestPreviewServesAnExposedPort` | Revocation is per process (see §7). |
 
@@ -123,12 +131,12 @@ more than a sandbox.
 
 | Attack | Defence | Tested | Residual |
 |---|---|---|---|
-| Reading host files | The guest filesystem is the image plus private tmpfs mounts; nothing from the host is mounted. | `TestSandboxCannotSeeTheDockerSocketOrHostFiles` | — |
-| Path traversal and symlinks through `ReadFile` / `WriteFile` | Both run *inside* the sandbox as the sandbox user, so `..` and symlinks resolve within the guest's own filesystem, with that user's permissions. | `TestFileOperationsCannotTraverseOutOfTheGuest` | Traversal *within* the guest is permitted by design. |
-| Malicious file names (shell metacharacters, newlines, leading `-`) | Paths are passed as `argv`, never interpolated into a shell. Paths must be absolute, so none begins with `-`. | `TestFileOperationsCannotTraverseOutOfTheGuest`, `TestExecRunsWithoutAShell`, `TestArgvIsNeverAShellBuiltin` | — |
+| Reading host files | The guest filesystem is the image plus private tmpfs mounts; nothing from the host is mounted. | `host-files-are-invisible-to-the-guest` (host-local) | — |
+| Path traversal and symlinks through `ReadFile` / `WriteFile` | Both run *inside* the sandbox as the sandbox user, so `..` and symlinks resolve within the guest's own filesystem, with that user's permissions. | `no-traversal-out-of-the-guest` | Traversal *within* the guest is permitted by design. |
+| Malicious file names (shell metacharacters, newlines, leading `-`) | Paths are passed as `argv`, never interpolated into a shell. Paths must be absolute, so none begins with `-`. | `no-traversal-out-of-the-guest`, `TestExecRunsWithoutAShell`, `argv-is-never-a-shell-builtin` | — |
 | Writing outside scratch space | Read-only root filesystem. | `TestWritesOutsideScratchAreRejected` | — |
-| Data left behind for the next sandbox | Every sandbox has its own tmpfs mounts; `Destroy` removes the container. Re-creating a name produces a fresh sandbox. | `TestSandboxesShareNoStateAndRecreateIsFresh` | `Create` on a stopped name replaces the container with a fresh one under the options of that call, rather than reviving the policy it was created under (`TestStoppedSandboxIsReplacedByCreateUnderTheNewPolicy`). |
-| Environment and credential leakage | The caller's own environment is not passed to the sandbox. Registry credentials and the preview key never enter a sandbox; the preview `Authorization` header is stripped before forwarding. | `TestSandboxesShareNoStateAndRecreateIsFresh`, `TestProxyStripsTheCredentialBeforeForwarding` (unit) | Anything you pass with `WithEnv`, `Command.Env` or a file **is** visible to the untrusted code. Labels are visible to anyone with Docker access. |
+| Data left behind for the next sandbox | Every sandbox has its own tmpfs mounts; `Destroy` removes the container. Re-creating a name produces a fresh sandbox. | `sandboxes-share-no-state` | `Create` on a stopped name replaces the container with a fresh one under the options of that call, rather than reviving the policy it was created under (`stopped-sandbox-is-replaced-by-create`). |
+| Environment and credential leakage | The caller's own environment is not passed to the sandbox. Registry credentials and the preview key never enter a sandbox; the preview `Authorization` header is stripped before forwarding. | `sandboxes-share-no-state`, `TestProxyStripsTheCredentialBeforeForwarding` (unit) | Anything you pass with `WithEnv`, `Command.Env` or a file **is** visible to the untrusted code. Labels are visible to anyone with Docker access. |
 | Malicious archives | openblox does not unpack archives. Unpacking inside the sandbox is contained like any other guest code. | — | Unpacking sandbox output *on the host* is outside openblox; treat it as untrusted input. |
 | Hostile output | Output is returned as raw bytes, not interpreted. | — | Rendering it in a browser, feeding it to an LLM, or parsing it without limits is the caller's risk. See §7 on previews and origins. |
 
@@ -137,11 +145,11 @@ more than a sandbox.
 | Attack | Defence | Tested | Residual |
 |---|---|---|---|
 | Fork bomb, PID exhaustion | `PidsLimit` (default 256). | `TestForkBombIsBoundedByTheProcessCap` | — |
-| Command exceeding its timeout | Timeouts are clamped to a per-sandbox ceiling. On timeout or cancellation the command's process group is killed (SIGKILL) from inside the sandbox, and `Exec` returns `ErrTimeout` (or the context's error). | `TestExecHonoursTimeout`, `TestExecClampsTimeoutToCeiling`, `TestTimedOutCommandIsKilledWithItsChildren`, `TestCancelledCommandIsKilledAndNotReportedAsTimeout`, `TestTimeoutKillIsScopedToItsOwnCommand` | **Best effort against hostile code:** a process that calls `setsid`, or a guest that fills `/tmp` so the group record cannot be written, survives the kill (`TestSetsidEscapesTheTimeoutKill`). It stays bounded by the CPU and PID caps, and is ended by the lifetime bounds or `Destroy`. |
+| Command exceeding its timeout | Timeouts are clamped to a per-sandbox ceiling. On timeout or cancellation the command's process group is killed (SIGKILL) from inside the sandbox, and `Exec` returns `ErrTimeout` (or the context's error). | `TestExecHonoursTimeout`, `TestExecClampsTimeoutToCeiling`, `timed-out-command-kills-its-children`, `cancelled-command-is-not-reported-as-timeout`, `timeout-kill-is-scoped-to-its-own-command`, `kill-group-waits-for-a-late-group-record` | **Best effort against hostile code:** a process that calls `setsid`, or a guest that fills `/tmp` so the group record cannot be written, survives the kill (`known-escape-setsid-survives-the-timeout-kill`). It stays bounded by the CPU and PID caps, and is ended by the lifetime bounds or `Destroy`. |
 | Client disconnect (Mode B) | The daemon's request context is cancelled, which kills the command as above. | `TestBrokerClientDisconnectKillsTheCommand` | Same as above. |
-| Detached, orphaned and zombie processes | They live in the sandbox's own PID namespace, count against `PidsLimit`, and end with the sandbox. | `TestTimeoutKillIsScopedToItsOwnCommand` | They survive individual commands by design (`StartProcess` relies on this). |
+| Detached, orphaned and zombie processes | They live in the sandbox's own PID namespace, count against `PidsLimit`, and end with the sandbox. | `timeout-kill-is-scoped-to-its-own-command` | They survive individual commands by design (`StartProcess` relies on this). |
 | Living forever | Idle timeout and max age, recorded on the container at creation. The activity timestamp is written as root on a root-owned tmpfs with the host's clock, so the guest cannot refresh or forge it. | `TestReapDestroysASandboxPastItsMaxAge`, `TestReapDestroysAnIdleSandbox`, `TestSandboxCannotForgeItsActivityTimestamp` | **Mode A: bounds are enforced only if your process calls `Reap` periodically.** `openbloxd` does this itself. |
-| Guest stopping its own sandbox | Under gVisor the guest can kill its own PID 1. This only affects that sandbox; `Exec` then fails promptly and `Create` replaces it. | `TestCrashedSandboxFailsFastAndRecoversThroughCreate` | Self-inflicted denial of service. |
+| Guest stopping its own sandbox | Under gVisor the guest can kill its own PID 1. This only affects that sandbox; `Exec` then fails promptly and `Create` replaces it. | `crashed-sandbox-recovers-through-create` | Self-inflicted denial of service. |
 
 ### Resource exhaustion
 
@@ -150,9 +158,9 @@ more than a sandbox.
 | Memory exhaustion | cgroup memory limit, swap disabled (`MemorySwap = Memory`). | `TestMemoryHogIsKilledAndTheHostSurvives` | The limit is enforced approximately; about 1.4× the configured value has been observed resident before the kill. Size hosts with headroom. |
 | CPU exhaustion | `NanoCPUs` quota per sandbox. | — (quota is asserted in `TestContainmentIsAppliedToTheRuntime`) | No fairness across sandboxes: N busy sandboxes use N × their quota. |
 | Disk exhaustion | Root filesystem read-only; scratch is size-capped tmpfs drawn from the memory budget; no container-log output. | `TestFillingScratchHitsTheDiskCapNotTheHost` | `/dev/shm` is a separate tmpfs, bounded by the memory limit rather than `DiskBytes`. |
-| Stdout/stderr flooding | Each stream is capped at `sandbox.MaxOutputBytes` (16 MiB) in memory; the rest is drained and discarded, `Result.Truncated` is set, and the command still completes. | `TestCappedBuffer*` (unit), `TestOutputFloodIsCappedAndTheCommandCompletes`, `TestBrokerReportsTruncatedOutput` | Concurrent execs each hold up to 32 MiB of output plus JSON encoding in `openbloxd`. `ReadFile` streams without a cap; its size is bounded by the sandbox's disk budget. |
+| Stdout/stderr flooding | Each stream is capped at `sandbox.MaxOutputBytes` (16 MiB) in memory; the rest is drained and discarded, `Result.Truncated` is set, and the command still completes. | `TestCappedBuffer*` (unit), `output-flood-is-capped-and-the-command-completes`, `TestBrokerReportsTruncatedOutput` | Concurrent execs each hold up to 32 MiB of output plus JSON encoding in `openbloxd`. `ReadFile` streams without a cap; its size is bounded by the sandbox's disk budget. |
 | Too many sandboxes | `openbloxd`: `max_sandboxes` per profile (`429 at_capacity`). | `internal/daemon/capacity_test.go` (unit) | Mode A has no global cap. Neither mode caps the total across profiles; size the host for the sum. |
-| Leaks from repeated create/destroy | Destroy removes the container; no host state is kept. | `TestRepeatedLifecycleLeaksNothing` (containers, runsc processes, goroutines, file descriptors) | — |
+| Leaks from repeated create/destroy | Destroy removes the container; no host state is kept. | `destroy-removes-the-sandbox`, `host-retains-no-process-goroutine-or-descriptor` (host-local: goroutines, file descriptors, and a host `/proc` scan for processes still serving a destroyed sandbox) | — |
 
 ## 7. Explicit non-goals and residual risks
 
@@ -192,7 +200,17 @@ more than a sandbox.
 ```sh
 make test               # unit tests, race detector
 make test-integration   # the tests named above; needs Docker with runsc registered
-OPENBLOX_LEAK_ITERATIONS=200 go test -tags integration -run TestRepeatedLifecycleLeaksNothing ./pkg/docker/
+go test -tags integration -run TestConformance ./pkg/docker/ -v   # the conformance suite, both tiers
+```
+
+The leak check's iteration count (`hostLeakIterations` in
+`pkg/conformance/hostlocal.go`, 15 by default) is a package constant rather
+than an environment variable, deliberately: a caller-supplied lever would let
+a run be quietly made to measure less than it claims. To run a longer soak,
+raise that constant in source and re-run just that property:
+
+```sh
+go test -tags integration -run 'TestConformance/host-retains-no-process-goroutine-or-descriptor' ./pkg/docker/ -v
 ```
 
 Report anything that contradicts this document as a vulnerability — see

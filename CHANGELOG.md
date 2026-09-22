@@ -13,6 +13,39 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Added
+
+- **`pkg/conformance`: a public conformance suite for `sandbox.Backend`.**
+  `pkg/docker/adversarial_integration_test.go` was the most valuable code in
+  the repository and the least reusable — 21 attacks nailed to one
+  implementation. Its properties now live in `pkg/conformance`, expressed
+  against the `sandbox.Backend` interface, so any implementation can be
+  measured against the same claims `pkg/docker` is: `conformance.Run` (Core,
+  21 properties, no skips — an implementation that cannot satisfy one fails
+  it) and `conformance.RunHostLocal` (2 properties whose evidence only means
+  something when the backend and the test share a machine, opt-in and never
+  a Core result). `pkg/docker`'s own `TestConformance` is now the first
+  consumer, in place of the deleted file. Ships with a negative control:
+  a fake backend with no isolation whatsoever, asserted to fail every Core
+  property but a documented, narrowly-scoped handful whose absence is a host
+  confound rather than a defect in the control — so a probe that silently
+  stopped asserting anything is caught at the moment it breaks, not years
+  later. The reference image is pinned by digest, not by tag, for the same
+  reason `SECURITY.md` already asks of every openblox user: a mutable tag
+  lets whoever controls the registry replace what the probes run against and
+  turn every property green.
+
+### Breaking
+
+- **`OPENBLOX_LEAK_ITERATIONS` is gone**, along with the test file it
+  configured. The leak check it tuned is now `pkg/conformance`'s
+  `host-retains-no-process-goroutine-or-descriptor` property, whose iteration
+  count is a package constant (`hostLeakIterations`, `pkg/conformance/hostlocal.go`)
+  rather than an environment variable — a caller-supplied lever is a run that
+  can quietly measure less than it claims. To run a longer soak, raise the
+  constant in source and re-run `go test -tags integration -run
+  'TestConformance/host-retains-no-process-goroutine-or-descriptor' ./pkg/docker/`.
+
 ### Changed
 
 - **The documentation site moves to `docs.openblox.sh`, and `openblox.sh`
