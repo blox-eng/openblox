@@ -35,7 +35,9 @@ profiles:
     # Pin a digest. A tag can be repointed by whoever controls the registry,
     # and the image is the sandbox's entire userland.
     image: ghcr.io/blox-eng/openblox-sandbox@sha256:CHANGEME
-    runtime: runsc          # gVisor, the default. A microVM runtime (kata) is stronger; runc trades away the isolation.
+    # gVisor, the default. A microVM runtime such as kata is a stronger
+    # boundary at a higher cost per sandbox; runc trades away the isolation.
+    runtime: runsc
     egress: none            # No interface at all: no resolver, no route.
     user: "1000:1000"
     cpus: 2

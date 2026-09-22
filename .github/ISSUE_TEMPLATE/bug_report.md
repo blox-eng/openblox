@@ -18,7 +18,7 @@ labels: bug
 - openblox version:
 - Go version:
 - Docker version:
-- gVisor (`runsc --version`):
+- Runtime and version (`runsc --version`, or the Kata release):
 - Host OS / kernel:
 
 **Logs**

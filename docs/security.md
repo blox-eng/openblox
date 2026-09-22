@@ -36,7 +36,8 @@ higher cost per sandbox. openblox does not rank them — it checks only that the
 is registered — so a deployment that has chosen a microVM runtime is supported. Kata on
 amd64 is measured by openblox — the conformance suite, in a workflow that does not gate
 merges — with one defence-in-depth layer lost: `/dev/shm` is not `noexec,nosuid` in its
-guest. See
+guest. One lifecycle claim — that `Exec` on a crashed sandbox fails promptly and `Create`
+recovers it — is unmeasured under Kata. See
 [THREAT_MODEL.md](https://github.com/blox-eng/openblox/blob/main/THREAT_MODEL.md#under-kata)
 and [SECURITY.md](https://github.com/blox-eng/openblox/blob/main/SECURITY.md#the-isolation-runtime).
 

@@ -156,7 +156,7 @@ Enforced at create, non-optional:
 
 | Control | Why |
 |---|---|
-| `runsc` runtime, unless another is named | syscalls handled in user space, not passed to the host kernel; a microVM runtime gives the guest its own kernel instead. An unregistered runtime fails `Create` — there is no fallback to `runc` |
+| a registered isolation runtime (`runsc` by default) | syscalls handled in user space, not passed to the host kernel; a microVM runtime gives the guest its own kernel instead. An unregistered runtime fails `Create` — there is no fallback to `runc` |
 | `NetworkMode: none` | no external interface, so no egress *and* no DNS side channel (loopback stays, see Preview links) |
 | CPU / memory / disk caps | a crafted input must not exhaust the host |
 | `PidsLimit` | fork-bomb containment |

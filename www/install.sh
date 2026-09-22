@@ -9,6 +9,7 @@
 #
 #   1. refuses anything but Linux on amd64 or arm64, because that is all
 #      openblox runs on — it needs Docker with gVisor registered as runsc
+#      (the default) or a microVM runtime such as Kata
 #   2. resolves the release (latest, or $OPENBLOX_VERSION)
 #   3. downloads openbloxd-linux-<arch> and its .sha256
 #   4. VERIFIES THE CHECKSUM, and installs nothing if it does not match
@@ -41,10 +42,11 @@ main() {
   need mktemp
 
   # 1. This is not a portability oversight. openblox runs sandboxes under
-  #    gVisor, which is Linux-only, so there is no macOS or Windows build to
-  #    offer and pretending otherwise would waste your time later, not now.
+  #    gVisor or a microVM runtime such as Kata, both Linux-only, so there is
+  #    no macOS or Windows build to offer and pretending otherwise would
+  #    waste your time later, not now.
   os=$(uname -s)
-  [ "$os" = "Linux" ] || die "openblox requires Linux (this is $os). It runs sandboxes under gVisor, which is Linux-only."
+  [ "$os" = "Linux" ] || die "openblox requires Linux (this is $os). It runs sandboxes under gVisor or a microVM runtime such as Kata, both Linux-only."
 
   case $(uname -m) in
     x86_64 | amd64) arch=amd64 ;;
@@ -135,8 +137,9 @@ Nothing was installed. Please report this: https://github.com/$REPO/security"
 
   say ""
   say "openbloxd is installed but not running, and it is not configured yet."
-  say "It needs Docker with gVisor registered as the runsc runtime, and a"
-  say "config file defining the profiles callers may name."
+  say "It needs Docker with gVisor registered as the runsc runtime (the default)"
+  say "or a microVM runtime such as Kata, and a config file defining the profiles"
+  say "callers may name."
   say ""
   say "  Next: https://docs.openblox.sh/production/"
 }

@@ -39,7 +39,8 @@ customers' data crosses someone else's boundary — or a plain container, which 
 kernel with the host.
 
 openblox takes the third option: a substrate small enough to read in an afternoon, that
-you run yourself, with isolation supplied by gVisor rather than by hope.
+you run yourself, with isolation supplied by gVisor (or a microVM runtime you choose)
+rather than by hope.
 
 ## Where this sits
 
