@@ -24,16 +24,24 @@
 // An implementation that cannot satisfy a property fails it, and that is the
 // result.
 //
-// No Core property skips. [Config.New] cannot skip — it has no *testing.T to
-// skip with — and if a property reaches a skip by any other route, the tier
-// reports the count as a failure, because a skipped property measured nothing
-// and a tier that measured nothing is not a passing one.
+// No Core property skips, and none is quietly left out. [Config.New] cannot
+// skip — it has no *testing.T to skip with. If a property reaches a skip by
+// any other route, or never runs because -run or -skip filtered it out, the
+// tier reports the count as a failure: a property that did not run measured
+// nothing, and a tier that measured nothing is not a passing one.
 //
 // There is exactly one legitimate abort, and it is the whole run rather than
 // one property: a host that cannot provide the required runtime at all skips
-// before any property starts, and says so on stderr so a non-verbose "ok"
-// cannot be mistaken for a measured result. A skipped tier is not a passing
-// one.
+// before any property starts. The reason is reported as a test skip — a
+// first-class event, so it reaches `go test -json` consumers and CI reporters
+// even on an otherwise-green package-list run, and `go test -v` prints it —
+// and is repeated on stderr for a human at a terminal. Note that a plain
+// `go test ./...` prints only "ok" for a package that passes, so read the skip,
+// not the exit status: a skipped tier is not a passing one.
+//
+// The other way a run can measure something other than what it claims is the
+// reference image, and that one is enforced rather than reported: overriding
+// it fails the run. See [Run] and the package's image.go.
 //
 // [RunHostLocal] executes properties whose evidence lives on the machine
 // running the test — the host's process table, the test process's own

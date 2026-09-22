@@ -259,3 +259,78 @@ func TestASkippedPropertyFailsTheTier(t *testing.T) {
 		t.Error("a Core run with one skipped property reported success; a skipped property is not a passing one")
 	}
 }
+
+// TestAnOverriddenImageFailsTheRun holds the claim image.go makes: an
+// overridden run cannot be presented as a conformant one. The mechanism is a
+// failure rather than a warning, because every announcement channel is
+// discardable — go test drops a passing test's log output, and package-list
+// mode buffers the binary's stderr too — while a non-zero exit is not.
+//
+// The override is also checked before preflight, so a host that is both
+// overridden and runtime-less still reports the override instead of skipping
+// out of walk silently. This test covers that ordering: the backend it uses
+// returns ErrRuntimeUnavailable, so a check placed after preflight would let
+// the run skip and pass.
+func TestAnOverriddenImageFailsTheRun(t *testing.T) {
+	orig := core
+	core = []property{{name: "measures", fn: func(*testing.T, Config) {}}}
+	t.Cleanup(func() { core = orig })
+	t.Setenv("OPENBLOX_CONFORMANCE_IMAGE", "example.test/rigged:1")
+
+	creates := 0
+	cfg := Config{
+		Name: "rigged",
+		New:  func() (sandbox.Backend, error) { return unavailableBackend{creates: &creates}, nil },
+	}
+
+	passed := testing.RunTests(func(_, _ string) (bool, error) { return true, nil },
+		[]testing.InternalTest{{Name: "subject", F: func(t *testing.T) { Run(t, cfg) }}})
+	if passed {
+		t.Error("a run on an overridden image reported success; the override must fail the run, and must be reported even when the runtime is also unavailable")
+	}
+}
+
+// helperFilteredTierEnv gates helperFilteredTier the same way
+// helperCreateFailsHardEnv gates helperCreateFailsHard: a no-op during an
+// ordinary run, real work only as the subprocess below.
+const helperFilteredTierEnv = "OPENBLOX_CONFORMANCE_TEST_FILTER_HELPER"
+
+func helperFilteredTier(t *testing.T) {
+	if os.Getenv(helperFilteredTierEnv) != "1" {
+		t.Skip("helper process only; run via TestAFilteredOutPropertyFailsTheTier")
+	}
+	orig := core
+	core = []property{
+		{name: "measures", fn: func(*testing.T, Config) {}},
+		{name: "filtered-out", fn: func(*testing.T, Config) {}},
+	}
+	t.Cleanup(func() { core = orig })
+
+	b := newTrackingBackend()
+	Run(t, Config{Name: "filtered", New: func() (sandbox.Backend, error) { return b, nil }})
+}
+
+func TestHelperFilteredTier(t *testing.T) { helperFilteredTier(t) }
+
+// TestAFilteredOutPropertyFailsTheTier covers the operator-side half of "no
+// Core property is quietly left out": -run or -skip can leave a property out
+// entirely, and t.Run's own return value cannot report it, because a filtered
+// subtest never runs f and still returns true. A tier that measured fewer
+// properties than it claims must not report success.
+//
+// Out of process, like TestCreateFailsHardOnRuntimeUnavailable, for two
+// reasons: the failure being asserted is a real failure, and -test.run is the
+// actual mechanism under test — it can only be exercised by a test binary
+// invoked with it.
+func TestAFilteredOutPropertyFailsTheTier(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperFilteredTier$/^core$/^measures$", "-test.v")
+	cmd.Env = append(os.Environ(), helperFilteredTierEnv+"=1")
+	out, err := cmd.CombinedOutput()
+
+	if err == nil {
+		t.Fatalf("subprocess exited 0 with one Core property filtered out by -test.run, want nonzero: a partial run is not a conformant result\noutput:\n%s", out)
+	}
+	if !strings.Contains(string(out), "filtered out by -run/-skip") {
+		t.Errorf("subprocess output = %q, want it to name the properties that never ran", out)
+	}
+}

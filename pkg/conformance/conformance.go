@@ -75,6 +75,33 @@ func walk(t *testing.T, cfg Config, tier string, ps []property) {
 	if cfg.Name == "" {
 		t.Fatal("conformance: Config.Name is required")
 	}
+	// An overridden image fails the run outright, rather than announcing
+	// itself and hoping someone reads it.
+	//
+	// t.Logf was invisible — go test discards a passing test's log output —
+	// and writing to stderr does not fix it either: package-list mode buffers
+	// the binary's stdout AND stderr and prints neither for a package that
+	// passes, which is exactly the case an overridden run would be presented
+	// as. Any announcement channel is the wrong instrument here. A failure is
+	// not a channel: it is a non-zero exit, visible in every mode, in CI, and
+	// to go test -json.
+	//
+	// It is t.Errorf rather than a registered property on purpose: a property
+	// would pollute len(core), the properties=N line below, and the census
+	// TestEveryCorePropertyFailsAgainstNoIsolation takes — all load-bearing.
+	//
+	// And it is before preflight, not after: a host that is both overridden
+	// and runtime-less would otherwise t.Skipf out of walk and never report
+	// the override at all.
+	//
+	// The cost lands on the one person who set the variable — suite
+	// development — who reads past one deliberate red, and still has
+	// `go test -skip`. That is a flag on their own command line, a much weaker
+	// threat class than anything the measured party can bake into Config.
+	if os.Getenv(imageOverrideEnv) != "" {
+		t.Errorf("conformance: %s: image overridden via %s (%s); this run is NOT a conformant result and fails for that reason alone",
+			cfg.Name, imageOverrideEnv, image())
+	}
 	// Prove the runtime can provide a sandbox before any subtest exists to
 	// skip independently. See preflight's doc comment for why this has to
 	// happen here, once, rather than inside each property.
@@ -83,13 +110,6 @@ func walk(t *testing.T, cfg Config, tier string, ps []property) {
 	// from what passed.
 	t.Logf("conformance: implementation=%s tier=%s properties=%d image=%s",
 		cfg.Name, tier, len(ps), image())
-	// Not t.Logf: go test discards a passing non-verbose run's log output, so
-	// an overridden run would print "ok" and nothing else — exactly the
-	// "presented as a conformant one" case this warning exists to prevent.
-	if os.Getenv(imageOverrideEnv) != "" {
-		announce("conformance: WARNING %s: image overridden via %s (%s); this run is not a conformant result",
-			cfg.Name, imageOverrideEnv, image())
-	}
 	// A stranger's first failure should not require guessing which claim the
 	// property maps to.
 	t.Logf("conformance: each property maps to a row in THREAT_MODEL.md; read it there when one fails")
@@ -98,9 +118,11 @@ func walk(t *testing.T, cfg Config, tier string, ps []property) {
 	// read as a Core one in output where the two would otherwise be flat
 	// siblings under the caller's own test name.
 	t.Run(tier, func(t *testing.T) {
-		skipped := 0
+		skipped, filtered := 0, 0
 		for _, p := range ps {
+			ran := false
 			t.Run(p.name, func(t *testing.T) {
+				ran = true
 				defer func() {
 					if t.Skipped() {
 						skipped++
@@ -108,6 +130,14 @@ func walk(t *testing.T, cfg Config, tier string, ps []property) {
 				}()
 				p.fn(t, cfg)
 			})
+			// t.Run's own return value cannot report this: it says whether
+			// the subtest failed, and a subtest filtered out by -run or -skip
+			// never runs f and still returns true. A flag set inside f is the
+			// only thing that distinguishes "ran and passed" from "was never
+			// run at all".
+			if !ran {
+				filtered++
+			}
 		}
 		// Config.New can no longer skip, but a property could still reach a
 		// skip by some other route — a helper, a future probe, a t.Skip left
@@ -117,41 +147,36 @@ func walk(t *testing.T, cfg Config, tier string, ps []property) {
 			t.Errorf("conformance: %s: tier %s: %d of %d properties skipped; a skipped property is not a passing one",
 				cfg.Name, tier, skipped, len(ps))
 		}
+		// Reported separately because the cause is different: -run or -skip on
+		// the operator's own command line, not anything inside the suite. A
+		// weaker threat class than a lever in Config, but the tier still must
+		// not report success having measured fewer properties than it claims.
+		if filtered > 0 {
+			t.Errorf("conformance: %s: tier %s: %d of %d properties never ran, filtered out by -run/-skip; a partial run is not a conformant result",
+				cfg.Name, tier, filtered, len(ps))
+		}
 	})
 }
 
-// announce writes a line that must not be lost when a run is reported as
-// having passed. t.Logf is not enough on its own: go test discards a passing
-// test's log output unless -v is given, so the two things this package most
-// needs to say about a green run — "no property was measured" and "the image
-// was overridden" — were invisible in exactly the case they matter.
+// announce writes a line to stderr for the one thing this package has to say
+// about a run that legitimately measured nothing: the preflight skip.
 //
-// Stderr covers a directly executed test binary, `go test` in local-directory
-// mode, any -v run, and any failing run. It does not cover `go test ./...` on
-// a package that passes: package-list mode buffers the binary's stdout and
-// stderr and prints neither, so nothing written from inside the process
-// survives there. /dev/tty is the one channel go test cannot intercept, so
-// when stderr has been redirected away from a terminal and a terminal is
-// still attached, the line also goes there. In CI, where there is no
-// controlling terminal, there is no such channel and the -v output (or the
-// skip's own reason) is what remains.
+// It supplements the skip, it does not carry it. The machine-readable channel
+// is the skip itself — a first-class test2json event, so `go test -json`,
+// gotestsum and CI reporters see Action:"skip" with the reason even on an
+// otherwise-green package-list run. This line is for the human reading a
+// terminal, where stderr covers a directly executed binary, local-directory
+// mode, any -v run and any failing run.
+//
+// The one thing it is deliberately NOT used for any more is the image
+// override. Package-list mode buffers a passing package's stdout and stderr
+// and prints neither, so no announcement survives the case that matters; an
+// override is a failure instead. See walk. Writing to /dev/tty was tried and
+// removed: it covers only a human at an interactive terminal, misses CI —
+// where an unnoticed override does its damage — and is an odd thing for an
+// imported library to do to a consumer's terminal.
 func announce(format string, args ...any) {
-	line := fmt.Sprintf(format+"\n", args...)
-	fmt.Fprint(os.Stderr, line)
-	if isCharDevice(os.Stderr) {
-		return
-	}
-	tty, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0)
-	if err != nil {
-		return
-	}
-	defer func() { _ = tty.Close() }()
-	_, _ = tty.WriteString(line)
-}
-
-func isCharDevice(f *os.File) bool {
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
 }
 
 // preflightSandboxName is the throwaway sandbox preflight creates to prove
