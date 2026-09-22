@@ -19,6 +19,12 @@ type networkTarget struct {
 // Suite-owned and not configurable: a Config field for probe targets would
 // turn a testing library into a request-forgery gadget running inside
 // someone else's isolation boundary and reporting what it reached.
+//
+// This table is not the whole list of what the suite dials. egressProbe, in
+// this file, also reaches 1.1.1.1:443 (TLS), [2606:4700:4700::1111]:443 (TCP
+// over IPv6) and 8.8.8.8:53 (UDP) — the same three addresses the wget and
+// nslookup attempts used before that probe was rewritten, named here so an
+// audit of "what does this suite connect to?" finds them from one place.
 var networkProbeTargets = []networkTarget{
 	{"169.254.169.254", "80"}, // cloud metadata
 	{"172.17.0.1", "2375"},    // Docker bridge gateway, plaintext API port
@@ -81,7 +87,11 @@ python3 - <<'PY' 2>/dev/null
 import socket
 import ssl
 
-# Positive control: the probe's own networking works.
+# Positive control, covering every socket family the three attempts below
+# use: IPv4 TCP end to end, IPv6 support compiled in, and a UDP socket that
+# constructs. A python without IPv6, or one where SOCK_DGRAM fails, would
+# otherwise make REACHED6 and RESOLVED silently vacuous under a control that
+# still passed.
 try:
     srv = socket.socket()
     srv.bind(("127.0.0.1", 0))
@@ -89,6 +99,10 @@ try:
     c = socket.create_connection(srv.getsockname(), timeout=2)
     c.close()
     srv.close()
+    if not socket.has_ipv6:
+        raise OSError("no IPv6 support")
+    socket.socket(socket.AF_INET6, socket.SOCK_STREAM).close()
+    socket.socket(socket.AF_INET, socket.SOCK_DGRAM).close()
     print("PYTHON_NET_OK")
 except Exception:
     pass
