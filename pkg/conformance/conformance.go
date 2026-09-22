@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -47,6 +48,10 @@ func walk(t *testing.T, cfg Config, tier string, ps []property) {
 	if cfg.Name == "" {
 		t.Fatal("conformance: Config.Name is required")
 	}
+	// Prove the runtime can provide a sandbox before any subtest exists to
+	// skip independently. See preflight's doc comment for why this has to
+	// happen here, once, rather than inside each property.
+	preflight(t, cfg)
 	// Visibility of what was measured, on the record rather than inferred
 	// from what passed.
 	t.Logf("conformance: implementation=%s tier=%s properties=%d image=%s",
@@ -59,15 +64,40 @@ func walk(t *testing.T, cfg Config, tier string, ps []property) {
 	}
 }
 
-// abortIfRuntimeUnavailable is the single legitimate abort. The host cannot
-// provide the runtime at all, so no property can be measured. It stops the
-// whole run rather than letting properties evaporate one at a time, because a
-// per-property skip on this error is indistinguishable from containment.
-func abortIfRuntimeUnavailable(t *testing.T, err error) {
+// preflightSandboxName is the throwaway sandbox preflight creates to prove
+// the runtime is available.
+const preflightSandboxName = "openblox-conformance-preflight"
+
+// preflight is the single legitimate abort. It runs on the parent t, before
+// any property's t.Run exists, and proves the runtime can provide a sandbox
+// at all.
+//
+// This has to happen here rather than inside create: t.Skip only unwinds the
+// goroutine of the *testing.T it is called on via runtime.Goexit. Called from
+// inside a property's own subtest, that stops the property that hit it and
+// nothing else — walk's loop moves on to the next p.name and calls t.Run
+// again, so every remaining property independently discovers the same
+// unavailable runtime and skips on its own. N properties then produce N
+// skips, which reads exactly like N properties that measured containment.
+// Calling t.Skipf here, before the loop starts, unwinds walk itself: no
+// t.Run for any property ever executes, the reason is logged once, and the
+// caller's test function stops.
+//
+// A runtime that was available for this call and then vanishes mid-walk is a
+// different, real failure — not this one. create reports that with
+// t.Fatalf, not a skip, because the runtime's disappearance after preflight
+// passed is not evidence of anything the suite is trying to measure.
+func preflight(t *testing.T, cfg Config) {
 	t.Helper()
-	if errors.Is(err, sandbox.ErrRuntimeUnavailable) {
-		t.Skipf("conformance: the host cannot provide the required runtime (%v); no property can be measured", err)
+	b := cfg.New(t)
+	_, err := b.Create(t.Context(), preflightSandboxName, sandbox.WithImage(image()))
+	if err != nil {
+		if errors.Is(err, sandbox.ErrRuntimeUnavailable) {
+			t.Skipf("conformance: %s: the host cannot provide the required runtime (%v); no property can be measured", cfg.Name, err)
+		}
+		t.Fatalf("conformance: %s: preflight Create(%q) = %v", cfg.Name, preflightSandboxName, err)
 	}
+	t.Cleanup(func() { _ = b.Destroy(context.WithoutCancel(t.Context()), preflightSandboxName) })
 }
 
 var core []property

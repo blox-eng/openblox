@@ -32,12 +32,16 @@ func run(t *testing.T, sb sandbox.Sandbox, script string) string {
 
 // create makes a sandbox on the pinned image and guarantees it is destroyed
 // even if the property fails.
+//
+// Any error here, ErrRuntimeUnavailable included, is a hard failure rather
+// than a skip: walk's preflight already proved the runtime could provide a
+// sandbox before this property's t.Run started, so its disappearance now is
+// a real fault, not the legitimate abort. See preflight's doc comment.
 func create(t *testing.T, cfg Config, b sandbox.Backend, name string, opts ...sandbox.CreateOption) sandbox.Sandbox {
 	t.Helper()
 	opts = append([]sandbox.CreateOption{sandbox.WithImage(image())}, opts...)
 	sb, err := b.Create(t.Context(), name, opts...)
 	if err != nil {
-		abortIfRuntimeUnavailable(t, err)
 		t.Fatalf("%s: Create(%q) = %v", cfg.Name, name, err)
 	}
 	t.Cleanup(func() { _ = b.Destroy(context.WithoutCancel(t.Context()), name) })
