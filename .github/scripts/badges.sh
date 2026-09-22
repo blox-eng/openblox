@@ -71,5 +71,13 @@ fi
 badge coverage "coverage (unit)" "${pct}%" "$colour"
 
 # Size, so "small enough to read in an afternoon" is a number and not a boast.
-loc=$(find pkg -name '*.go' ! -name '*_test.go' -print0 | xargs -0 cat | wc -l | tr -d ' ')
+#
+# pkg/conformance is excluded on the same grounds as *_test.go: it is the suite
+# that measures an implementation, not implementation anyone has to read to
+# trust this one. It is a package rather than a _test.go file only because it
+# has to be importable by somebody else's backend. Counting it would add half
+# again to the number that exists to back the claim, and the claim would then
+# be contradicted by its own evidence — which is the bug this badge was added
+# to prevent, in the other direction.
+loc=$(find pkg -name '*.go' ! -name '*_test.go' ! -path 'pkg/conformance/*' -print0 | xargs -0 cat | wc -l | tr -d ' ')
 badge loc "lines of go" "$loc" informational
