@@ -119,6 +119,12 @@ var core = []property{
 	{"no-host-private-or-metadata-addresses", propNoHostOrMetadataAddresses},
 	{"loopback-is-not-the-hosts", propLoopbackIsNotTheHosts},
 	{"only-a-loopback-interface", propOnlyLoopbackInterface},
+	{"cannot-write-kernel-knobs", propCannotWriteKernelKnobs},
+	{"no-block-devices", propNoBlockDevices},
+	{"no-traversal-out-of-the-guest", propNoTraversalOutOfGuest},
+	{"no-capabilities", propNoCapabilities},
+	{"writable-mounts-are-noexec-nosuid", propWritableMountsAreNoexecNosuid},
+	{"create-refuses-root", propCreateRefusesRoot},
 }
 
 var hostLocal []property
