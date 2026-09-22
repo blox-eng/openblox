@@ -11,8 +11,8 @@ test behind each claim, is
 will try to reach the network, read other tenants' data, escape to the host, exhaust
 resources, and persist beyond its session.
 
-**Assumed trusted:** the host kernel, the Docker daemon, the gVisor runtime, and the
-process that calls openblox.
+**Assumed trusted:** the host kernel, the Docker daemon, the isolation runtime (gVisor by
+default), and the process that calls openblox.
 
 That last one matters and is examined below — it is the weakest link in a default
 deployment.
@@ -21,9 +21,9 @@ deployment.
 
 ### A user-space kernel
 
-Sandboxes run under gVisor (`runsc`). Guest syscalls are serviced by a user-space kernel
-rather than passed to the host, so the host kernel's syscall surface is not directly
-reachable from inside a sandbox.
+By default, sandboxes run under gVisor (`runsc`). Guest syscalls are serviced by a
+user-space kernel rather than passed to the host, so the host kernel's syscall surface is
+not directly reachable from inside a sandbox.
 
 openblox **will not fall back to `runc`**. If the configured runtime is not registered,
 `Create` fails with `ErrRuntimeUnavailable`. A fallback would mean untrusted code

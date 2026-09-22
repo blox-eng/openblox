@@ -54,7 +54,7 @@ stays this small.
             ▼
   ┌────────────────────┐
   │  Docker Engine API │
-  │  runtime: runsc    │  ← gVisor: the isolation boundary
+  │  runtime: runsc    │  ← gVisor by default: the isolation boundary
   └────────────────────┘
 ```
 
@@ -75,9 +75,10 @@ Two, deliberately small:
   processes, expose a port.
 
 Everything else is options structs and errors. A second backend
-(Firecracker, Kata, a remote host) must be implementable without changing either
-interface — that constraint is what keeps the abstraction honest, not a promise
-that we'll ship one.
+(Firecracker driven directly, a remote host) must be implementable without
+changing either interface — that constraint is what keeps the abstraction
+honest, not a promise that we'll ship one. A microVM runtime Docker can already
+start, such as Kata, needs no second backend: it is `WithRuntime`.
 
 ## State model
 
@@ -145,15 +146,17 @@ control plane.
 
 ## Security model
 
-The isolation boundary is **gVisor (`runsc`)**, not the container runtime's
+The isolation boundary is the runtime — **gVisor (`runsc`)** by default, or a
+microVM runtime such as Kata where one is selected — not the container's
 namespaces. A shared-kernel container is not a sufficient boundary for
 attacker-controlled native code, which is the workload openblox is built for.
+[SECURITY.md](SECURITY.md#the-isolation-runtime) orders the runtimes.
 
 Enforced at create, non-optional:
 
 | Control | Why |
 |---|---|
-| `runsc` runtime | syscalls handled in user space, not passed to the host kernel |
+| `runsc` runtime, unless another is named | syscalls handled in user space, not passed to the host kernel; a microVM runtime gives the guest its own kernel instead. An unregistered runtime fails `Create` — there is no fallback to `runc` |
 | `NetworkMode: none` | no external interface, so no egress *and* no DNS side channel (loopback stays, see Preview links) |
 | CPU / memory / disk caps | a crafted input must not exhaust the host |
 | `PidsLimit` | fork-bomb containment |
@@ -173,7 +176,9 @@ Files move over the Docker control channel, not the network, which is why
 
 Stated plainly, because a security section that only lists wins is marketing:
 
-- A gVisor escape. We inherit gVisor's threat model and its CVEs.
+- An escape from the runtime. Under the default that is a gVisor escape: we
+  inherit gVisor's threat model and its CVEs. Under a microVM runtime it is a
+  hypervisor escape.
 - The full list, with the test behind each claim, is in
   [THREAT_MODEL.md](THREAT_MODEL.md).
 - A malicious or backdoored sandbox **image**. Image supply chain is the caller's

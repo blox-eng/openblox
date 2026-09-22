@@ -62,6 +62,10 @@ request with these checks green — `Conventional Commits Check`, `Lint`, `Test`
 should also require `Vulnerabilities`, `Integration Tests (gVisor, arm64)` and
 `CodeQL Analyze` once each has a green run on `main`.
 
+`Conformance (Kata, amd64)`, from `.github/workflows/kata.yml`, is evidence for a
+second runtime and is deliberately not a required check. It is expected to be red
+while properties fail under Kata, and `release.yml` does not wait for it.
+
 ## 4. How the release is tagged
 
 `release.yml` starts when CI completes on `main`. It refuses to run unless:

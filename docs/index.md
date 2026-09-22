@@ -1,10 +1,11 @@
 # openblox
 
-Self-hosted sandboxes for running untrusted, AI-generated code under gVisor.
+Self-hosted sandboxes for running untrusted, AI-generated code under gVisor by default.
 
-openblox is a small Go library over Docker and [gVisor](https://gvisor.dev). There is no
-control plane, no database, and no scheduler — a sandbox is a container, and the
-container is the state.
+openblox is a small Go library over Docker and [gVisor](https://gvisor.dev), the default
+runtime; a microVM runtime such as [Kata](https://katacontainers.io), a stronger boundary
+at a higher cost per sandbox, can be selected instead. There is no control plane, no
+database, and no scheduler — a sandbox is a container, and the container is the state.
 
 ```go
 backend, err := docker.New()
@@ -107,7 +108,9 @@ adversarial suite that exercises them — network, filesystem, privilege,
 process, timeout and lifecycle attacks — is `pkg/conformance`, a package
 written against the `sandbox.Backend` interface rather than against
 `pkg/docker` alone. Any implementation of that interface can be run against
-it and measured the same way. It has only ever run against `pkg/docker`.
+it and measured the same way. It has only ever run against `pkg/docker`: under gVisor
+on every pull request, and under Kata on amd64 in a separate workflow that does not
+gate merges.
 
 ## Next
 

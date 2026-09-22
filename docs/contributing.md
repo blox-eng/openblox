@@ -28,9 +28,17 @@ need a Docker host with gVisor registered as `runsc`:
 make test-integration
 ```
 
-CI currently *compiles* the integration tests but does not run them — a gap tracked in
-[#3](https://github.com/blox-eng/openblox/issues/3). A test that no longer builds is a
-test nobody runs, so keep them compiling even when you cannot execute them locally.
+CI runs them on every PR, under gVisor on amd64 and arm64. If you cannot run them
+locally, keep them compiling (`go vet -tags integration ./...`) and let CI run them.
+
+The conformance suite also runs under Kata, given Kata registered as `kata` on a host
+with KVM:
+
+```sh
+go test -tags 'integration kata' -run '^TestConformanceKata$' -count=1 ./pkg/docker/
+```
+
+CI runs that on amd64 in a separate workflow that does not gate merges.
 
 ## Working on the docs
 
