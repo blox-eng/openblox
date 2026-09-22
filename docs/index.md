@@ -100,6 +100,15 @@ The comparison is `libvirt`, not OpenStack.
 The first two are the rule above, applied: they are placement, not isolation. They
 are not gaps waiting to be filled.
 
+## Measuring it
+
+The claims in the security model are backed by tests, not assertion. The
+adversarial suite that exercises them — network, filesystem, privilege,
+process, timeout and lifecycle attacks — is `pkg/conformance`, a package
+written against the `sandbox.Backend` interface rather than against
+`pkg/docker` alone. Any implementation of that interface can be run against
+it and measured the same way. It has only ever run against `pkg/docker`.
+
 ## Next
 
 - [Quick start](getting-started.md) — install, prerequisites, a working example

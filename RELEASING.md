@@ -7,7 +7,7 @@ has not passed the full test suite.
 ```
 pull request ─► CI: conventional commits · go vet · golangci-lint (gofmt,
                     goimports, gosec, …) · unit tests with -race ·
-                    govulncheck · gVisor integration + adversarial suites
+                    govulncheck · gVisor integration + conformance suites
                     on amd64 and arm64 · CodeQL · image build (if image/ changed)
      │
    merge (squash, required checks green)

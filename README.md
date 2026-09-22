@@ -160,6 +160,30 @@ name an image, a runtime, a user, an egress policy, or a resource cap.
 That is the difference between weakening being **visible** and weakening being
 **unreachable**, and it is the whole reason the daemon exists.
 
+## Measuring an implementation
+
+The claims in `THREAT_MODEL.md` are backed by `pkg/conformance`, the same
+adversarial suite `pkg/docker` runs against itself, expressed against the
+`sandbox.Backend` interface rather than against one implementation. Point it at
+your own backend to find out how it scores — it does not skip:
+
+```go
+func TestConformance(t *testing.T) {
+    cfg := conformance.Config{
+        Name: "mine",
+        New:  func() (sandbox.Backend, error) { return mypkg.New() },
+    }
+    conformance.Run(t, cfg)
+    conformance.RunHostLocal(t, cfg)
+}
+```
+
+`New` takes no `*testing.T` on purpose: the suite, not the implementation,
+decides what a construction failure means, and there is nothing to skip with.
+
+It has only ever run against `pkg/docker`. See the package doc for what each
+tier covers.
+
 ## What you get
 
 | | |
@@ -200,8 +224,8 @@ The badges above are measured from the source on every deploy, not typed here.
 Three direct dependencies (`docker/docker`, `containerd/errdefs`, `yaml.v3`).
 
 CI runs lint, race-enabled tests, CodeQL and `govulncheck` (gating on newly
-reachable vulnerabilities), plus the integration and adversarial suites against a
-real gVisor runtime on amd64 and arm64 — including attacks on the network,
+reachable vulnerabilities), plus the integration and conformance suites against
+a real gVisor runtime on amd64 and arm64 — including attacks on the network,
 filesystem, privileges, resource caps and timeouts.
 
 Every release is cut by CI from a verified commit. The `openbloxd` binaries are

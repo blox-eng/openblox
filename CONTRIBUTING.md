@@ -27,6 +27,34 @@ make            # vet + lint + test
 
 Requires Go 1.25+ and [golangci-lint](https://golangci-lint.run) v2.
 
+### What `make test` does to your machine
+
+`pkg/conformance` ships a negative control: a deliberately unisolated backend
+that Core must fail against, property by property, because a conformance suite
+which passes vacuously certifies nothing while looking authoritative. It runs
+on every plain `go test ./...` — untagged, on purpose, since a control that can
+be skipped is not a control.
+
+Running it means the probes execute **on your own machine, as you**, not inside
+a sandbox. Two consequences worth knowing before you see them in a log:
+
+- **It opens TCP connections** to `172.17.0.1:22`, `172.17.0.1:2375`,
+  `10.0.0.1:80`, `192.168.0.1:80`, `169.254.169.254:80`, `1.1.1.1:443`,
+  `8.8.8.8:53` and `[2606:4700:4700::1111]:443`. These are the addresses a
+  sandbox must not reach — the Docker bridge gateway, RFC1918 space, the cloud
+  metadata endpoint, and public DNS/HTTPS. Under `-tags integration` they are
+  dialled from inside the sandbox; against the negative control they are
+  dialled from the host. On a corporate network this can trip an IDS; on a
+  cloud VM the metadata dial reaches the real endpoint.
+- **It writes and then removes files** under `/tmp` and `/dev/shm`, including a
+  setuid copy of `/bin/sh` — that is the attack `writable-mounts-are-noexec-nosuid`
+  measures. Every path carries a per-run unique suffix, so nothing of yours is
+  overwritten, and `TestMain` removes them all before the binary exits.
+
+Nothing here needs privilege, and nothing persists. If your environment cannot
+tolerate the dials, run `go test` on the packages you are changing rather than
+disabling the control.
+
 **Install golangci-lint before you push.** `go vet` and `go test` catch less than
 CI does — the lint step adds revive, gosec, errorlint, and bodyclose. Without it
 on your PATH, `make lint` fails open and you learn about a style violation from a
@@ -43,12 +71,13 @@ make test-integration
 ```
 
 CI runs them on every PR, on hosted amd64 and arm64 runners with gVisor
-installed — including the adversarial suite in
-`pkg/docker/adversarial_integration_test.go`. If you cannot run them locally,
+installed — including the conformance suite (`pkg/conformance`, run against
+this repo's backend by `pkg/docker/conformance_integration_test.go`). If you
+cannot run them locally,
 at least keep them compiling (`go vet -tags integration ./...`) and let CI run
 them.
 
-A security-relevant change should come with an adversarial test that fails
+A security-relevant change should come with a conformance property that fails
 without it. Phrase the attack so the test fails closed: print a marker only when
 the attack *succeeds*, and assert the marker is absent — so a probe that silently
 fails to run can never read as containment.

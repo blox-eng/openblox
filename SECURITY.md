@@ -13,9 +13,9 @@ or email **security@openblox.sh**.
 
 Include what you can of: the affected version or commit, the deployment mode
 (library or `openbloxd`), the gVisor version (`runsc --version`), reproduction
-steps, and the impact you believe it has. A failing test in the style of
-`pkg/docker/adversarial_integration_test.go` is the most useful form a report can
-take, but is not required.
+steps, and the impact you believe it has. A failing property in the style of
+`pkg/conformance` is the most useful form a report can take, but is not
+required.
 
 In scope: anything that lets code inside a sandbox reach something
 [THREAT_MODEL.md](THREAT_MODEL.md) says it cannot; anything that lets an `openbloxd`
