@@ -134,6 +134,7 @@ build it. It should not be built behind this interface.
 
 - **Testing against Kata** (#57 §2). Supporting a runtime and having evidence
   about it are different claims, and this decision makes only the first.
+  Done: see specs/2026-09-22-kata-evidence.md.
 - **Extracting the adversarial suite to run against any `Backend`** (#57 §3).
   That is about who the suite can be pointed at, not which backends exist.
 - **A runtime allowlist in code.** Considered and rejected: it would have to

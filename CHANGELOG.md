@@ -15,6 +15,12 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ### Added
 
+- **Kata evidence: the conformance suite against a second runtime.** A new,
+  non-gating workflow (`kata.yml`) runs `pkg/conformance` under Kata
+  Containers on hosted amd64 runners and records which properties fail;
+  the findings are in THREAT_MODEL.md under *Under Kata*. gVisor remains the
+  default and the only runtime that gates merges. arm64 is not measured:
+  hosted arm64 runners expose no KVM.
 - **`pkg/conformance`: a public conformance suite for `sandbox.Backend`.**
   `pkg/docker/adversarial_integration_test.go` was the most valuable code in
   the repository and the least reusable — 21 attacks nailed to one

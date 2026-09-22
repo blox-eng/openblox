@@ -92,7 +92,7 @@ property the rest of this document rests on. It is an ordering, not a switch:
 |---|---|---|
 | `runc` (the host default) | the host kernel, in full | Unsafe for untrusted code. A shared-kernel container is not a boundary against attacker-controlled native code. |
 | `runsc` (gVisor) — **default** | the Sentry, a user-space kernel; the host kernel only past **B1** and **B2** | What openblox is built and tested against. |
-| a microVM runtime, e.g. Kata | a separate guest kernel | **Stronger** than the default, at a higher cost per sandbox. |
+| a microVM runtime, e.g. Kata | a separate guest kernel | **Stronger** than the default, at a higher cost per sandbox. Kata on amd64 is measured, with one layer lost: `/dev/shm` is not `noexec,nosuid` in its guest. See [THREAT_MODEL.md](THREAT_MODEL.md#under-kata). |
 
 openblox does not rank runtimes at create time. `Create` requires only that the
 named runtime is registered with Docker and fails with `ErrRuntimeUnavailable`
@@ -104,10 +104,15 @@ this document rather than by the code.
 Two caveats on going stronger. [THREAT_MODEL.md](THREAT_MODEL.md) §B1/§B2 is
 written specifically against gVisor's Sentry, so under a microVM runtime those
 two rows describe a boundary you are no longer relying on and the residual risks
-differ; and every test behind the claims below runs against `runsc` in CI, so on
-anything else you are trusting the runtime's own evidence, not openblox's. The
-containment openblox configures — no network interface, dropped capabilities,
-read-only root, non-root user, resource caps — is set identically either way.
+differ; and every merge-gating test behind the claims below runs against
+`runsc` in CI. Kata on amd64 is also measured by openblox — the conformance
+suite, in a workflow that does not gate merges, with results in
+[THREAT_MODEL.md](THREAT_MODEL.md#under-kata); on anything else you are trusting
+the runtime's own evidence, not openblox's. The containment openblox configures
+— no network interface, dropped capabilities, read-only root, non-root user,
+resource caps — is set identically either way. What openblox leaves to Docker's
+defaults is not honoured identically: under Kata, `/dev/shm` is not `noexec` or
+`nosuid`.
 
 ## Security-sensitive configuration
 

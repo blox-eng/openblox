@@ -248,7 +248,8 @@ backend.
   a second implementation is designing for an imagined consumer; §2 is what
   would tell us whether one is wanted.
 - **Running it against Kata in CI** (#57 §2). This makes the suite pointable;
-  pointing it is separate work with its own infrastructure cost.
+  pointing it is separate work with its own infrastructure cost. Done: see
+  specs/2026-09-22-kata-evidence.md.
 - **Preview and port properties.** Not in the adversarial file today, so not in
   this extraction.
 - **Non-Go implementations.** Reaching those needs a wire protocol, which is a
