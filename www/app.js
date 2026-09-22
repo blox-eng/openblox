@@ -18,12 +18,14 @@
     {
       name: 'gVisor',
       href: 'https://gvisor.dev',
-      tail: ''
+      tail: '',
+      hint: 'The default, and the runtime CI exercises.'
     },
     {
       name: 'Kata',
       href: 'https://katacontainers.io',
-      tail: ' — a separate kernel per sandbox, stronger than the default; gVisor is what CI exercises'
+      tail: ' — a separate kernel per sandbox, stronger than the default; gVisor is what CI exercises',
+      hint: 'A separate kernel per sandbox, stronger than the default. gVisor is what CI exercises.'
     }
   ];
   var runtime = 0;
@@ -80,10 +82,21 @@
     panel.setAttribute('aria-labelledby', id);
   }
 
+  /* The caveat travels with the control, not only with the install note: the
+     note renders on the Daemon tab alone, but the subhead names the runtime on
+     every tab, and a claim the page cannot qualify is one it should not make.
+     The note is left alone where it would not have changed, so the live region
+     announces the runtime and nothing else. */
+  function renderRuntime() {
+    var r = RUNTIMES[runtime];
+    runtimeBtn.textContent = r.name;
+    runtimeBtn.title = r.hint;
+  }
+
   runtimeBtn.addEventListener('click', function () {
     runtime = (runtime + 1) % RUNTIMES.length;
-    runtimeBtn.textContent = RUNTIMES[runtime].name;
-    renderNote(COMMANDS[current]);
+    renderRuntime();
+    if (COMMANDS[current].runtime) renderNote(COMMANDS[current]);
   });
   tabs.forEach(function (t) {
     t.addEventListener('click', function () { select(t.id); });
@@ -94,6 +107,7 @@
       if (n) { e.preventDefault(); n.focus(); select(n.id); }
     });
   });
+  renderRuntime();
   select('t-daemon');
 
   var copy = document.getElementById('copy');
