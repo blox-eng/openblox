@@ -57,6 +57,15 @@ const (
 	stateDirBytes = 64 << 10
 )
 
+// shmPath is writable like scratch, so openblox mounts it itself with the same
+// flags instead of inheriting the runtime's default shm mount: Kata does not
+// carry that default into the guest as noexec or nosuid. Docker's default size,
+// and outside the disk budget, so the scratch split is unchanged by it.
+const (
+	shmPath  = "/dev/shm"
+	shmBytes = 64 << 20
+)
+
 // Backend creates sandboxes as Docker containers.
 type Backend struct {
 	cli *client.Client
@@ -338,7 +347,7 @@ func buildConfig(name string, spec sandbox.Spec) (*container.Config, *container.
 // filling one cannot starve the other.
 func scratchMounts(diskBytes int64) map[string]string {
 	per := diskBytes / int64(len(scratchPaths))
-	out := make(map[string]string, len(scratchPaths)+1)
+	out := make(map[string]string, len(scratchPaths)+2)
 	for _, p := range scratchPaths {
 		mode := "1777"
 		if p != "/tmp" {
@@ -348,6 +357,7 @@ func scratchMounts(diskBytes int64) map[string]string {
 	}
 	// Mode 0755: root-writable, world-readable. See stateDir.
 	out[stateDir] = fmt.Sprintf("rw,nosuid,nodev,noexec,size=%d,mode=0755", stateDirBytes)
+	out[shmPath] = fmt.Sprintf("rw,nosuid,nodev,noexec,size=%d,mode=1777", shmBytes)
 	return out
 }
 

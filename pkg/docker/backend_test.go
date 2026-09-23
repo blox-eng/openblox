@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -55,9 +57,9 @@ func TestScratchMountsAreBoundedAndHardened(t *testing.T) {
 	const budget = 1 << 30
 	mounts := scratchMounts(budget)
 
-	// The scratch paths plus openblox's own state directory.
-	if len(mounts) != len(scratchPaths)+1 {
-		t.Fatalf("got %d mounts, want %d", len(mounts), len(scratchPaths)+1)
+	// The scratch paths plus openblox's own state directory and /dev/shm.
+	if len(mounts) != len(scratchPaths)+2 {
+		t.Fatalf("got %d mounts, want %d", len(mounts), len(scratchPaths)+2)
 	}
 	for path, opts := range mounts {
 		if !strings.Contains(opts, "size=") {
@@ -68,6 +70,30 @@ func TestScratchMountsAreBoundedAndHardened(t *testing.T) {
 				t.Errorf("%s missing %s: %q", path, hardening, opts)
 			}
 		}
+	}
+}
+
+// /dev/shm is writable too, so it gets the same flags as scratch — set by
+// openblox rather than left to the runtime's default shm mount, which Kata
+// does not carry into the guest with noexec or nosuid. It keeps Docker's
+// default size and stays outside the disk budget, so the scratch split is
+// unchanged.
+func TestShmIsHardenedByOpenbloxNotTheRuntime(t *testing.T) {
+	const budget = 1 << 30
+	mounts := scratchMounts(budget)
+
+	opts := mounts[shmPath]
+	if opts == "" {
+		t.Fatalf("no tmpfs at %s; its flags are left to the runtime", shmPath)
+	}
+	for _, want := range []string{"nosuid", "nodev", "noexec", fmt.Sprintf("size=%d", shmBytes)} {
+		if !slices.Contains(strings.Split(opts, ","), want) {
+			t.Errorf("%s mounted %q, missing %s", shmPath, opts, want)
+		}
+	}
+	perScratch := fmt.Sprintf("size=%d", budget/int64(len(scratchPaths)))
+	if !strings.Contains(mounts["/tmp"], perScratch) {
+		t.Errorf("/tmp mounted %q, want %s: /dev/shm must not be drawn from the disk budget", mounts["/tmp"], perScratch)
 	}
 }
 
