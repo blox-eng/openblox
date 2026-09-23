@@ -24,8 +24,8 @@
     {
       name: 'Kata',
       href: 'https://katacontainers.io',
-      tail: ' — a separate kernel per sandbox, stronger than the default; measured on amd64, not gated',
-      hint: 'A separate kernel per sandbox, stronger than the default. Measured on amd64; CI gates on gVisor.'
+      tail: ' and KVM — a separate kernel per sandbox, stronger than the default; measured on amd64 only, not gated',
+      hint: 'A separate kernel per sandbox, stronger than the default. Needs KVM. Measured on amd64: 21 of 23 conformance properties pass. CI gates on gVisor.'
     }
   ];
   var runtime = 0;

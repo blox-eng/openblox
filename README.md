@@ -151,7 +151,9 @@ weaker boundary.
 These are isolation *measures*, not a guarantee: the boundary is the runtime's —
 gVisor's by default — and
 [THREAT_MODEL.md](THREAT_MODEL.md) lists what is defended, the test behind each
-claim, and what is not defended.
+claim, and what is not defended. Under Kata two of them differ: `/dev/shm` is
+writable *and* executable, because Kata discards its mount options, and crash
+recovery is unmeasured ([details](THREAT_MODEL.md#under-kata)).
 
 **Two levels of the same guarantee.** In the library, *your* code chooses: the
 defaults are safe, and every relaxation is explicit and greppable at the call
@@ -185,7 +187,8 @@ func TestConformance(t *testing.T) {
 decides what a construction failure means, and there is nothing to skip with.
 
 It has only ever run against `pkg/docker`: under gVisor on every pull request,
-and under Kata on amd64 in a separate workflow that does not gate merges. See the
+and under Kata on amd64 in a separate workflow that does not gate merges, where
+21 of 23 properties pass. See the
 package doc for what each tier covers.
 
 ## What you get
@@ -204,9 +207,9 @@ package doc for what each tier covers.
 - **You need tenants isolated from each other at the API.** Every caller of one
   `openbloxd` can reach every sandbox; tenancy is yours to enforce in front of it.
 - **You need a fleet.** One host, one daemon. No scheduling, no fairness.
-- **You need protection from side channels** between co-resident sandboxes. (A
-  separate kernel per workload is available: select a microVM runtime such as
-  Kata.)
+- **You need protection from side channels** between co-resident sandboxes. A
+  microVM runtime such as Kata removes the shared kernel, not the shared CPU:
+  microarchitectural side channels remain.
 - **You need snapshots, fork, pause/resume, or sub-second cold starts.**
 - **You cannot run Linux with gVisor or a microVM runtime**, or cannot keep that
   runtime patched.

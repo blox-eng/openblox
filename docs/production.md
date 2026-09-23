@@ -198,9 +198,9 @@ no version state, so nothing needs migrating in either direction.
   caller can reach every sandbox. Put your own authorisation in front of it.
 - You need **several hosts**, scheduling, or fair sharing: openblox is one host,
   one daemon.
-- You need protection from **side channels** between co-resident workloads. (A
-  separate guest kernel per workload is available: select a microVM runtime such as
-  [Kata](getting-started.md#using-kata-instead).)
+- You need protection from **side channels** between co-resident workloads. A microVM
+  runtime such as [Kata](getting-started.md#using-kata-instead) removes the shared
+  kernel, not the shared CPU: microarchitectural side channels remain.
 - You need **sub-second cold starts**, snapshots, or fork/resume.
 - Your sandboxes need **general network access**. `unrestricted` egress exists, but
   then the network boundary is yours to build.
