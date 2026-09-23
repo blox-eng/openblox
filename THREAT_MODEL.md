@@ -162,6 +162,38 @@ conformed any less. Everything else is an ordinary Go test name.
 | Too many sandboxes | `openbloxd`: `max_sandboxes` per profile (`429 at_capacity`). | `internal/daemon/capacity_test.go` (unit) | Mode A has no global cap. Neither mode caps the total across profiles; size the host for the sum. |
 | Leaks from repeated create/destroy | Destroy removes the container; no host state is kept. | `destroy-removes-the-sandbox`, `host-retains-no-process-goroutine-or-descriptor` (host-local: goroutines, file descriptors, and a host `/proc` scan for processes still serving a destroyed sandbox) | — |
 
+## Under Kata
+
+Measured by `.github/workflows/kata.yml` (Kata 4.2.0, runtime-rs + QEMU,
+hosted amd64 runner), first recorded 2026-09-22 in
+[run 35783796144](https://github.com/blox-eng/openblox/actions/runs/35783796144).
+Not merge-gating: gVisor is the default and the only runtime this project gates
+on. Under Kata the guest reaches its own kernel inside a VM, so B1 and B2 above
+do not apply; the boundary is the hypervisor. arm64 is not measured.
+
+19 of 21 Core properties pass, and both host-local properties pass. The two
+failures are below.
+
+| Property | Result | Class | What it means |
+|---|---|---|---|
+| `writable-mounts-are-noexec-nosuid` | FAIL | Real difference | The guest's `/dev/shm` is mounted `rw,relatime`, without `noexec` or `nosuid`, and a binary the guest copied there executed. `/tmp` and `/workspace`, which openblox mounts itself with `nosuid,nodev,noexec`, kept their flags. `/dev/shm` is not openblox's to set under Kata: runtime-rs 4.2.0 replaces every mount at `/dev/shm` with a bind of one sandbox-wide guest directory and hard-codes its options to `rbind` ([`shm_volume.rs`](https://github.com/kata-containers/kata-containers/blob/4.2.0/src/runtime-rs/crates/resource/src/volume/shm_volume.rs)), discarding whatever the caller asked for. Mounting it explicitly with `noexec,nosuid,nodev` was tried and changed nothing ([#63](https://github.com/blox-eng/openblox/pull/63)). Under Kata the guest can therefore run a binary it wrote, and setuid on that path is left to `no-new-privileges`. A defence-in-depth layer is lost, not the boundary: the guest already runs arbitrary code, as a non-root user with no capabilities (`no-capabilities` passes). Residual, and Kata's to close. |
+| `crashed-sandbox-recovers-through-create` | FAIL | gVisor-shaped | The property crashes the sandbox with `kill -9 1` from inside the guest, which assumes the guest can kill its own init. gVisor allows that; Linux, which is Kata's guest kernel, does not deliver SIGKILL to a PID namespace's init from inside that namespace, so the sandbox was still running 20 s later and the property failed before reaching its claim. Two consequences: the self-inflicted stop in *Guest stopping its own sandbox* above does not work this way under Kata, and the claim itself — `Exec` on a crashed sandbox fails promptly with `ErrStopped`, `Create` brings it back — is unmeasured under Kata. |
+
+`host-retains-no-process-goroutine-or-descriptor` passed. The predicted
+"cannot measure" outcome did not hold: its positive control still matched, as
+it does under gVisor, a host process whose command line carries the container
+ID — that is a runtime's own host-side process (shim, sandbox/gofer under
+gVisor; shim, QEMU or `virtiofsd` under Kata), not a guest process, under
+either runtime. Which process matched was not recorded.
+
+Predictions made before the first run
+([specs/2026-09-22-kata-evidence.md](specs/2026-09-22-kata-evidence.md)):
+host-local reports "cannot measure" — did not hold, for the reason above;
+`kill-group-waits-for-a-late-group-record` may pass within its 100 ms timeout —
+held; `known-escape-setsid-survives-the-timeout-kill` may differ in kind — did
+not: it passes, meaning a `setsid` process survives the timeout kill under Kata
+exactly as under gVisor, and the documented limit is the same.
+
 ## 7. Explicit non-goals and residual risks
 
 - **Multi-tenancy.** openblox has no tenants, users or authorisation. In Mode B every

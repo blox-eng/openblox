@@ -1,5 +1,5 @@
 site_name: openblox
-site_description: Self-hosted sandboxes for running untrusted, AI-generated code under gVisor. A small Go library and daemon over Docker.
+site_description: Self-hosted sandboxes for running untrusted, AI-generated code under gVisor by default, or a microVM runtime such as Kata. A small Go library and daemon over Docker.
 site_url: https://docs.openblox.sh
 repo_url: https://github.com/blox-eng/openblox
 repo_name: blox-eng/openblox

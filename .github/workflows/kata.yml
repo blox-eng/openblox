@@ -1,0 +1,156 @@
+name: Kata evidence
+
+# The conformance suite against Kata Containers: evidence for a second runtime,
+# never a gate. A separate workflow, not a job in ci.yml, on purpose:
+# release.yml tags only after `workflow_run: [CI]` succeeds and branch
+# protection lists only CI's jobs, so a red run here cannot block a merge or a
+# release by construction rather than by convention. Red is the expected
+# colour while properties fail under Kata; the job summary says which, and a
+# change in that set is the signal. See specs/2026-09-22-kata-evidence.md.
+#
+# amd64 only. Hosted amd64 runners nest KVM (AMD under Hyper-V, kvm_amd
+# nested=1); hosted arm64 runners expose no /dev/kvm at all, and a self-hosted
+# runner would execute strangers' pull requests on our own hardware.
+
+on:
+  push:
+    branches: [main]
+  # Path-filtered, which ci.yml refuses to do: that argument is about required
+  # checks never reporting, and this check is not required.
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pkg/conformance/**'
+      - 'pkg/docker/**'
+      - 'pkg/sandbox/**'
+      - '.github/workflows/kata.yml'
+      - '.github/scripts/kata-summary.sh'
+  # Kata, the runner image and KVM availability all drift independently of
+  # this repository.
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Only cancel in-flight PR runs on a new push. Main-branch runs are evidence
+  # for a releasable commit and must not cancel each other.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  KATA_VERSION: 4.2.0
+  KATA_SHA256: b828904fa3f1e49ddd7dc799c72cb1503cd1e772d354c3987c8d4189b2a623a8
+
+jobs:
+  kata:
+    name: Conformance (Kata, amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # KVM on hosted runners is undocumented. If it goes away, this is the
+      # step that says so, instead of thirty identical Create errors later.
+      - name: Require KVM
+        run: |
+          set -euo pipefail
+          if [ ! -e /dev/kvm ]; then
+            echo "::error::/dev/kvm is absent on this runner; Kata cannot start a VM"
+            exit 1
+          fi
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo apt-get install -y -qq cpu-checker > /dev/null
+          kvm-ok
+
+      # Bounded and retried like the gVisor install in ci.yml, and pinned by
+      # hash: the runtime under test is part of the evidence.
+      - name: Install Kata
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          retry() {
+            local n=1
+            until "$@"; do
+              if [ "$n" -ge 3 ]; then
+                echo "::error::Kata install: '$*' failed after $n attempts"
+                return 1
+              fi
+              echo "attempt $n of '$*' failed; retrying in $((n * 5))s"
+              sleep "$((n * 5))"
+              n=$((n + 1))
+            done
+          }
+          tarball="kata-static-${KATA_VERSION}-amd64.tar.zst"
+          retry curl -fsSL --max-time 300 -o "/tmp/$tarball" \
+            "https://github.com/kata-containers/kata-containers/releases/download/${KATA_VERSION}/$tarball"
+          echo "${KATA_SHA256}  /tmp/$tarball" | sha256sum -c -
+          sudo tar --zstd -xf "/tmp/$tarball" -C /
+          rm "/tmp/$tarball"
+          sudo ln -sf /opt/kata/runtime-rs/bin/containerd-shim-kata-v2 /usr/local/bin/containerd-shim-kata-v2
+          # Merge rather than overwrite: the runner image may ship its own daemon.json.
+          conf=/etc/docker/daemon.json
+          current=$(sudo cat "$conf" 2>/dev/null || echo '{}')
+          jq '.runtimes.kata = {"runtimeType": "io.containerd.kata.v2"}' <<<"$current" | sudo tee "$conf" > /dev/null
+          sudo systemctl restart docker
+
+      # Registered is not enough: prove a separate kernel actually boots,
+      # as ci.yml proves runsc's guest is gVisor.
+      - name: Verify Kata boots a separate kernel
+        run: |
+          set -euo pipefail
+          docker info --format '{{range $k, $v := .Runtimes}}{{$k}} {{end}}' | tr ' ' '\n' | grep -qx kata
+          host=$(uname -r)
+          guest=$(docker run --rm --runtime=kata --network=none alpine:3.20 uname -r)
+          echo "host kernel: $host, guest kernel: $guest"
+          if [ "$guest" = "$host" ]; then
+            echo "::error::the kata guest reports the host's kernel ($host); this is not a VM boundary"
+            exit 1
+          fi
+
+      # -count=1 for the same reason as ci.yml: live host state, no cached PASS.
+      # No continue-on-error: failing properties make this red, and that is
+      # the result being recorded.
+      - name: Run the conformance suite under Kata
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -o pipefail
+          go test -tags 'integration kata' -run '^TestConformanceKata$' -count=1 -timeout 25m -json ./pkg/docker/ \
+            | tee kata-results.json
+
+      - name: Summarise
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Conformance under Kata ${KATA_VERSION} (amd64)"
+            echo
+            echo "Evidence, not a gate. gVisor remains the default and the only runtime that gates merges."
+            echo
+            bash .github/scripts/kata-summary.sh kata-results.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kata-conformance-results
+          path: kata-results.json
+          if-no-files-found: warn

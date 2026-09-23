@@ -139,7 +139,9 @@ jobs:
       - name: Compile integration tests
         env:
           CGO_ENABLED: '0'
-        run: go build -tags integration ./... && go vet -tags integration ./...
+        # kata adds the Kata consumer, which only kata.yml runs. Compiling it
+        # here is what stops it rotting between that workflow's runs.
+        run: go build -tags integration ./... && go vet -tags 'integration kata' ./...
 
   # The engine is only actually verified by the integration suite: containment on
   # a live container, egress blocked, the reaper, the resource caps under attack.

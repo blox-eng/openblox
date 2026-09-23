@@ -2,11 +2,12 @@
 
 ## Prerequisites
 
-**A Docker daemon**, and **gVisor (`runsc`) registered with it**.
+**A Docker daemon**, and **an isolation runtime registered with it**: gVisor (`runsc`),
+the default, or a microVM runtime such as Kata, [selected explicitly](#using-kata-instead).
 
-openblox will not run a sandbox without gVisor. It does not fall back to `runc`, and
-that refusal is deliberate: falling back would silently run untrusted code on the host
-kernel while the API kept reporting success.
+openblox will not run a sandbox on a runtime that is not registered. It does not fall
+back to `runc`, and that refusal is deliberate: falling back would silently run
+untrusted code on the host kernel while the API kept reporting success.
 
 Install gVisor per the [official instructions](https://gvisor.dev/docs/user_guide/install/),
 then register it:
@@ -28,6 +29,50 @@ docker info --format '{{json .Runtimes}}' | grep runsc   # confirm
 
 If `runsc` is absent, `Create` returns an error wrapping `sandbox.ErrRuntimeUnavailable`
 — branch on that if you want to degrade gracefully rather than fail.
+
+### Using Kata instead
+
+A microVM runtime such as [Kata Containers](https://katacontainers.io) gives each
+sandbox its own guest kernel — a stronger boundary than gVisor's — at a higher cost:
+about 7 s to cold-start a sandbox on a hosted CI runner, against about 0.1 s for
+`runc`. It needs KVM, meaning hardware virtualisation on the host, nested if the host
+is itself a VM. gVisor's default `systrap` platform needs no KVM.
+
+Install Kata per its
+[own instructions](https://github.com/kata-containers/kata-containers/tree/main/docs/install),
+put `containerd-shim-kata-v2` on `PATH`, and register it:
+
+```json title="/etc/docker/daemon.json"
+{
+  "runtimes": {
+    "kata": {
+      "runtimeType": "io.containerd.kata.v2"
+    }
+  }
+}
+```
+
+```sh
+sudo systemctl restart docker
+docker run --rm --runtime=kata alpine uname -r   # confirm: must differ from the host's uname -r
+```
+
+Nothing selects it for you. Name it per sandbox, or as `runtime: kata` in an
+`openbloxd` profile:
+
+```go
+sb, err := backend.Create(ctx, "session-1",
+    sandbox.WithImage("ghcr.io/blox-eng/openblox-sandbox:latest"),
+    sandbox.WithRuntime("kata"))
+```
+
+gVisor remains the only runtime every merge is tested against. Kata on amd64 is
+measured by a separate run of the conformance suite that does not gate merges: 21 of
+23 properties pass. Of the other two, `/dev/shm` is not `noexec,nosuid` in its guest
+(Kata discards the mount options, so openblox cannot set them), and crash recovery is
+unmeasured. arm64 and other microVM runtimes are not measured by openblox.
+See the [security model](security.md#a-user-space-kernel) and
+[THREAT_MODEL.md](https://github.com/blox-eng/openblox/blob/main/THREAT_MODEL.md#under-kata).
 
 ## Install
 

@@ -40,8 +40,9 @@ The full trust model is in
 | Architecture | `linux/amd64`, `linux/arm64` | both, natively, with the full gVisor integration suite on every PR |
 | Docker Engine | a current release, with the API version negotiated | the release on GitHub's `ubuntu-latest` image; Docker 29.1 |
 | gVisor (`runsc`) | a current release, registered as a Docker runtime named `runsc`; the default `systrap` platform needs no KVM | the latest release at CI time; `release-20260803.0` |
+| Kata (optional) | a microVM runtime instead of gVisor, registered with Docker and named in the profile; needs KVM, nested on a VM host ([setup](getting-started.md#using-kata-instead)) | 4.2.0 (runtime-rs + QEMU), amd64 only, conformance suite in a separate workflow that does not gate merges; arm64 not measured |
 | Go (library users) | the version in `go.mod` (1.25) or newer | 1.25 |
-| macOS, Windows, Docker Desktop | not supported — gVisor runs on Linux only | — |
+| macOS, Windows, Docker Desktop | not supported — gVisor and Kata run on Linux only | — |
 
 ## Compatibility
 
@@ -49,7 +50,7 @@ The full trust model is in
 |---|---|
 | `openbloxd` ↔ `pkg/brokerclient` | Use the same release. The wire format is not versioned separately; fields are only added, and older clients ignore new ones, but only matching versions are tested together. |
 | openblox ↔ sandbox image | Any image that satisfies [the image contract](image.md). The reference image version `X.Y.Z` is built from the openblox tag `vX.Y.Z`, but any version of it works with any openblox release that has the same contract. |
-| openblox ↔ gVisor | Any `runsc` Docker can start. openblox checks that a runtime named `runsc` is registered and fails with `ErrRuntimeUnavailable` if not — it never falls back to `runc`. |
+| openblox ↔ runtime | Any runtime Docker can start: `runsc` unless the profile names another. openblox checks that the named runtime is registered and fails with `ErrRuntimeUnavailable` if not — it never falls back to `runc`. A microVM runtime such as Kata is a stronger boundary and is supported; of those, only Kata on amd64 is measured, and not as a merge gate. |
 | openblox ↔ Docker | Any Engine whose API the bundled client can negotiate with. |
 
 ## Deploying `openbloxd`
@@ -113,7 +114,8 @@ before choosing a different group.
 **3. Configure profiles.** Start from `openbloxd.example.yaml` and install it as
 `/etc/openbloxd/config.yaml`. Pin every image **by digest**, and size
 `max_sandboxes × memory_mb` across all profiles to what the host can hold, with
-headroom. Leave `runtime: runsc` and `egress: none` alone for untrusted code.
+headroom. For untrusted code keep `egress: none`, and set `runtime` to `runsc` (the
+default) or a microVM runtime such as `kata` — never `runc`.
 Unknown keys, negative bounds and root users are refused at start-up.
 
 **4. Install the unit and start it.**
@@ -175,6 +177,8 @@ no version state, so nothing needs migrating in either direction.
 |---|---|
 | `ErrRuntimeUnavailable` / `runtime "runsc" is not registered` | Register gVisor: `sudo runsc install && sudo systemctl restart docker`, then check with `docker info --format '{{json .Runtimes}}'`. |
 | A container starts but `uname -r` inside is not `…-gvisor` | The runtime named `runsc` is not gVisor. Fix the path in `/etc/docker/daemon.json`. |
+| `ErrRuntimeUnavailable` / `runtime "kata" is not registered` | Register Kata: put `containerd-shim-kata-v2` on `PATH`, add `"kata": {"runtimeType": "io.containerd.kata.v2"}` under `runtimes` in `/etc/docker/daemon.json`, and `sudo systemctl restart docker` ([details](getting-started.md#using-kata-instead)). |
+| Under Kata, every sandbox fails to start and `/dev/kvm` does not exist | Kata boots a VM per sandbox and needs KVM. Enable hardware virtualisation, or nested virtualisation if the host is a VM, and check that `/dev/kvm` is accessible. gVisor's default platform needs no KVM. |
 | `ErrImageUnavailable` | The image is not present and could not be pulled. For a private registry, set `registry_auth` in the profile (or `docker.WithRegistryAuth`). |
 | `ErrInvalid: user …` (root, not numeric, or a bare uid) | Set `user` to an explicit, numeric, non-zero `uid:gid`, such as `"1000:1000"`. |
 | HTTP 429, kind `at_capacity` | The profile is at `max_sandboxes`. Retry after the reaper frees a slot, destroy unused sandboxes, or raise the cap if the host can hold it. |
@@ -194,9 +198,11 @@ no version state, so nothing needs migrating in either direction.
   caller can reach every sandbox. Put your own authorisation in front of it.
 - You need **several hosts**, scheduling, or fair sharing: openblox is one host,
   one daemon.
-- You need **hardware-virtualisation isolation** (a separate guest kernel per
-  workload), or protection from side channels between co-resident workloads.
+- You need protection from **side channels** between co-resident workloads. A microVM
+  runtime such as [Kata](getting-started.md#using-kata-instead) removes the shared
+  kernel, not the shared CPU: microarchitectural side channels remain.
 - You need **sub-second cold starts**, snapshots, or fork/resume.
 - Your sandboxes need **general network access**. `unrestricted` egress exists, but
   then the network boundary is yours to build.
-- You cannot run **Linux with gVisor**, or cannot keep `runsc` patched.
+- You cannot run **Linux with gVisor or a microVM runtime**, or cannot keep that
+  runtime patched.

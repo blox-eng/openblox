@@ -15,6 +15,17 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ### Added
 
+- **Kata evidence: the conformance suite against a second runtime.** A new,
+  non-gating workflow (`kata.yml`) runs `pkg/conformance` under Kata
+  Containers on hosted amd64 runners and records which properties fail;
+  the findings are in THREAT_MODEL.md under *Under Kata*. gVisor remains the
+  default and the only runtime that gates merges. arm64 is not measured:
+  hosted arm64 runners expose no KVM.
+
+## [0.9.0] - 2026-09-22
+
+### Added
+
 - **`pkg/conformance`: a public conformance suite for `sandbox.Backend`.**
   `pkg/docker/adversarial_integration_test.go` was the most valuable code in
   the repository and the least reusable — 21 attacks nailed to one
@@ -435,7 +446,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
 
-[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/blox-eng/openblox/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/blox-eng/openblox/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/blox-eng/openblox/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/blox-eng/openblox/compare/v0.6.2...v0.7.0

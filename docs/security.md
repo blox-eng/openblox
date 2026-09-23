@@ -11,8 +11,8 @@ test behind each claim, is
 will try to reach the network, read other tenants' data, escape to the host, exhaust
 resources, and persist beyond its session.
 
-**Assumed trusted:** the host kernel, the Docker daemon, the gVisor runtime, and the
-process that calls openblox.
+**Assumed trusted:** the host kernel, the Docker daemon, the isolation runtime (gVisor by
+default), and the process that calls openblox.
 
 That last one matters and is examined below — it is the weakest link in a default
 deployment.
@@ -21,9 +21,9 @@ deployment.
 
 ### A user-space kernel
 
-Sandboxes run under gVisor (`runsc`). Guest syscalls are serviced by a user-space kernel
-rather than passed to the host, so the host kernel's syscall surface is not directly
-reachable from inside a sandbox.
+By default, sandboxes run under gVisor (`runsc`). Guest syscalls are serviced by a
+user-space kernel rather than passed to the host, so the host kernel's syscall surface is
+not directly reachable from inside a sandbox.
 
 openblox **will not fall back to `runc`**. If the configured runtime is not registered,
 `Create` fails with `ErrRuntimeUnavailable`. A fallback would mean untrusted code
@@ -33,9 +33,13 @@ Runtimes are ordered, not binary. `runc` reaches the host kernel in full and is 
 for untrusted code; gVisor reaches a user-space kernel; a microVM runtime such as Kata
 reaches a separate guest kernel and is a **stronger** boundary than the default, at a
 higher cost per sandbox. openblox does not rank them — it checks only that the runtime
-is registered — so a deployment that has chosen a microVM runtime is supported, with the
-caveat that the threat model's gVisor-specific rows and every test behind it are written
-against `runsc`. See [SECURITY.md](https://github.com/blox-eng/openblox/blob/main/SECURITY.md#the-isolation-runtime).
+is registered — so a deployment that has chosen a microVM runtime is supported. Kata on
+amd64 is measured by openblox — the conformance suite, in a workflow that does not gate
+merges — with one defence-in-depth layer lost: `/dev/shm` is not `noexec,nosuid` in its
+guest, and Kata discards the options openblox could set on it. One lifecycle claim — that `Exec` on a crashed sandbox fails promptly and `Create`
+recovers it — is unmeasured under Kata. See
+[THREAT_MODEL.md](https://github.com/blox-eng/openblox/blob/main/THREAT_MODEL.md#under-kata)
+and [SECURITY.md](https://github.com/blox-eng/openblox/blob/main/SECURITY.md#the-isolation-runtime).
 
 ### No network interface at all
 

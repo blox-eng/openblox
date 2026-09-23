@@ -9,23 +9,23 @@
      approved runtimes, and the line under the install command follows.
 
      Both are attributed, because both are someone else's work. They are not
-     presented as interchangeable: gVisor is the default and the one CI
-     exercises, and SECURITY.md is explicit that on anything else you are
-     trusting that runtime's evidence rather than openblox's — so the stronger
-     option says as much rather than implying parity. runc is deliberately not
-     in this list; it is not an option, it is the absence of one. */
+     presented as interchangeable: gVisor is the default and the only runtime
+     CI gates on; Kata is measured on amd64 by a workflow that gates nothing,
+     with one layer lost (SECURITY.md) — so the stronger option says as much
+     rather than implying parity. runc is deliberately not in this list; it is
+     not an option, it is the absence of one. */
   var RUNTIMES = [
     {
       name: 'gVisor',
       href: 'https://gvisor.dev',
       tail: '',
-      hint: 'The default, and the runtime CI exercises.'
+      hint: 'The default, and the runtime CI gates on.'
     },
     {
       name: 'Kata',
       href: 'https://katacontainers.io',
-      tail: ' — a separate kernel per sandbox, stronger than the default; gVisor is what CI exercises',
-      hint: 'A separate kernel per sandbox, stronger than the default. gVisor is what CI exercises.'
+      tail: ' and KVM — a separate kernel per sandbox, stronger than the default; measured on amd64 only, not gated',
+      hint: 'A separate kernel per sandbox, stronger than the default. Needs KVM. Measured on amd64: 21 of 23 conformance properties pass. CI gates on gVisor.'
     }
   ];
   var runtime = 0;

@@ -73,9 +73,18 @@ make test-integration
 CI runs them on every PR, on hosted amd64 and arm64 runners with gVisor
 installed — including the conformance suite (`pkg/conformance`, run against
 this repo's backend by `pkg/docker/conformance_integration_test.go`). If you
-cannot run them locally,
-at least keep them compiling (`go vet -tags integration ./...`) and let CI run
-them.
+cannot run them locally, at least keep them compiling
+(`go vet -tags integration ./...`) and let CI run them.
+
+The conformance suite also runs under Kata, on a host with KVM and Kata
+registered with Docker as `kata`:
+
+```bash
+go test -tags 'integration kata' -run '^TestConformanceKata$' -count=1 ./pkg/docker/
+```
+
+`.github/workflows/kata.yml` runs it on amd64 as evidence, not as a gate; the
+results are recorded in [THREAT_MODEL.md](THREAT_MODEL.md#under-kata).
 
 A security-relevant change should come with a conformance property that fails
 without it. Phrase the attack so the test fails closed: print a marker only when
@@ -103,7 +112,7 @@ A `feat` bumps the minor version, a `fix` the patch. Breaking changes need a
 - Tests for behaviour you add or change.
 - Godoc on every exported symbol — this is a library, and the doc comment is the API.
 - CI must be green: vet, lint, race tests, vulnerability scan, and the gVisor
-  integration suites.
+  integration suites. The Kata workflow is not part of that.
 
 ## Changing security defaults
 

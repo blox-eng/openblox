@@ -31,7 +31,8 @@ container is the state.
 ## Install
 
 Linux on `amd64` or `arm64`, Docker, and gVisor registered as the `runsc`
-runtime ([how](https://docs.openblox.sh/getting-started/#prerequisites)).
+runtime — or a microVM runtime such as Kata, selected explicitly
+([how](https://docs.openblox.sh/getting-started/#prerequisites)).
 
 **The daemon.** Your application never touches the Docker socket:
 
@@ -143,12 +144,16 @@ with no options gets:
 | **Lifetime** | commands killed at their timeout; sandboxes reaped when idle and at max age |
 
 Relaxing anything is explicit and greppable at the call site. If the host cannot
-provide gVisor, `Create` fails with `ErrRuntimeUnavailable`; it never falls back
-to a weaker boundary.
+provide the runtime asked for — gVisor, unless you chose a microVM runtime such as
+Kata — `Create` fails with `ErrRuntimeUnavailable`; it never falls back to a
+weaker boundary.
 
-These are isolation *measures*, not a guarantee: the boundary is gVisor's, and
+These are isolation *measures*, not a guarantee: the boundary is the runtime's —
+gVisor's by default — and
 [THREAT_MODEL.md](THREAT_MODEL.md) lists what is defended, the test behind each
-claim, and what is not defended.
+claim, and what is not defended. Under Kata two of them differ: `/dev/shm` is
+writable *and* executable, because Kata discards its mount options, and crash
+recovery is unmeasured ([details](THREAT_MODEL.md#under-kata)).
 
 **Two levels of the same guarantee.** In the library, *your* code chooses: the
 defaults are safe, and every relaxation is explicit and greppable at the call
@@ -181,8 +186,10 @@ func TestConformance(t *testing.T) {
 `New` takes no `*testing.T` on purpose: the suite, not the implementation,
 decides what a construction failure means, and there is nothing to skip with.
 
-It has only ever run against `pkg/docker`. See the package doc for what each
-tier covers.
+It has only ever run against `pkg/docker`: under gVisor on every pull request,
+and under Kata on amd64 in a separate workflow that does not gate merges, where
+21 of 23 properties pass. See the
+package doc for what each tier covers.
 
 ## What you get
 
@@ -200,10 +207,12 @@ tier covers.
 - **You need tenants isolated from each other at the API.** Every caller of one
   `openbloxd` can reach every sandbox; tenancy is yours to enforce in front of it.
 - **You need a fleet.** One host, one daemon. No scheduling, no fairness.
-- **You need a separate kernel per workload** (hardware virtualisation), or
-  protection from side channels between co-resident sandboxes.
+- **You need protection from side channels** between co-resident sandboxes. A
+  microVM runtime such as Kata removes the shared kernel, not the shared CPU:
+  microarchitectural side channels remain.
 - **You need snapshots, fork, pause/resume, or sub-second cold starts.**
-- **You cannot run Linux with gVisor**, or cannot keep `runsc` patched.
+- **You cannot run Linux with gVisor or a microVM runtime**, or cannot keep that
+  runtime patched.
 
 Most of these are placement rather than isolation, which the rule above puts on
 your side of the line; the rest are trades made deliberately. None are gaps
@@ -214,9 +223,11 @@ be worth reading, and requests to cross it get declined on that basis. See
 ## Supported
 
 Linux on `amd64` and `arm64`, both tested natively in CI against a real gVisor
-runtime. Docker Engine with `runsc` registered. Go 1.25+ for library users. The
+runtime. Docker Engine with `runsc` registered, or a microVM runtime such as Kata
+selected explicitly; Kata is measured on amd64 in a separate workflow that does not
+gate merges. Go 1.25+ for library users. The
 [compatibility matrix](https://docs.openblox.sh/production/#compatibility) covers
-`openbloxd`, clients, images, Docker and gVisor.
+`openbloxd`, clients, images, Docker and the runtime.
 
 ## Status
 
