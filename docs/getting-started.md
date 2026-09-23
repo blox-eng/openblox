@@ -68,8 +68,9 @@ sb, err := backend.Create(ctx, "session-1",
 
 gVisor remains the only runtime every merge is tested against. Kata on amd64 is
 measured by a separate run of the conformance suite that does not gate merges: 21 of
-23 properties pass. Of the other two, `/dev/shm` is not `noexec,nosuid` in its guest,
-and crash recovery is unmeasured. arm64 and other microVM runtimes are not measured by openblox.
+23 properties pass. Of the other two, `/dev/shm` is not `noexec,nosuid` in its guest
+(Kata discards the mount options, so openblox cannot set them), and crash recovery is
+unmeasured. arm64 and other microVM runtimes are not measured by openblox.
 See the [security model](security.md#a-user-space-kernel) and
 [THREAT_MODEL.md](https://github.com/blox-eng/openblox/blob/main/THREAT_MODEL.md#under-kata).
 

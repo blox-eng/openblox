@@ -92,7 +92,7 @@ property the rest of this document rests on. It is an ordering, not a switch:
 |---|---|---|
 | `runc` (the host default) | the host kernel, in full | Unsafe for untrusted code. A shared-kernel container is not a boundary against attacker-controlled native code. |
 | `runsc` (gVisor) — **default** | the Sentry, a user-space kernel; the host kernel only past **B1** and **B2** | What openblox is built and tested against. |
-| a microVM runtime, e.g. Kata | a separate guest kernel | **Stronger** than the default, at a higher cost per sandbox. Kata on amd64 is measured, with one layer lost: `/dev/shm` is not `noexec,nosuid` in its guest. One lifecycle claim — that `Exec` on a crashed sandbox fails promptly and `Create` recovers it — is unmeasured under Kata. See [THREAT_MODEL.md](THREAT_MODEL.md#under-kata). |
+| a microVM runtime, e.g. Kata | a separate guest kernel | **Stronger** than the default, at a higher cost per sandbox. Kata on amd64 is measured, with one layer lost: `/dev/shm` is not `noexec,nosuid` in its guest, and Kata discards the options openblox could set on it. One lifecycle claim — that `Exec` on a crashed sandbox fails promptly and `Create` recovers it — is unmeasured under Kata. See [THREAT_MODEL.md](THREAT_MODEL.md#under-kata). |
 
 openblox does not rank runtimes at create time. `Create` requires only that the
 named runtime is registered with Docker and fails with `ErrRuntimeUnavailable`
@@ -112,7 +112,8 @@ the runtime's own evidence, not openblox's. The containment openblox configures
 — no network interface, dropped capabilities, read-only root, non-root user,
 resource caps — is set identically either way. What openblox leaves to Docker's
 defaults is not honoured identically: under Kata, `/dev/shm` is not `noexec` or
-`nosuid`.
+`nosuid`, and cannot be made so from openblox — Kata replaces that mount and
+discards its options.
 
 ## Security-sensitive configuration
 
