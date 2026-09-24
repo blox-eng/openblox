@@ -96,5 +96,14 @@ CLIENTS="staging prod dev"; issue_certs >/dev/null
 check "CA reused on re-run" "$(openssl x509 -in "$ETC/tls/clients-ca.crt" -noout -fingerprint)" "$before"
 check "new client issued"   "$(status test -f "$ETC/clients/dev/client.crt")" 0
 
+# --- uninstaller ---
+render_uninstall > "$tmp/un.sh"
+check "uninstaller parses" "$(status sh -n "$tmp/un.sh")" 0
+if command -v shellcheck >/dev/null; then check "uninstaller lint" "$(status shellcheck -s sh "$tmp/un.sh")" 0; fi
+check "keeps /var/lib/docker" "$(grep -c 'rm -rf /var/lib/docker' "$tmp/un.sh")" 0
+# Docker purged only when setup installed it: the script decides from the manifest at run time.
+check "docker purge is manifest-gated" "$(grep -c 'grep -qx "pkg docker-ce"' "$tmp/un.sh")" 1
+check "runsc unregistered before purge" "$(grep -c 'runsc uninstall' "$tmp/un.sh")" 1
+
 [ "$fails" -eq 0 ] || { printf '%d failed\n' "$fails"; exit 1; }
 echo "all passed"

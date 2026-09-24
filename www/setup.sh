@@ -28,6 +28,7 @@ BASE_URL=${OPENBLOX_BASE_URL:-https://openblox.sh}
 ETC=${OPENBLOX_ETC:-/etc/openbloxd}
 STATE=${OPENBLOX_STATE:-/var/lib/openblox}
 SOCKET=/run/openbloxd/openbloxd.sock
+BIN_DIR=/usr/local/bin
 ID_BIN=${ID_BIN:-id}
 SUDO_BIN=${SUDO_BIN:-sudo}
 PHASE=preflight
@@ -224,6 +225,58 @@ issue_certs() {
     info "issued client '$cn': copy $d/ to that caller (client.crt, client.key, ca.crt → brokerclient.TLSFiles)"
   done
   rm -f "$ETC/tls/client.ext"
+}
+
+render_uninstall() {
+  printf '#!/bin/sh\n# Written by openblox setup.sh. Removes what setup installed, and nothing it did not.\nset -u\nSTATE=%s\n' "$STATE"
+  cat <<'EOF'
+[ "$(id -u)" = 0 ] || exec sudo sh "$0" "$@"
+M="$STATE/installed"
+[ -f "$M" ] || { echo "nothing recorded in $M; nothing to remove"; exit 0; }
+has() { grep -qx "$1" "$M"; }
+say() { printf '[openblox-uninstall] %s\n' "$*"; }
+
+if command -v docker >/dev/null 2>&1; then
+  ids=$(docker ps -aq --filter label=sh.openblox.managed)
+  # shellcheck disable=SC2086 # one argument per container id
+  [ -z "$ids" ] || { say "removing sandboxes"; docker rm -f $ids >/dev/null; }
+fi
+if has "unit openbloxd.service"; then
+  systemctl disable --now openbloxd >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/openbloxd.service; systemctl daemon-reload
+fi
+if has "nft-table inet openblox"; then nft delete table inet openblox 2>/dev/null || true; rm -f /etc/nftables.d/openblox.nft; fi
+grep '^image ' "$M" | while read -r _ img; do docker rmi "$img" >/dev/null 2>&1 || true; done
+grep '^file ' "$M" | while read -r _ f; do rm -f "$f"; done
+grep '^dir ' "$M" | sort -r | while read -r _ d; do rm -rf "$d"; done
+has "user openbloxd" && { userdel openbloxd 2>/dev/null || true; groupdel openbloxd 2>/dev/null || true; }
+# Unregister gVisor before removing it, or Docker is left pointing at a
+# runtime binary that no longer exists.
+if has "pkg runsc" && command -v runsc >/dev/null 2>&1; then
+  runsc uninstall >/dev/null 2>&1 || true
+  systemctl restart docker 2>/dev/null || true
+fi
+pkgs=$(grep '^pkg ' "$M" | cut -d' ' -f2 | tr '\n' ' ')
+if [ -n "$pkgs" ]; then
+  say "removing packages setup installed: $pkgs"
+  # shellcheck disable=SC2086
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq $pkgs >/dev/null
+fi
+grep '^apt-source ' "$M" | while read -r _ f; do rm -f "$f"; done
+if grep -qx "pkg docker-ce" "$M"; then
+  say "Docker was removed; its data in /var/lib/docker was kept. Delete it yourself if you no longer need it."
+fi
+rm -f "$M" "$STATE/preexisting"; rmdir "$STATE" 2>/dev/null || true
+say "done"
+rm -f "$0"
+EOF
+}
+
+create_uninstall() {
+  PHASE=create_uninstall
+  render_uninstall > "$BIN_DIR/openblox-uninstall.sh"
+  chmod 0755 "$BIN_DIR/openblox-uninstall.sh"
+  info "uninstall with: openblox-uninstall.sh"
 }
 
 verify_system() {
