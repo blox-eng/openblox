@@ -163,7 +163,7 @@ check "v4 sources as one set" "$(grep -c 'ip saddr { 10.0.0.0/24, 192.168.1.0/24
 check "v6 sources as ip6"     "$(grep -c 'ip6 saddr { fd00::/64 } tcp dport 9443 accept' "$tmp/fw3")" 1
 
 # --- need_root: a failed re-fetch is a failure, and a renamed file is re-run, not re-fetched (review I4) ---
-# shellcheck disable=SC2329 # shadows curl inside need_root
+# shellcheck disable=SC2317,SC2329 # shadows curl inside need_root
 curl() { return 22; }
 check "failed re-fetch refused" "$(ID_BIN=fake_id SUDO_BIN=fake_sudo SETUP_SELF=sh status need_root)" 1
 unset -f curl

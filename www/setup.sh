@@ -145,7 +145,7 @@ validate_settings() {
     case ${LISTEN%:*} in *[!A-Za-z0-9.-]*) fatal "listen host '${LISTEN%:*}' is not an IPv4 address or host name" ;; esac
     port=${LISTEN##*:}
     case $port in *[!0-9]*) fatal "listen port '$port' is not a number" ;; esac
-    [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || fatal "listen port $port is out of range"
+    if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then fatal "listen port $port is out of range"; fi
   fi
   for a in $(printf '%s' "$ALLOW_FROM" | tr ',' ' '); do
     case $a in *[!0-9A-Fa-f.:/]*) fatal "allow-from '$a' is not an IP address or CIDR" ;; esac
