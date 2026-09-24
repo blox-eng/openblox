@@ -64,7 +64,12 @@ gVisor yourself and use [`install.sh`](getting-started.md#install).
 
 As root, or as a user with `sudo`: the script re-runs itself through `sudo`.
 Settings are environment variables, so they work with `curl … | sh`. Each is
-also a flag when you run the script from a file.
+also a flag when you run the script from a file. With `sudo sh setup.sh`, use
+the flags: `sudo` drops environment variables.
+
+Settings are kept in `/var/lib/openblox/settings`. Running the script again
+with none keeps them, and settings you give again replace them, except client
+names, which add to the list.
 
 | Variable | Flag | Default | Meaning |
 |---|---|---|---|
@@ -93,7 +98,8 @@ The phases, in order:
 7. **`issue_certs`:** runs only with a listener. It issues the server
    certificate and one client bundle per caller.
 8. **`harden`:** adds an nftables firewall and turns on automatic security
-   updates. The firewall drops inbound traffic except SSH and the listener.
+   updates. The firewall drops inbound traffic except SSH, on the ports
+   `sshd` reports, and the listener.
 9. **`create_uninstall`:** writes `/usr/local/bin/openblox-uninstall.sh`.
 10. **`create_systemd_service`**, then **`service_enable_and_start`:**
     install, enable and start the service.
@@ -135,21 +141,23 @@ The client CA and the server CA are separate. The daemon trusts every
 certificate the client CA signs, so that CA signs callers and nothing else.
 Both CA keys stay on the host.
 
-To add a caller, run the script again with the new name added to the list.
-Only the new bundle is issued. The script never rewrites your config, so it
-prints the one-line change instead: add the name to `allowed_client_cns` and
-run `systemctl restart openbloxd`. To remove a caller, delete its name there
-and restart. There is no revocation list.
+To add a caller, run the script again with just its name, for example
+`--client app-dev`. Only the new bundle is issued. The script never rewrites
+your config, so it warns that the name is not yet allowed. Add it to
+`allowed_client_cns` in `/etc/openbloxd/config.yaml`, then run
+`systemctl restart openbloxd`. To remove a caller, delete its name there and
+restart. There is no revocation list.
 
 The listener is bound to the address you give it. How your callers reach
 that address, whether over a LAN, a VPN or a tailnet, is up to you.
 
 ## Upgrading
 
-Run the script again with the new version:
+Run the script again. It keeps your settings, so there is nothing to repeat:
 
 ```sh
-curl -fsSL https://openblox.sh/setup.sh | OPENBLOX_VERSION=vX.Y.Z sh
+curl -fsSL https://openblox.sh/setup.sh | sh                          # the latest release
+curl -fsSL https://openblox.sh/setup.sh | OPENBLOX_VERSION=vX.Y.Z sh  # or a chosen one
 ```
 
 It upgrades the daemon and pulls the matching image. It never rewrites

@@ -19,10 +19,19 @@
 #   OPENBLOX_MEMORY_MB      --memory-mb      per-sandbox memory (default: 2048)
 #   OPENBLOX_MAX_SANDBOXES  --max-sandboxes  concurrent cap (default: sized from RAM)
 #
+# Settings are kept in /var/lib/openblox/settings, so running the script again
+# with none (to upgrade) keeps the listener, its callers and its firewall rule.
+# Settings given again replace the kept ones; client names add to them.
+#
 # The whole script is one function, invoked on the last line. A truncated
 # download therefore does nothing at all, rather than executing half of it.
 
-set -eu
+# -f: client names and CIDRs are split on spaces, and must never glob.
+set -euf
+
+# `su` without `-` keeps the caller's PATH, which on Debian has no /usr/sbin:
+# useradd, nft and sshd live there.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 
 REPO="blox-eng/openblox"
 BASE_URL=${OPENBLOX_BASE_URL:-https://openblox.sh}
@@ -32,11 +41,20 @@ SOCKET=/run/openbloxd/openbloxd.sock
 BIN_DIR=/usr/local/bin
 ID_BIN=${ID_BIN:-id}
 SUDO_BIN=${SUDO_BIN:-sudo}
+SSHD_BIN=${SSHD_BIN:-sshd}
 PHASE=preflight
 
 info()  { printf '[openblox] %s\n' "$*"; }
 warn()  { printf '[openblox] warning: %s\n' "$*" >&2; }
-fatal() { printf '[openblox] %s failed: %s\n' "$PHASE" "$*" >&2; exit 1; }
+fatal() { printf '[openblox] %s failed: %s\n' "$PHASE" "$*" >&2; REPORTED=1; exit 1; }
+
+# Under set -e a failing command ends the script without a word. This names
+# the phase it happened in; fatal() has already said more, so it stays quiet then.
+on_exit() {
+  rc=$?
+  [ "$rc" = 0 ] || [ -n "${REPORTED:-}" ] ||
+    printf '[openblox] %s failed (exit %s): the output above shows the command that did\n' "$PHASE" "$rc" >&2
+}
 
 # Everything this script creates is written here as it is created, and the
 # uninstaller removes exactly this list. Something that existed before setup
@@ -53,7 +71,7 @@ parse_args() {
   LISTEN=${OPENBLOX_LISTEN:-}
   CLIENTS=${OPENBLOX_CLIENTS:-}
   ALLOW_FROM=${OPENBLOX_ALLOW_FROM:-}
-  MEMORY_MB=${OPENBLOX_MEMORY_MB:-2048}
+  MEMORY_MB=${OPENBLOX_MEMORY_MB:-}
   MAX_SANDBOXES=${OPENBLOX_MAX_SANDBOXES:-}
   flag_clients=""
   while [ $# -gt 0 ]; do
@@ -68,8 +86,70 @@ parse_args() {
     esac
   done
   [ -n "$flag_clients" ] && CLIENTS=$flag_clients
+  load_settings
+  MEMORY_MB=${MEMORY_MB:-2048}
   if [ -n "$LISTEN" ] && [ -z "$CLIENTS" ]; then CLIENTS=sandbox-caller; fi
+  validate_settings
+}
+
+# The last run's settings fill in whatever this run leaves unset. The file is
+# parsed, never sourced. The computed cap is not kept: it follows the RAM.
+load_settings() {
+  [ -r "$STATE/settings" ] || return 0
+  while IFS='=' read -r k v; do
+    case $k in
+      LISTEN) LISTEN=${LISTEN:-$v} ;;
+      ALLOW_FROM) ALLOW_FROM=${ALLOW_FROM:-$v} ;;
+      MEMORY_MB) MEMORY_MB=${MEMORY_MB:-$v} ;;
+      MAX_SANDBOXES) MAX_SANDBOXES=${MAX_SANDBOXES:-$v} ;;
+      CLIENTS)
+        merged=$v
+        for c in $CLIENTS; do
+          case " $merged " in *" $c "*) ;; *) merged="${merged:+$merged }$c" ;; esac
+        done
+        CLIENTS=$merged ;;
+    esac
+  done < "$STATE/settings"
+}
+
+save_settings() {
+  mkdir -p "$STATE"
+  printf 'LISTEN=%s\nCLIENTS=%s\nALLOW_FROM=%s\nMEMORY_MB=%s\nMAX_SANDBOXES=%s\n' \
+    "$LISTEN" "$CLIENTS" "$ALLOW_FROM" "$MEMORY_MB" "$MAX_SANDBOXES" > "$STATE/settings"
+  chmod 0600 "$STATE/settings"
+}
+
+# Every value below ends up in YAML, a path, an openssl subject, an nft rule or
+# a URL, so each is held to the characters it can safely contain there.
+validate_settings() {
+  case $VERSION in ''|v[0-9]*.[0-9]*.[0-9]*) ;; *) fatal "version must look like v1.2.3, got '$VERSION'" ;; esac
+  case $VERSION in *[!0-9A-Za-z.+-]*) fatal "version must look like v1.2.3, got '$VERSION'" ;; esac
+  for c in $CLIENTS; do
+    case $c in
+      *[!A-Za-z0-9._-]*|.|..|-*) fatal "client name '$c' may use only letters, digits, '.', '_' and '-'" ;;
+    esac
+  done
   case $MEMORY_MB in ''|*[!0-9]*) fatal "memory_mb must be a whole number of MiB, got '$MEMORY_MB'" ;; esac
+  [ "$MEMORY_MB" -ge 256 ] || fatal "memory_mb must be at least 256, got $MEMORY_MB"
+  if [ -n "$MAX_SANDBOXES" ]; then
+    case $MAX_SANDBOXES in *[!0-9]*) fatal "max_sandboxes must be a whole number, got '$MAX_SANDBOXES'" ;; esac
+    # 0 would mean "unlimited" to the daemon, which is the opposite of a cap.
+    [ "$MAX_SANDBOXES" -ge 1 ] || fatal "max_sandboxes must be at least 1"
+  fi
+  if [ -n "$LISTEN" ]; then
+    case $LISTEN in
+      \[*|*:*:*) fatal "IPv6 listen addresses are not supported yet; listen on an IPv4 address or a host name" ;;
+      ?*:?*) ;;
+      *) fatal "listen must be host:port, got '$LISTEN'" ;;
+    esac
+    case ${LISTEN%:*} in *[!A-Za-z0-9.-]*) fatal "listen host '${LISTEN%:*}' is not an IPv4 address or host name" ;; esac
+    port=${LISTEN##*:}
+    case $port in *[!0-9]*) fatal "listen port '$port' is not a number" ;; esac
+    [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || fatal "listen port $port is out of range"
+  fi
+  for a in $(printf '%s' "$ALLOW_FROM" | tr ',' ' '); do
+    case $a in *[!0-9A-Fa-f.:/]*) fatal "allow-from '$a' is not an IP address or CIDR" ;; esac
+  done
 }
 
 detect_os() {
@@ -112,13 +192,19 @@ need_root() {
     "OPENBLOX_ALLOW_FROM=$ALLOW_FROM" "OPENBLOX_MEMORY_MB=$MEMORY_MB" \
     "OPENBLOX_MAX_SANDBOXES=$MAX_SANDBOXES" "OPENBLOX_BASE_URL=$BASE_URL"
   self=${SETUP_SELF:-$0}
-  if [ -f "$self" ] && [ "${self##*/}" = setup.sh ]; then
+  case ${self##*/} in sh|dash|bash|ash|ksh|zsh|-*) self="" ;; esac
+  if [ -n "$self" ] && [ -f "$self" ]; then
     "$SUDO_BIN" "$@" sh "$self"
-  else
-    # Piped from curl there is no file to re-run: fetch the same script again.
-    curl -fsSL "$BASE_URL/setup.sh" | "$SUDO_BIN" "$@" sh -s
+    exit $?
   fi
-  exit $?
+  # Piped from curl there is no file to re-run, so fetch the script again —
+  # to a file, so a failed download stops here instead of feeding sh nothing.
+  tmp=$(mktemp)
+  curl -fsSL "$BASE_URL/setup.sh" -o "$tmp" ||
+    { rm -f "$tmp"; fatal "could not fetch $BASE_URL/setup.sh to re-run it as root; download it and run: sudo sh setup.sh"; }
+  rc=0; "$SUDO_BIN" "$@" sh "$tmp" || rc=$?
+  rm -f "$tmp"
+  exit "$rc"
 }
 
 render_config() {
@@ -228,6 +314,13 @@ issue_certs() {
     info "issued client '$cn': copy $d/ to that caller (client.crt, client.key, ca.crt → brokerclient.TLSFiles)"
   done
   rm -f "$ETC/tls/client.ext"
+  # The config is never rewritten, so a caller added on a re-run is issued a
+  # bundle the daemon still refuses. Say so, rather than let it look done.
+  [ -f "$ETC/config.yaml" ] || return 0
+  for cn in $CLIENTS; do
+    grep allowed_client_cns "$ETC/config.yaml" | grep -qF "\"$cn\"" ||
+      warn "'$cn' is not in allowed_client_cns in $ETC/config.yaml, so the daemon refuses it: add it there, then run systemctl restart openbloxd"
+  done
 }
 
 render_uninstall() {
@@ -257,7 +350,7 @@ has "user openbloxd" && { userdel openbloxd 2>/dev/null || true; groupdel openbl
 # runtime binary that no longer exists.
 if has "pkg runsc" && command -v runsc >/dev/null 2>&1; then
   runsc uninstall >/dev/null 2>&1 || true
-  systemctl restart docker 2>/dev/null || true
+  systemctl reload docker 2>/dev/null || true
 fi
 pkgs=$(grep '^pkg ' "$M" | cut -d' ' -f2 | tr '\n' ' ')
 if [ -n "$pkgs" ]; then
@@ -269,7 +362,7 @@ grep '^apt-source ' "$M" | while read -r _ f; do rm -f "$f"; done
 if grep -qx "pkg docker-ce" "$M"; then
   say "Docker was removed; its data in /var/lib/docker was kept. Delete it yourself if you no longer need it."
 fi
-rm -f "$M" "$STATE/preexisting"; rmdir "$STATE" 2>/dev/null || true
+rm -f "$M" "$STATE/preexisting" "$STATE/settings"; rmdir "$STATE" 2>/dev/null || true
 say "done"
 rm -f "$0"
 EOF
@@ -345,7 +438,10 @@ install_gvisor() {
   fi
   # Registered explicitly: the package's postinst does not on every host.
   if ! docker info --format '{{range $k, $v := .Runtimes}}{{$k}} {{end}}' | tr ' ' '\n' | grep -qx runsc; then
-    runsc install >/dev/null && systemctl restart docker
+    runsc install >/dev/null || fatal "runsc install could not register gVisor in /etc/docker/daemon.json"
+    # A reload, not a restart: dockerd re-reads its runtimes on SIGHUP, and a
+    # restart would stop every container already running on this host.
+    systemctl reload docker
     info "registered runsc with Docker"
   fi
 }
@@ -364,7 +460,11 @@ install_openbloxd() {
   fi
   have=$("$BIN_DIR/openbloxd" -version 2>/dev/null || true)
   case $have in *"$VERSION"*) info "openbloxd $VERSION already installed" ;;
-    *) curl -fsSL "$BASE_URL/install.sh" | OPENBLOX_VERSION=$VERSION OPENBLOX_BIN_DIR=$BIN_DIR sh
+    *) tmp=$(mktemp)
+       curl -fsSL "$BASE_URL/install.sh" -o "$tmp" || { rm -f "$tmp"; fatal "could not fetch $BASE_URL/install.sh"; }
+       OPENBLOX_VERSION=$VERSION OPENBLOX_BIN_DIR=$BIN_DIR sh "$tmp" ||
+         { rm -f "$tmp"; fatal "install.sh did not install openbloxd $VERSION"; }
+       rm -f "$tmp"
        record file "$BIN_DIR/openbloxd" ;;
   esac
 }
@@ -384,6 +484,13 @@ pin_image() {
   info "sandbox image $IMAGE"
 }
 
+# The ports sshd really listens on, so a host whose SSH is not on 22 is not
+# locked out. If sshd cannot say, 22.
+ssh_ports() {
+  ports=$("$SSHD_BIN" -T 2>/dev/null | awk '$1 == "port" {print $2}' | sort -un | paste -sd, - | sed 's/,/, /g')
+  echo "${ports:-22}"
+}
+
 render_nft() {
   port=${LISTEN##*:}
   # Create-then-delete makes the load idempotent on every nft version: the
@@ -396,11 +503,18 @@ table inet openblox {
     ct state established,related accept
     iif lo accept
     meta l4proto { icmp, ipv6-icmp } accept
-    tcp dport 22 accept
+    tcp dport { $(ssh_ports) } accept
 EOF
   if [ -n "$LISTEN" ]; then
-    if [ -n "$ALLOW_FROM" ]; then echo "    ip saddr $ALLOW_FROM tcp dport $port accept"
-    else echo "    tcp dport $port accept"; fi
+    if [ -z "$ALLOW_FROM" ]; then echo "    tcp dport $port accept"
+    else
+      v4=""; v6=""
+      for a in $(printf '%s' "$ALLOW_FROM" | tr ',' ' '); do
+        case $a in *:*) v6="${v6:+$v6, }$a" ;; *) v4="${v4:+$v4, }$a" ;; esac
+      done
+      if [ -n "$v4" ]; then echo "    ip saddr { $v4 } tcp dport $port accept"; fi
+      if [ -n "$v6" ]; then echo "    ip6 saddr { $v6 } tcp dport $port accept"; fi
+    fi
   fi
   printf '  }\n}\n'
 }
@@ -411,10 +525,15 @@ harden() {
   pkg_present unattended-upgrades || { apt_install unattended-upgrades; record pkg unattended-upgrades; }
   printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' > /etc/apt/apt.conf.d/20auto-upgrades
   mkdir -p /etc/nftables.d
-  render_nft > /etc/nftables.d/openblox.nft
+  # Checked before it replaces the file nftables loads at boot: a bad file
+  # there would leave the host with no firewall at all after the next reboot.
+  render_nft > /etc/nftables.d/openblox.nft.new
+  nft -c -f /etc/nftables.d/openblox.nft.new ||
+    { rm -f /etc/nftables.d/openblox.nft.new; fatal "the firewall rules did not validate; the previous ones are still in place"; }
+  mv /etc/nftables.d/openblox.nft.new /etc/nftables.d/openblox.nft
   # One atomic load: the SSH accept and the drop policy arrive together, so
   # there is no instant where the drop applies without the accept.
-  nft -f /etc/nftables.d/openblox.nft || fatal "firewall rules did not load; nothing was changed"
+  nft -f /etc/nftables.d/openblox.nft || fatal "the firewall rules did not load"
   grep -q 'include "/etc/nftables.d/\*.nft"' /etc/nftables.conf 2>/dev/null || echo 'include "/etc/nftables.d/*.nft"' >> /etc/nftables.conf
   systemctl enable nftables >/dev/null 2>&1 || true
   record file /etc/nftables.d/openblox.nft; record nft-table "inet openblox"
@@ -466,6 +585,8 @@ summary() {
 main() {
   parse_args "$@"
   need_root
+  trap on_exit EXIT
+  save_settings
   verify_system
   setup_env
   install_docker
