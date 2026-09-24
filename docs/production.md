@@ -58,6 +58,9 @@ The full trust model is in
 Install it **on the host, not in a container**. Running it in a container with the
 Docker socket mounted puts back the privilege it exists to remove.
 
+Giving openblox a machine of its own? [A dedicated host](self-hosting.md) does
+every step below, and the firewall, with one script.
+
 **1. Install a verified release.** Pick a version rather than `latest`, and verify it
 before installing (details in
 [RELEASING.md](https://github.com/blox-eng/openblox/blob/main/RELEASING.md#verifying-a-release)).
