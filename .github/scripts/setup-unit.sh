@@ -8,6 +8,8 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 . "$here/www/setup.sh"
 STATE="$tmp/state0"   # never read a real host's saved settings
 SSHD_BIN=/nonexistent # nor its sshd
+# What main does as root: read the settings, then complete them.
+configure() { parse_args "$@"; resolve_settings; }
 
 fails=0
 check() { # name, got, want
@@ -36,11 +38,11 @@ check "2 GiB never 0"   "$(compute_max_sandboxes 2000 2048)" 1
 
 # --- parse_args: flags win over env, --client repeats ---
 OPENBLOX_CLIENTS="from-env"; OPENBLOX_MEMORY_MB=""
-parse_args --listen 10.0.0.5:9443 --client a --client b --memory-mb 1024
+configure --listen 10.0.0.5:9443 --client a --client b --memory-mb 1024
 check "listen flag"   "$LISTEN" 10.0.0.5:9443
 check "clients flag"  "$CLIENTS" "a b"
 check "memory flag"   "$MEMORY_MB" 1024
-OPENBLOX_CLIENTS=""; OPENBLOX_LISTEN="1.2.3.4:9443"; parse_args
+OPENBLOX_CLIENTS=""; OPENBLOX_LISTEN="1.2.3.4:9443"; configure
 check "listen default client" "$CLIENTS" sandbox-caller
 check "unknown flag refused" "$(status parse_args --nope)" 1
 
@@ -124,15 +126,15 @@ check "preexisting docker never recorded" "$(status recorded pkg docker-ce)" 1
 # --- settings persist, so a re-run without them keeps the listener (review C1) ---
 STATE="$tmp/st-settings"; mkdir -p "$STATE"
 OPENBLOX_LISTEN=""; OPENBLOX_CLIENTS=""; OPENBLOX_ALLOW_FROM=""; OPENBLOX_MEMORY_MB=""; OPENBLOX_MAX_SANDBOXES=""
-parse_args --listen 10.0.0.5:9443 --client staging --client prod --allow-from 10.0.0.0/24 --memory-mb 1024
+configure --listen 10.0.0.5:9443 --client staging --client prod --allow-from 10.0.0.0/24 --memory-mb 1024
 save_settings
-parse_args
+configure
 check "listen kept on a bare re-run"     "$LISTEN" 10.0.0.5:9443
 check "allow-from kept on a bare re-run" "$ALLOW_FROM" 10.0.0.0/24
 check "clients kept on a bare re-run"    "$CLIENTS" "staging prod"
 check "memory kept on a bare re-run"     "$MEMORY_MB" 1024
 check "computed cap not frozen"          "$MAX_SANDBOXES" ""
-parse_args --client dev
+configure --client dev
 check "a new client adds to the saved ones" "$CLIENTS" "staging prod dev"
 check "settings file is root-only" "$(stat -c %a "$STATE/settings")" 600
 
@@ -145,19 +147,19 @@ check "detected ports in the ruleset" "$(SSHD_BIN=fake_sshd render_nft | grep -c
 
 # --- settings are validated before they reach YAML, paths, openssl or nft (review I5) ---
 STATE="$tmp/st-validate"
-check "client with a slash refused"   "$(status parse_args --client a/b)" 1
-check "client with .. refused"        "$(status parse_args --client ..)" 1
-check "client with a quote refused"   "$(status parse_args --client 'a"b')" 1
-check "ordinary client accepted"      "$(status parse_args --client app-staging.v2_x)" 0
-check "max-sandboxes 0 refused"       "$(status parse_args --max-sandboxes 0)" 1
-check "max-sandboxes abc refused"     "$(status parse_args --max-sandboxes abc)" 1
-check "memory-mb 0 refused"           "$(status parse_args --memory-mb 0)" 1
-check "listen without port refused"   "$(status parse_args --listen 10.0.0.5)" 1
-check "listen port range"             "$(status parse_args --listen 10.0.0.5:99999)" 1
-check "listen ipv6 literal refused"   "$(status parse_args --listen '[::1]:9443')" 1
-check "listen by name accepted"       "$(status parse_args --listen box.lan:9443)" 0
-check "allow-from junk refused"       "$(status parse_args --listen box.lan:9443 --allow-from '1.2.3.4;drop')" 1
-parse_args --listen box.lan:9443 --allow-from '10.0.0.0/24,fd00::/64 192.168.1.0/24'
+check "client with a slash refused"   "$(status configure --client a/b)" 1
+check "client with .. refused"        "$(status configure --client ..)" 1
+check "client with a quote refused"   "$(status configure --client 'a"b')" 1
+check "ordinary client accepted"      "$(status configure --client app-staging.v2_x)" 0
+check "max-sandboxes 0 refused"       "$(status configure --max-sandboxes 0)" 1
+check "max-sandboxes abc refused"     "$(status configure --max-sandboxes abc)" 1
+check "memory-mb 0 refused"           "$(status configure --memory-mb 0)" 1
+check "listen without port refused"   "$(status configure --listen 10.0.0.5)" 1
+check "listen port range"             "$(status configure --listen 10.0.0.5:99999)" 1
+check "listen ipv6 literal refused"   "$(status configure --listen '[::1]:9443')" 1
+check "listen by name accepted"       "$(status configure --listen box.lan:9443)" 0
+check "allow-from junk refused"       "$(status configure --listen box.lan:9443 --allow-from '1.2.3.4;drop')" 1
+configure --listen box.lan:9443 --allow-from '10.0.0.0/24,fd00::/64 192.168.1.0/24'
 render_nft > "$tmp/fw3"
 check "v4 sources as one set" "$(grep -c 'ip saddr { 10.0.0.0/24, 192.168.1.0/24 } tcp dport 9443 accept' "$tmp/fw3")" 1
 check "v6 sources as ip6"     "$(grep -c 'ip6 saddr { fd00::/64 } tcp dport 9443 accept' "$tmp/fw3")" 1
@@ -184,6 +186,18 @@ check "allowed client not warned" "$(issue_certs 2>&1 >/dev/null | grep -c "'sta
 
 # --- docker is reloaded, never restarted: a restart stops other containers (review I1) ---
 check "setup never restarts docker" "$(grep -c 'restart docker' "$here/www/setup.sh")" 0
+
+# --- sudo gets only what was given, never defaults filled in by the unprivileged run (CodeRabbit) ---
+# Defaults applied before sudo would reach root as explicit values and
+# overwrite the saved settings, which only root can read.
+OPENBLOX_MEMORY_MB=""; OPENBLOX_CLIENTS=""; OPENBLOX_LISTEN=""
+parse_args --listen 10.0.0.5:9443
+got=$(ID_BIN=fake_id SUDO_BIN=fake_sudo SETUP_SELF="$here/www/setup.sh" need_root 2>/dev/null)
+check "no default memory crosses sudo" "$(printf '%s' "$got" | grep -c 'OPENBLOX_MEMORY_MB= ')" 1
+check "no default client crosses sudo" "$(printf '%s' "$got" | grep -c 'OPENBLOX_CLIENTS= ')" 1
+
+# --- a wildcard listen address has no certificate that callers can verify (CodeRabbit) ---
+check "listen 0.0.0.0 refused" "$(status configure --listen 0.0.0.0:9443)" 1
 
 [ "$fails" -eq 0 ] || { printf '%d failed\n' "$fails"; exit 1; }
 echo "all passed"

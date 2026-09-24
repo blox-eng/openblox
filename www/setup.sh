@@ -85,7 +85,12 @@ parse_args() {
       *) fatal "unknown option $1 (see the header of this script)" ;;
     esac
   done
-  [ -n "$flag_clients" ] && CLIENTS=$flag_clients
+  if [ -n "$flag_clients" ]; then CLIENTS=$flag_clients; fi
+}
+
+# Runs as root, after need_root: only root can read the saved settings, and
+# defaults filled in before sudo would reach root looking like choices.
+resolve_settings() {
   load_settings
   MEMORY_MB=${MEMORY_MB:-2048}
   if [ -n "$LISTEN" ] && [ -z "$CLIENTS" ]; then CLIENTS=sandbox-caller; fi
@@ -141,6 +146,9 @@ validate_settings() {
       \[*|*:*:*) fatal "IPv6 listen addresses are not supported yet; listen on an IPv4 address or a host name" ;;
       ?*:?*) ;;
       *) fatal "listen must be host:port, got '$LISTEN'" ;;
+    esac
+    case ${LISTEN%:*} in
+      0.0.0.0) fatal "listen on this host's private address, not 0.0.0.0: callers verify the daemon's certificate against the address they dial" ;;
     esac
     case ${LISTEN%:*} in *[!A-Za-z0-9.-]*) fatal "listen host '${LISTEN%:*}' is not an IPv4 address or host name" ;; esac
     port=${LISTEN##*:}
@@ -585,6 +593,7 @@ summary() {
 main() {
   parse_args "$@"
   need_root
+  resolve_settings
   trap on_exit EXIT
   save_settings
   verify_system
