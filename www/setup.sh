@@ -24,6 +24,7 @@
 
 set -eu
 
+REPO="blox-eng/openblox"
 BASE_URL=${OPENBLOX_BASE_URL:-https://openblox.sh}
 ETC=${OPENBLOX_ETC:-/etc/openbloxd}
 STATE=${OPENBLOX_STATE:-/var/lib/openblox}
@@ -42,6 +43,7 @@ fatal() { printf '[openblox] %s failed: %s\n' "$PHASE" "$*" >&2; exit 1; }
 # first ran is never on it, so uninstalling cannot take away what you had.
 record() {
   mkdir -p "$STATE"
+  if [ "$1" = pkg ] && grep -qxF "$2" "$STATE/preexisting" 2>/dev/null; then return 0; fi
   grep -qxF "$1 $2" "$STATE/installed" 2>/dev/null || printf '%s %s\n' "$1" "$2" >> "$STATE/installed"
 }
 recorded() { grep -qxF "$1 $2" "$STATE/installed" 2>/dev/null; }
@@ -171,6 +173,7 @@ write_config() {
     else rm -f "$ETC/config.yaml.new"; fi
     return 0
   fi
+  record dir "$ETC"
   render_config "$1" > "$ETC/config.yaml"
   chmod 0640 "$ETC/config.yaml"
   chgrp openbloxd "$ETC/config.yaml" 2>/dev/null || true
@@ -202,7 +205,7 @@ sign() { # ca, key_out, crt_out, cn, extfile
 issue_certs() {
   PHASE=issue_certs
   [ -n "$LISTEN" ] || return 0
-  mkdir -p "$ETC/tls" "$ETC/clients"; chmod 0750 "$ETC/tls"
+  mkdir -p "$ETC/tls" "$ETC/clients"; chmod 0750 "$ETC/tls"; chgrp openbloxd "$ETC/tls" 2>/dev/null || true
   record dir "$ETC/tls"; record dir "$ETC/clients"
   new_ca server-ca; new_ca clients-ca
   host=${LISTEN%:*}
@@ -297,10 +300,186 @@ verify_system() {
   info "$OS $ARCH, ${total_mb} MiB RAM: max_sandboxes=$MAX_SANDBOXES at ${MEMORY_MB} MiB each (≈1.4x resident, 1 GiB kept for the host)"
 }
 
+setup_env() {
+  PHASE=setup_env
+  mkdir -p "$STATE"
+  [ -f "$STATE/preexisting" ] || for p in docker-ce runsc nftables unattended-upgrades; do
+    pkg_present "$p" && echo "$p"; done > "$STATE/preexisting"
+  export DEBIAN_FRONTEND=noninteractive
+}
+
+retry() { n=1; until "$@"; do [ $n -ge 3 ] && return 1; sleep $((n * 5)); n=$((n + 1)); done; }
+apt_install() { DEBIAN_FRONTEND=noninteractive retry apt-get install -y -qq "$@" >/dev/null; }
+pkg_present() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'; }
+
+install_docker() {
+  PHASE=install_docker
+  if command -v docker >/dev/null 2>&1; then info "docker present ($(docker --version)); leaving it as it is"; return 0; fi
+  distro=${OS%%[0-9]*}   # debian | ubuntu
+  install -m 0755 -d /etc/apt/keyrings
+  retry curl -fsSL "https://download.docker.com/linux/$distro/gpg" -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  # shellcheck source=/dev/null
+  codename=$(. /etc/os-release; echo "$VERSION_CODENAME")
+  echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$distro $codename stable" > /etc/apt/sources.list.d/docker.list
+  record file /etc/apt/keyrings/docker.asc; record apt-source /etc/apt/sources.list.d/docker.list
+  retry apt-get update -qq
+  apt_install docker-ce docker-ce-cli containerd.io
+  for p in docker-ce docker-ce-cli containerd.io; do record pkg "$p"; done
+  systemctl enable --now docker >/dev/null
+  info "installed Docker Engine"
+}
+
+install_gvisor() {
+  PHASE=install_gvisor
+  if ! pkg_present runsc && ! command -v runsc >/dev/null 2>&1; then
+    # Kept armored, like Docker's: Debian 13's apt verifies with sqv and ships no gpg to dearmor with.
+    install -m 0755 -d /etc/apt/keyrings
+    retry curl -fsSL https://gvisor.dev/archive.key -o /etc/apt/keyrings/gvisor.asc
+    chmod a+r /etc/apt/keyrings/gvisor.asc
+    echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/gvisor.asc] https://storage.googleapis.com/gvisor/releases release main" > /etc/apt/sources.list.d/gvisor.list
+    record file /etc/apt/keyrings/gvisor.asc; record apt-source /etc/apt/sources.list.d/gvisor.list
+    retry apt-get update -qq
+    apt_install runsc; record pkg runsc
+    info "installed gVisor $(runsc --version | head -n1)"
+  fi
+  # Registered explicitly: the package's postinst does not on every host.
+  if ! docker info --format '{{range $k, $v := .Runtimes}}{{$k}} {{end}}' | tr ' ' '\n' | grep -qx runsc; then
+    runsc install >/dev/null && systemctl restart docker
+    info "registered runsc with Docker"
+  fi
+}
+
+resolve_version() {
+  [ -n "$VERSION" ] && return 0
+  VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+  [ -n "$VERSION" ] || fatal "could not resolve the latest release; set OPENBLOX_VERSION=vX.Y.Z"
+}
+
+install_openbloxd() {
+  PHASE=install_openbloxd
+  resolve_version
+  if ! id openbloxd >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin openbloxd; record user openbloxd
+  fi
+  have=$("$BIN_DIR/openbloxd" -version 2>/dev/null || true)
+  case $have in *"$VERSION"*) info "openbloxd $VERSION already installed" ;;
+    *) curl -fsSL "$BASE_URL/install.sh" | OPENBLOX_VERSION=$VERSION OPENBLOX_BIN_DIR=$BIN_DIR sh
+       record file "$BIN_DIR/openbloxd" ;;
+  esac
+}
+
+pin_image() {
+  PHASE=pin_image
+  tag="ghcr.io/blox-eng/openblox-sandbox:${VERSION#v}"
+  retry docker pull -q "$tag" >/dev/null || fatal "could not pull $tag"
+  digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$tag" | sed 's/.*@//')
+  IMAGE="$tag@$digest"
+  if command -v gh >/dev/null 2>&1; then
+    gh attestation verify "oci://$IMAGE" --repo "$REPO" >/dev/null 2>&1 ||
+      fatal "the build attestation for $IMAGE did not verify against $REPO; not using it"
+    info "image provenance ok"
+  fi
+  record image "$IMAGE"
+  info "sandbox image $IMAGE"
+}
+
+render_nft() {
+  port=${LISTEN##*:}
+  # Create-then-delete makes the load idempotent on every nft version: the
+  # table always exists to delete, and the definition below replaces it.
+  printf 'add table inet openblox\ndelete table inet openblox\n'
+  cat <<EOF
+table inet openblox {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state established,related accept
+    iif lo accept
+    meta l4proto { icmp, ipv6-icmp } accept
+    tcp dport 22 accept
+EOF
+  if [ -n "$LISTEN" ]; then
+    if [ -n "$ALLOW_FROM" ]; then echo "    ip saddr $ALLOW_FROM tcp dport $port accept"
+    else echo "    tcp dport $port accept"; fi
+  fi
+  printf '  }\n}\n'
+}
+
+harden() {
+  PHASE=harden
+  pkg_present nftables || { apt_install nftables; record pkg nftables; }
+  pkg_present unattended-upgrades || { apt_install unattended-upgrades; record pkg unattended-upgrades; }
+  printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' > /etc/apt/apt.conf.d/20auto-upgrades
+  mkdir -p /etc/nftables.d
+  render_nft > /etc/nftables.d/openblox.nft
+  # One atomic load: the SSH accept and the drop policy arrive together, so
+  # there is no instant where the drop applies without the accept.
+  nft -f /etc/nftables.d/openblox.nft || fatal "firewall rules did not load; nothing was changed"
+  grep -q 'include "/etc/nftables.d/\*.nft"' /etc/nftables.conf 2>/dev/null || echo 'include "/etc/nftables.d/*.nft"' >> /etc/nftables.conf
+  systemctl enable nftables >/dev/null 2>&1 || true
+  record file /etc/nftables.d/openblox.nft; record nft-table "inet openblox"
+  info "firewall: inbound SSH${LISTEN:+ and ${LISTEN##*:}${ALLOW_FROM:+ from $ALLOW_FROM}} only; automatic security updates on"
+}
+
+create_systemd_service() {
+  PHASE=create_systemd_service
+  retry curl -fsSL "https://raw.githubusercontent.com/$REPO/$VERSION/deploy/openbloxd.service" -o /etc/systemd/system/openbloxd.service
+  systemctl daemon-reload
+  record unit openbloxd.service
+}
+
+service_enable_and_start() {
+  PHASE=service_enable_and_start
+  systemctl enable openbloxd >/dev/null 2>&1
+  systemctl restart openbloxd
+  i=0; until [ -S "$SOCKET" ]; do i=$((i + 1)); [ $i -gt 20 ] && fatal "openbloxd did not start; see: journalctl -u openbloxd"; sleep 0.5; done
+}
+
+api() { curl -fsS --unix-socket "$SOCKET" -H 'Content-Type: application/json' "$@"; }
+
+exec_in() { # name, argv-json → stdout (decoded) ; sets EXIT
+  out=$(api -X POST "http://openbloxd/sandboxes/$1/exec" -d "{\"argv\":$2,\"timeout\":\"20s\"}") ||
+    fatal "exec in the smoke-test sandbox failed; see: journalctl -u openbloxd"
+  EXIT=$(printf '%s' "$out" | sed -n 's/.*"exit_code":\([0-9]*\).*/\1/p')
+  printf '%s' "$out" | sed -n 's/.*"stdout":"\([^"]*\)".*/\1/p' | base64 -d 2>/dev/null
+}
+
+smoke_test() {
+  PHASE=smoke_test
+  n="openblox-setup-smoke-$$"
+  api -X POST http://openbloxd/sandboxes -d "{\"name\":\"$n\",\"profile\":\"code-exec\"}" >/dev/null ||
+    fatal "could not create a sandbox; see: journalctl -u openbloxd"
+  kernel=$(exec_in "$n" '["uname","-r"]')
+  case $kernel in *gvisor*) ;; *) api -X DELETE "http://openbloxd/sandboxes/$n" >/dev/null; fatal "sandbox kernel is '$kernel', not gVisor" ;; esac
+  exec_in "$n" '["python3","-c","import socket; socket.create_connection((\"1.1.1.1\",53),3)"]' >/dev/null
+  [ "${EXIT:-0}" != 0 ] || { api -X DELETE "http://openbloxd/sandboxes/$n" >/dev/null; fatal "the sandbox reached the network; egress must be none"; }
+  api -X DELETE "http://openbloxd/sandboxes/$n" >/dev/null
+  info "smoke test ok: a sandbox ran under gVisor with no network, and was removed"
+}
+
+summary() {
+  info "done. openbloxd $VERSION, image $IMAGE, max_sandboxes=$MAX_SANDBOXES"
+  [ -z "$LISTEN" ] || info "listening on $LISTEN (mTLS). Client bundles: $ETC/clients/<name>/"
+  info "config: $ETC/config.yaml · logs: journalctl -u openbloxd · uninstall: openblox-uninstall.sh"
+}
+
 main() {
   parse_args "$@"
   need_root
   verify_system
+  setup_env
+  install_docker
+  install_gvisor
+  install_openbloxd
+  pin_image
+  write_config "$IMAGE"
+  issue_certs
+  harden
+  create_uninstall
+  create_systemd_service
+  service_enable_and_start
+  smoke_test
+  summary
 }
 
 [ "${OPENBLOX_SETUP_LIB:-}" = 1 ] || main "$@"

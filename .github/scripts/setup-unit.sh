@@ -105,5 +105,19 @@ check "keeps /var/lib/docker" "$(grep -c 'rm -rf /var/lib/docker' "$tmp/un.sh")"
 check "docker purge is manifest-gated" "$(grep -c 'grep -qx "pkg docker-ce"' "$tmp/un.sh")" 1
 check "runsc unregistered before purge" "$(grep -c 'runsc uninstall' "$tmp/un.sh")" 1
 
+# --- firewall ---
+LISTEN="10.0.0.5:9443"; ALLOW_FROM="10.0.0.0/24"
+render_nft > "$tmp/fw"
+check "own table" "$(grep -c '^table inet openblox {' "$tmp/fw")" 1
+check "ssh allowed" "$(grep -c 'tcp dport 22 accept' "$tmp/fw")" 1
+check "listener limited to source" "$(grep -c 'ip saddr 10.0.0.0/24 tcp dport 9443 accept' "$tmp/fw")" 1
+check "delete before define (re-run safe)" "$(head -n2 "$tmp/fw" | grep -c 'delete table inet openblox')" 1
+LISTEN=""; render_nft > "$tmp/fw2"
+check "no listener port without --listen" "$(grep -c 'dport 9443' "$tmp/fw2")" 0
+
+# --- pre-existing packages are never recorded, so never removed ---
+printf 'docker-ce\n' > "$STATE/preexisting"; record pkg docker-ce
+check "preexisting docker never recorded" "$(status recorded pkg docker-ce)" 1
+
 [ "$fails" -eq 0 ] || { printf '%d failed\n' "$fails"; exit 1; }
 echo "all passed"
