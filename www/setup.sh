@@ -25,7 +25,9 @@
 set -eu
 
 BASE_URL=${OPENBLOX_BASE_URL:-https://openblox.sh}
+ETC=${OPENBLOX_ETC:-/etc/openbloxd}
 STATE=${OPENBLOX_STATE:-/var/lib/openblox}
+SOCKET=/run/openbloxd/openbloxd.sock
 ID_BIN=${ID_BIN:-id}
 SUDO_BIN=${SUDO_BIN:-sudo}
 PHASE=preflight
@@ -114,6 +116,65 @@ need_root() {
     curl -fsSL "$BASE_URL/setup.sh" | "$SUDO_BIN" "$@" sh -s
   fi
   exit $?
+}
+
+render_config() {
+  cat <<EOF
+# Written by openblox setup.sh. Edit freely: setup never overwrites this file.
+socket: $SOCKET
+socket_group: openbloxd
+reap_interval: 1m
+EOF
+  if [ -n "$LISTEN" ]; then
+    # shellcheck disable=SC2086 # split the space-separated list
+    cns=$(printf '%s\n' $CLIENTS | sed 's/.*/"&"/' | paste -sd, - | sed 's/,/, /g')
+    cat <<EOF
+listen:
+  address: "$LISTEN"
+  tls:
+    cert_file: $ETC/tls/server.crt
+    key_file: $ETC/tls/server.key
+    # Signs callers and nothing else. Revoke a caller by removing its name
+    # below and restarting: there is no CRL.
+    client_ca_file: $ETC/tls/clients-ca.crt
+    allowed_client_cns: [$cns]
+EOF
+  fi
+  cat <<EOF
+profiles:
+  code-exec:
+    image: $1
+    runtime: runsc
+    egress: none
+    user: "1000:1000"
+    cpus: 2
+    memory_mb: $MEMORY_MB
+    disk_mb: $((MEMORY_MB / 2))
+    max_processes: 256
+    max_sandboxes: $MAX_SANDBOXES
+    idle_timeout: 30m
+    max_age: 4h
+    default_timeout: 60s
+    max_timeout: 10m
+EOF
+}
+
+write_config() {
+  PHASE=write_config
+  mkdir -p "$ETC"
+  if [ -f "$ETC/config.yaml" ]; then
+    render_config "$1" > "$ETC/config.yaml.new"
+    if ! cmp -s "$ETC/config.yaml" "$ETC/config.yaml.new"; then
+      warn "$ETC/config.yaml exists and was left as it is. What setup would write now is in config.yaml.new:"
+      diff -u "$ETC/config.yaml" "$ETC/config.yaml.new" >&2 || true
+    else rm -f "$ETC/config.yaml.new"; fi
+    return 0
+  fi
+  render_config "$1" > "$ETC/config.yaml"
+  chmod 0640 "$ETC/config.yaml"
+  chgrp openbloxd "$ETC/config.yaml" 2>/dev/null || true
+  record file "$ETC/config.yaml"
+  info "wrote $ETC/config.yaml"
 }
 
 verify_system() {

@@ -64,5 +64,22 @@ check "record dedupes" "$(grep -c 'file /etc/openbloxd/config.yaml' "$STATE/inst
 check "recorded yes" "$(status recorded pkg runsc)" 0
 check "recorded no"  "$(status recorded pkg docker-ce)" 1
 
+# --- config ---
+ETC="$tmp/etc"; LISTEN=""; CLIENTS=""; MEMORY_MB=2048; MAX_SANDBOXES=5
+img="ghcr.io/blox-eng/openblox-sandbox:0.9.0@sha256:abc"
+render_config "$img" > "$tmp/c1"
+check "image pinned"  "$(grep -c "image: $img" "$tmp/c1")" 1
+check "no listen block without --listen" "$(grep -c '^listen:' "$tmp/c1")" 0
+check "cap written"   "$(grep -c 'max_sandboxes: 5' "$tmp/c1")" 1
+check "egress none"   "$(grep -c 'egress: none' "$tmp/c1")" 1
+LISTEN="10.0.0.5:9443"; CLIENTS="mcpblox-staging mcpblox-prod"
+render_config "$img" > "$tmp/c2"
+check "listen address" "$(grep -c 'address: "10.0.0.5:9443"' "$tmp/c2")" 1
+check "cns allowlisted" "$(grep -c 'allowed_client_cns: \["mcpblox-staging", "mcpblox-prod"\]' "$tmp/c2")" 1
+write_config "$img" >/dev/null 2>&1
+echo "# operator edit" >> "$ETC/config.yaml"
+write_config "$img" >/dev/null 2>&1
+check "existing config untouched" "$(tail -n1 "$ETC/config.yaml")" "# operator edit"
+
 [ "$fails" -eq 0 ] || { printf '%d failed\n' "$fails"; exit 1; }
 echo "all passed"
