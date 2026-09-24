@@ -81,5 +81,20 @@ echo "# operator edit" >> "$ETC/config.yaml"
 write_config "$img" >/dev/null 2>&1
 check "existing config untouched" "$(tail -n1 "$ETC/config.yaml")" "# operator edit"
 
+# --- certificates ---
+ETC="$tmp/pki"; LISTEN="127.0.0.1:9443"; CLIENTS="staging prod"
+issue_certs >/dev/null
+check "server cert chains to server CA" "$(status openssl verify -CAfile "$ETC/tls/server-ca.crt" "$ETC/tls/server.crt")" 0
+check "client chains to CLIENT CA"      "$(status openssl verify -CAfile "$ETC/tls/clients-ca.crt" "$ETC/clients/staging/client.crt")" 0
+check "client does NOT chain to server CA" "$(openssl verify -CAfile "$ETC/tls/server-ca.crt" "$ETC/clients/staging/client.crt" >/dev/null 2>&1 && echo accepted || echo refused)" refused
+check "client CN" "$(openssl x509 -in "$ETC/clients/prod/client.crt" -noout -subject | sed 's/.*CN *= *//')" prod
+check "server SAN has listen IP" "$(openssl x509 -in "$ETC/tls/server.crt" -noout -ext subjectAltName | grep -c 'IP Address:127.0.0.1')" 1
+check "bundle carries server CA" "$(cmp -s "$ETC/clients/prod/ca.crt" "$ETC/tls/server-ca.crt" && echo same)" same
+check "CA key private" "$(stat -c %a "$ETC/tls/clients-ca.key")" 600
+before=$(openssl x509 -in "$ETC/tls/clients-ca.crt" -noout -fingerprint)
+CLIENTS="staging prod dev"; issue_certs >/dev/null
+check "CA reused on re-run" "$(openssl x509 -in "$ETC/tls/clients-ca.crt" -noout -fingerprint)" "$before"
+check "new client issued"   "$(status test -f "$ETC/clients/dev/client.crt")" 0
+
 [ "$fails" -eq 0 ] || { printf '%d failed\n' "$fails"; exit 1; }
 echo "all passed"

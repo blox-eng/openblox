@@ -177,6 +177,55 @@ write_config() {
   info "wrote $ETC/config.yaml"
 }
 
+# Two CAs. The client CA signs callers and nothing else; the daemon treats it
+# as its whole access list, so a server certificate from it would be a
+# credential. The server CA signs only the daemon's own certificate.
+new_ca() { # name
+  [ -f "$ETC/tls/$1.crt" ] && return 0
+  openssl ecparam -name prime256v1 -genkey -noout -out "$ETC/tls/$1.key" 2>/dev/null
+  chmod 0600 "$ETC/tls/$1.key"
+  openssl req -x509 -new -key "$ETC/tls/$1.key" -sha256 -days 3650 \
+    -subj "/CN=openblox $1 $(hostname)" -out "$ETC/tls/$1.crt"
+  record file "$ETC/tls/$1.key"; record file "$ETC/tls/$1.crt"
+}
+
+sign() { # ca, key_out, crt_out, cn, extfile
+  openssl ecparam -name prime256v1 -genkey -noout -out "$2" 2>/dev/null
+  chmod 0600 "$2"
+  openssl req -new -key "$2" -subj "/CN=$4" -out "$2.csr"
+  openssl x509 -req -in "$2.csr" -CA "$ETC/tls/$1.crt" -CAkey "$ETC/tls/$1.key" \
+    -CAcreateserial -days 825 -sha256 -extfile "$5" -out "$3" 2>/dev/null
+  rm -f "$2.csr"
+}
+
+issue_certs() {
+  PHASE=issue_certs
+  [ -n "$LISTEN" ] || return 0
+  mkdir -p "$ETC/tls" "$ETC/clients"; chmod 0750 "$ETC/tls"
+  record dir "$ETC/tls"; record dir "$ETC/clients"
+  new_ca server-ca; new_ca clients-ca
+  host=${LISTEN%:*}
+  if [ ! -f "$ETC/tls/server.crt" ]; then
+    case $host in *[!0-9.]*) san="DNS:$host" ;; *) san="IP:$host" ;; esac
+    printf 'subjectAltName=%s,DNS:%s\nextendedKeyUsage=serverAuth\n' "$san" "$(hostname)" > "$ETC/tls/server.ext"
+    sign server-ca "$ETC/tls/server.key" "$ETC/tls/server.crt" "$(hostname)" "$ETC/tls/server.ext"
+    rm -f "$ETC/tls/server.ext"
+    chgrp openbloxd "$ETC/tls/server.key" 2>/dev/null && chmod 0640 "$ETC/tls/server.key"
+    record file "$ETC/tls/server.key"; record file "$ETC/tls/server.crt"
+  fi
+  printf 'extendedKeyUsage=clientAuth\n' > "$ETC/tls/client.ext"
+  for cn in $CLIENTS; do
+    d="$ETC/clients/$cn"
+    [ -f "$d/client.crt" ] && continue
+    mkdir -p "$d"; chmod 0700 "$d"
+    sign clients-ca "$d/client.key" "$d/client.crt" "$cn" "$ETC/tls/client.ext"
+    cp "$ETC/tls/server-ca.crt" "$d/ca.crt"
+    record dir "$d"
+    info "issued client '$cn': copy $d/ to that caller (client.crt, client.key, ca.crt → brokerclient.TLSFiles)"
+  done
+  rm -f "$ETC/tls/client.ext"
+}
+
 verify_system() {
   PHASE=verify_system
   [ "$(uname -s)" = Linux ] || fatal "openblox needs Linux; gVisor is Linux-only"
