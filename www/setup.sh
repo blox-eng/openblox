@@ -25,6 +25,7 @@
 set -eu
 
 BASE_URL=${OPENBLOX_BASE_URL:-https://openblox.sh}
+STATE=${OPENBLOX_STATE:-/var/lib/openblox}
 ID_BIN=${ID_BIN:-id}
 SUDO_BIN=${SUDO_BIN:-sudo}
 PHASE=preflight
@@ -32,6 +33,15 @@ PHASE=preflight
 info()  { printf '[openblox] %s\n' "$*"; }
 warn()  { printf '[openblox] warning: %s\n' "$*" >&2; }
 fatal() { printf '[openblox] %s failed: %s\n' "$PHASE" "$*" >&2; exit 1; }
+
+# Everything this script creates is written here as it is created, and the
+# uninstaller removes exactly this list. Something that existed before setup
+# first ran is never on it, so uninstalling cannot take away what you had.
+record() {
+  mkdir -p "$STATE"
+  grep -qxF "$1 $2" "$STATE/installed" 2>/dev/null || printf '%s %s\n' "$1" "$2" >> "$STATE/installed"
+}
+recorded() { grep -qxF "$1 $2" "$STATE/installed" 2>/dev/null; }
 
 parse_args() {
   VERSION=${OPENBLOX_VERSION:-}

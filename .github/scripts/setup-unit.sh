@@ -55,5 +55,14 @@ check "clients survive sudo"  "$(printf '%s' "$got" | grep -c 'OPENBLOX_CLIENTS=
 check "no sudo refused" "$(ID_BIN=fake_id SUDO_BIN=/nonexistent status need_root)" 1
 ID_BIN=id
 
+# --- manifest ---
+STATE="$tmp/state"
+record file /etc/openbloxd/config.yaml
+record file /etc/openbloxd/config.yaml
+record pkg runsc
+check "record dedupes" "$(grep -c 'file /etc/openbloxd/config.yaml' "$STATE/installed")" 1
+check "recorded yes" "$(status recorded pkg runsc)" 0
+check "recorded no"  "$(status recorded pkg docker-ce)" 1
+
 [ "$fails" -eq 0 ] || { printf '%d failed\n' "$fails"; exit 1; }
 echo "all passed"
