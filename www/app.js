@@ -35,7 +35,7 @@
       cmd: 'curl -fsSL https://openblox.sh/install.sh | sh',
       note: 'Linux · amd64 or arm64 · needs Docker with ',
       runtime: true,
-      read: true
+      read: '/install.sh'
     },
     't-source': {
       cmd: 'go install github.com/blox-eng/openblox/cmd/openbloxd@latest',
@@ -46,6 +46,11 @@
       cmd: 'go get github.com/blox-eng/openblox',
       note: 'Your process holds the Docker socket. Fine to start; run the daemon in production.',
       read: false
+    },
+    't-host': {
+      cmd: 'curl -fsSL https://openblox.sh/setup.sh | sh',
+      note: 'Debian 13 or Ubuntu 24.04 · a machine of its own · Docker, gVisor, daemon, firewall',
+      read: '/setup.sh'
     }
   };
 
@@ -79,6 +84,7 @@
     cmdtext.textContent = c.cmd;
     renderNote(c);
     readit.hidden = !c.read;
+    if (c.read) readit.href = c.read;
     panel.setAttribute('aria-labelledby', id);
   }
 
