@@ -1,6 +1,6 @@
 # `setup.sh`: a dedicated sandbox host from a fresh OS install
 
-**Status:** design approved in conversation 2026-09-24; this is the written spec.
+**Status:** approved 2026-09-24. The script is modelled on k3s's installer, uninstaller included.
 
 ## Goal
 
@@ -8,8 +8,10 @@ One command takes a freshly installed Debian 13 or Ubuntu 24.04 machine to a
 working, hardened `openbloxd` host:
 
 ```bash
-curl -fsSL https://openblox.sh/setup.sh | sudo sh
+curl -fsSL https://openblox.sh/setup.sh | sh
 ```
+
+…and one command undoes it: `openblox-uninstall.sh`, which `setup.sh` writes.
 
 `install.sh` stays what it is: it installs the binary and touches nothing else.
 `setup.sh` is for someone who has a machine to give to sandboxes and wants the
@@ -29,15 +31,27 @@ must not depend on that setup.
   with a clear message. Supporting two well beats supporting ten badly.
 - Kata. `setup.sh` provisions gVisor, the default runtime. Kata stays a
   documented manual path (`docs/getting-started.md#using-kata-instead`).
-- An uninstall script. The guide lists what to remove.
 - Configuration management (Ansible, cloud-init) or prebuilt OS images.
 
 ## Behaviour
 
-`setup.sh` runs as root and is **idempotent**: every step checks before it
-changes anything, so a re-run fixes drift and upgrades the version, and never
-duplicates. It is one `main` function invoked on the last line, like
-`install.sh`, so a truncated download runs nothing.
+**Modelled on k3s's `install.sh`.** That installer is the reference for
+getting this kind of script right: named phases run in a fixed order,
+`info`/`warn`/`fatal` helpers, environment variables as the interface, and an
+uninstaller generated at install time.
+
+- **Root.** If not run as root, the script re-executes the privileged steps
+  through `sudo`, so `curl … | sh` works on its own. With neither root nor
+  `sudo`, it refuses with a message.
+- **Idempotent.** Every phase checks before it changes anything. A re-run
+  fixes drift and upgrades the version, and never duplicates anything.
+- **Truncation-safe.** Like `install.sh`, the script is one `main` function
+  invoked on the last line, so a truncated download runs nothing.
+- **Phases:** `verify_system` → `setup_env` → `install_docker` →
+  `install_gvisor` → `install_openbloxd` → `pin_image` → `write_config` →
+  `issue_certs` → `harden` → `create_uninstall` →
+  `create_systemd_service` → `service_enable_and_start` → `smoke_test`.
+  The numbered steps below describe what each phase does.
 
 ### Options
 
@@ -88,7 +102,26 @@ file.
    - Configures an nftables firewall: inbound default drop; allow established, loopback and SSH; plus the listener port, limited to `OPENBLOX_ALLOW_FROM` when set.
    - nftables and not ufw, because both OSes ship nftables and Docker already writes nftables/iptables rules. The script's rules live in their own table and never touch Docker's chains.
    - Existing SSH access is preserved: SSH is allowed before the default drop takes effect.
-9. **Start and prove it.**
+9. **Uninstaller.** Writes `/usr/local/bin/openblox-uninstall.sh`, as k3s
+   does for `k3s-uninstall.sh`.
+   - Each phase appends what it actually created to a manifest,
+     `/var/lib/openblox/installed`. The uninstaller removes exactly that
+     list and nothing more. Docker or gVisor that existed before setup ran
+     is recorded as pre-existing and left alone.
+   - What it removes:
+     - every sandbox the daemon created, found by the openblox labels
+     - the service, the binary and the `openbloxd` user
+     - `/etc/openbloxd`: config, CAs and client bundles
+     - the nftables table
+     - the apt sources and keys that setup added
+     - Docker and gVisor packages, if setup installed them
+     - the pinned image
+     - itself
+   - It leaves `/var/lib/docker` in place and says so. Deleting a container
+     store is not something to do implicitly.
+   - Re-running setup rewrites the uninstaller, so it always matches the
+     current install.
+10. **Start and prove it.**
    - Enables and restarts `openbloxd`.
    - Runs a smoke test through the daemon's own socket: create a sandbox under `code-exec`, exec `uname -r`, and require `gvisor` in the output. Then exec a network lookup and require that it fails, then destroy the sandbox.
    - The smoke test uses the daemon's API with `curl --unix-socket`, so it needs no extra tooling.
@@ -105,7 +138,7 @@ The output follows `install.sh`'s voice. It uses plain `say`/`die`, prints one l
   - Which OS and why: Debian 13 minimal first, Ubuntu 24.04 also supported.
   - The command, and what each step does, linking the script.
   - Connecting remote callers: bundle paths → `brokerclient.NewRemote`.
-  - Upgrading (re-run with a new version) and uninstalling (a list).
+  - Upgrading (re-run with a new version) and uninstalling (`openblox-uninstall.sh`, and what it keeps).
   - One known limit: CN allowlisting does not bind a client to a profile.
 - **README:** a short "Dedicated host" subsection under Install, and a link from "In production".
 - **`docs/production.md`:** links to self-hosting from "Deploying `openbloxd`".
@@ -122,6 +155,10 @@ The output follows `install.sh`'s voice. It uses plain `say`/`die`, prints one l
   2. Call the listener over mTLS with a client bundle, and require the call to succeed. Present a certificate from an unknown CA, and require it to be refused.
   3. **Run `setup.sh` again.** It must change nothing (config untouched, CAs reused) and pass the smoke test again.
   4. Add a third client on a re-run, and require only that one to be issued.
+  5. Run `openblox-uninstall.sh`. Require every manifest entry to be gone,
+     no openblox containers left, and the firewall table removed. Then run
+     `setup.sh` once more on the cleaned machine, and require it to succeed:
+     an uninstall has to leave the host able to install again.
 
   The job runs against the latest *published* release, so it is not required on PRs. It runs on PRs that touch `www/setup.sh`, and on main.
 - **Debian 13** is tested by hand on the first real machine. The PR records the result.
