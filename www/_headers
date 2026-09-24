@@ -27,6 +27,10 @@
 # The landing page tells people to read this before piping it into a shell, so
 # it has to open in a browser rather than download, and a fix to it has to
 # reach them in minutes rather than at the end of a cache lifetime.
+/setup.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
 /install.sh
   Content-Type: text/plain; charset=utf-8
   Cache-Control: public, max-age=300
