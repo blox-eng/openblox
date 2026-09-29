@@ -229,6 +229,63 @@ package doc for what each tier covers.
 | **Reaping** | idle timeout and max age, enforced without a scheduler |
 | **`openbloxd`** | a policy broker so callers never touch Docker |
 
+## Why not just gVisor?
+
+Often you should. openblox adds no isolation of its own: the boundary is
+gVisor's.
+- If your app is the only caller, and you trust it to pass the same dozen
+  `docker run --runtime=runsc` flags on every call, you get the same sandbox at
+  the same speed.
+- We measured that side by side. Create was 1154 ms with openblox and 1136 ms by
+  hand; exec `true` was 39 ms and 44 ms. Every operation was within noise.
+
+What openblox adds is narrow:
+
+1. **Those flags are the defaults.** Without them, a gVisor container reaches
+   the internet, has a writable root, keeps a capability bounding set, and has
+   no memory, process or disk cap.
+2. **The caller cannot weaken them.** `openbloxd` owns the policy, and a caller
+   only names a profile. The caller never holds the Docker socket, which is root
+   on the host, and the sandboxes can live on a host that holds none of your
+   app's secrets. This is the main reason openblox exists.
+3. **The claims are tested.** An adversarial suite probes a running sandbox from
+   inside on every pull request.
+4. **The lifecycle chores are done.** Exec timeouts, output caps, idle and
+   max-age reaping, and signed preview links.
+
+If none of that matters to you, use gVisor directly.
+[Method and numbers](docs/benchmarks/index.md).
+
+## Compared with
+
+We measured openblox against Docker (runc and gVisor), Kata Containers,
+microsandbox, OpenSandbox and llm-sandbox on one 4-core, 3.8 GiB host, with the
+same image, workload and limits. openblox is not the fastest:
+
+| | openblox | the others |
+|---|---|---|
+| **Cold start** | 1154 ms create, 39 ms exec | microsandbox is faster: 636 ms create, 20 ms exec. Kata took 8040 ms to create on this CPU. |
+| **Throughput, CPU-bound** | 8.2 jobs/s at saturation | runc 9.4, microsandbox 9.5 (gVisor's syscall cost); Kata 5.8 |
+| **Host memory per idle sandbox** | 41 MiB | microsandbox 74 MiB, Kata 205 MiB |
+| **Defaults** | no network, read-only root, no capabilities, non-root, memory/process/disk caps | each needs options to get there, or cannot. OpenSandbox on gVisor cannot turn the network off. microsandbox's SDK "no network" is a deny policy with the device still attached. llm-sandbox runs as root by default. |
+| **What the caller holds** | a profile name, over a unix socket or mTLS | the Docker socket (Docker, Kata, llm-sandbox); microsandbox's VM monitor, unconfined, inside the caller's own process tree; or an API key to a server that publishes each sandbox's command API on all interfaces by default (OpenSandbox) |
+| **Claims tested** | adversarial suite on every pull request | none found that probes a running sandbox from inside |
+
+Pick something else when:
+- **Cold start matters most.** Pick microsandbox, and confine its VM monitor
+  yourself: it runs with no seccomp, namespaces or cgroup.
+- **You want a separate guest kernel per sandbox.** Pick Kata, but budget a slow
+  create on older CPUs and about 200 MiB per VM.
+- **You only want a Python API over Docker.** Pick llm-sandbox.
+- **You want a hosted-style platform.** Pick E2B or Daytona, on hardware bigger
+  than 4 GB.
+
+Under gVisor, a sandbox that goes over its memory or process limit is killed as
+a whole, not just the offending process. E2B self-hosted, Daytona, CubeSandbox
+and Kubernetes agent-sandbox did not fit a 4 GB host, or are no longer
+self-hostable as open source.
+[Full results, method and the scripts to reproduce them](docs/benchmarks/index.md).
+
 ## When not to use it
 
 - **You need tenants isolated from each other at the API.** Every caller of one
