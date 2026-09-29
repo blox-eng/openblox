@@ -229,6 +229,46 @@ package doc for what each tier covers.
 | **Reaping** | idle timeout and max age, enforced without a scheduler |
 | **`openbloxd`** | a policy broker so callers never touch Docker |
 
+## Why not just gVisor?
+
+gVisor is the boundary, and openblox uses it. What `docker run --runtime=runsc`
+does not give you is the rest of the policy:
+- By default, a gVisor container still reaches the internet, has a writable
+  root filesystem, keeps a capability bounding set, and has no memory, process
+  or disk cap.
+- Closing those takes a dozen flags on every call.
+- The caller that passes those flags holds the Docker socket, which is root on
+  the host.
+
+openblox sets all of it by default and moves it into the daemon, so a caller
+names a profile and cannot weaken it. That costs nothing measurable: on the same
+host, openblox and hand-rolled Docker + gVisor with the same flags are within
+noise of each other on every operation. For example, create is 1154 ms and
+1136 ms, and exec `true` is 39 ms and 44 ms.
+[Method and numbers](docs/benchmarks/index.md).
+
+## Compared with
+
+We measured openblox against Docker (runc and gVisor), Kata Containers,
+microsandbox, OpenSandbox and llm-sandbox, on one 4-core, 3.8 GiB host with the
+same image, workload and limits.
+
+| | openblox | the others |
+|---|---|---|
+| **Cold start** | 1154 ms create, 39 ms exec | microsandbox is faster: 636 ms create, 20 ms exec. Kata took 8040 ms to create on this CPU. |
+| **Throughput, CPU-bound** | 8.2 jobs/s at saturation | runc 9.4, microsandbox 9.5 (gVisor's syscall cost); Kata 5.8 |
+| **Host memory per idle sandbox** | 41 MiB | microsandbox 74 MiB, Kata 205 MiB |
+| **Defaults** | no network, read-only root, no capabilities, non-root, memory/process/disk caps | each needs flags to get there, or cannot: OpenSandbox on gVisor cannot turn the network off; llm-sandbox runs as root by default |
+| **What the caller holds** | a profile name, over a unix socket or mTLS | the Docker socket (Docker, Kata, llm-sandbox), `/dev/kvm` (microsandbox), or an API key to a server that publishes each sandbox's command API on all interfaces by default (OpenSandbox) |
+| **Claims tested** | adversarial suite on every pull request | none found that probes a running sandbox from inside |
+
+If you need sub-second cold starts, a microVM tool such as microsandbox is
+faster. Under gVisor, a sandbox that goes over its memory or process limit is
+killed as a whole, not just the process. E2B self-hosted, Daytona,
+CubeSandbox and Kubernetes agent-sandbox did not fit a 4 GB host, or are no
+longer self-hostable as open source.
+[Full results, method and the scripts to reproduce them](docs/benchmarks/index.md).
+
 ## When not to use it
 
 - **You need tenants isolated from each other at the API.** Every caller of one

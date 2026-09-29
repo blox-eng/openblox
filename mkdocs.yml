@@ -44,6 +44,7 @@ nav:
   - A dedicated host: self-hosting.md
   - Security model: security.md
   - The image contract: image.md
+  - Compared with: benchmarks/index.md
   - Contributing: contributing.md
 
 plugins:
