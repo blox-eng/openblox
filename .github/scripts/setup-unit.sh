@@ -199,5 +199,10 @@ check "no default client crosses sudo" "$(printf '%s' "$got" | grep -c 'OPENBLOX
 # --- a wildcard listen address has no certificate that callers can verify (CodeRabbit) ---
 check "listen 0.0.0.0 refused" "$(status configure --listen 0.0.0.0:9443)" 1
 
+# --- the summary offers the stress benchmark as an optional next step, and never runs it ---
+VERSION=v0.9.0 IMAGE=img MAX_SANDBOXES=3 LISTEN=""
+check "summary offers the stress benchmark" "$(summary 2>&1 | grep -c 'bench.sh | sudo sh -s -- --mode stress')" 1
+check "setup never runs bench.sh" "$(grep -v '^ *info ' "$here/www/setup.sh" | grep -c bench.sh)" 0
+
 [ "$fails" -eq 0 ] || { printf '%d failed\n' "$fails"; exit 1; }
 echo "all passed"

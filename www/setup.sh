@@ -588,6 +588,7 @@ summary() {
   info "done. openbloxd $VERSION, image $IMAGE, max_sandboxes=$MAX_SANDBOXES"
   [ -z "$LISTEN" ] || info "listening on $LISTEN (mTLS). Client bundles: $ETC/clients/<name>/"
   info "config: $ETC/config.yaml · logs: journalctl -u openbloxd · uninstall: openblox-uninstall.sh"
+  info "optional: find where this host tops out: curl -fsSL $BASE_URL/bench.sh | sudo sh -s -- --mode stress"
 }
 
 main() {
