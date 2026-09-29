@@ -154,7 +154,9 @@ that address, whether over a LAN, a VPN or a tailnet, is up to you.
 ## Benchmarking
 
 `bench.sh` measures the daemon on this host, through its own socket, the way
-a caller uses it. It needs root, `curl` and a running `openbloxd`, and it
+a caller uses it. It is optional, and `setup.sh` never runs it: setup's last
+line prints the stress command, for when you want to know where your hardware
+tops out. It needs root, `curl` and a running `openbloxd`, and it
 removes every sandbox it creates. The source is
 [`www/bench.sh`](https://github.com/blox-eng/openblox/blob/main/www/bench.sh).
 

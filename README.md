@@ -68,7 +68,7 @@ Running it again is safe, and it writes `openblox-uninstall.sh`, which removes
 exactly what it added. Sizing, remote callers and upgrades:
 **[A dedicated host](https://docs.openblox.sh/self-hosting/)**.
 
-**Benchmark your hardware.** Once the daemon runs, `bench.sh` times what a
+**Benchmark your hardware (optional).** Once the daemon runs, `bench.sh` times what a
 caller feels: creating a sandbox, an exec, a Python job next to the same job
 on the host. `--mode stress` steps concurrency up until the host tops out, and
 names the level where it does:

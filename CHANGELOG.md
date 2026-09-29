@@ -33,7 +33,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   times a sandbox's create, exec and delete, and a Python job next to the same
   job run on the host. `--mode stress` steps concurrency up until throughput
   stops growing, jobs fail or memory runs low, and names the level where the
-  host tops out. See
+  host tops out. It is optional: `setup.sh` never runs it, and ends by
+  printing the stress command. See
   [Benchmarking](https://docs.openblox.sh/self-hosting/#benchmarking).
 
 - **Kata evidence: the conformance suite against a second runtime.** A new,
