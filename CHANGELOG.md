@@ -27,6 +27,13 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   all of it on a fresh VM. See
   [A dedicated host](https://docs.openblox.sh/self-hosting/).
 
+- **`bench.sh`: benchmark a host.** `curl -fsSL https://openblox.sh/bench.sh | sudo sh`
+  times a sandbox's create, exec and delete, and a Python job next to the same
+  job run on the host. `--mode stress` steps concurrency up until throughput
+  stops growing, jobs fail or memory runs low, and names the level where the
+  host tops out. See
+  [Benchmarking](https://docs.openblox.sh/self-hosting/#benchmarking).
+
 - **Kata evidence: the conformance suite against a second runtime.** A new,
   non-gating workflow (`kata.yml`) runs `pkg/conformance` under Kata
   Containers on hosted amd64 runners and records which properties fail;
