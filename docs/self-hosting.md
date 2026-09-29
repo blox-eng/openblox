@@ -151,6 +151,83 @@ restart. There is no revocation list.
 The listener is bound to the address you give it. How your callers reach
 that address, whether over a LAN, a VPN or a tailnet, is up to you.
 
+## Benchmarking
+
+`bench.sh` measures the daemon on this host, through its own socket, the way
+a caller uses it. It is optional, and `setup.sh` never runs it: setup's last
+line prints the stress command, for when you want to know where your hardware
+tops out. It needs root, `curl` and a running `openbloxd`, and it
+removes every sandbox it creates. The source is
+[`www/bench.sh`](https://github.com/blox-eng/openblox/blob/main/www/bench.sh).
+
+```sh
+curl -fsSL https://openblox.sh/bench.sh | sudo sh
+```
+
+The default mode, `latency`, runs one sandbox at a time. Below is a 2012
+Xeon E3-1220 v2 with 4 cores and 4 GB, under gVisor:
+
+```text
+                               min  median     max
+  create sandbox              1165    1233    1306 ms
+  exec: true                    43      45      45 ms
+  exec: python3 startup         73      75      83 ms
+  exec: job                    394     396     402 ms
+  delete sandbox               812     830     840 ms
+  on the host, no sandbox:
+  python3 startup               19      20      21 ms
+  job                          227     232     233 ms
+```
+
+- **Create** is what the first call in a session pays.
+- **Exec** is what each later call pays on top of its own work.
+- **Job** fills 64 MiB and runs a CPU loop. Beside the same job on the host,
+  it shows what the sandbox costs for real work.
+
+`--mode stress` answers a different question: how many sandboxes can work at
+once before the host is the bottleneck. It steps concurrency up (1, 2, 4, 8,
+16 by default), and every sandbox at a level runs the job at the same time:
+
+```sh
+curl -fsSL https://openblox.sh/bench.sh | sudo sh -s -- --mode stress
+```
+
+On the same machine:
+
+```text
+  sandboxes create_ms   job_p50   job_max   jobs/s   cpu%   free_MiB failed
+       1      1445       393       403     2.51     29       3125      0
+       2      1995       423       428     4.70     55       2981      0
+       4      3832       491       534     7.92     97       2867      0
+       6      5453       706       926     7.80     97       2645      0
+       8      7154       879      1263     7.79     97       2420      0
+      12     11228      1389      1952     7.78     98       1963      0
+      16     14234      1881      2401     7.71     99       1506      0
+
+throughput peaks at 4 concurrent sandboxes (7.92 jobs/s); past that, more
+sandboxes add no throughput: the CPU is saturated, so jobs queue for it.
+```
+
+Read the columns like this:
+- **`jobs/s`** is the throughput. Once it stops growing, more concurrent
+  sandboxes only make each job slower (`job_p50`).
+- **`cpu%`** near 100 means the CPU is the limit.
+- **`free_MiB`** falling toward the floor means memory is the limit.
+- **`failed`** above 0 means jobs are being killed, usually for memory.
+
+The test stops by itself at the first failure, or before the host's free
+memory drops under `--floor-mb` (512 MiB by default), so it cannot starve SSH.
+
+Stress mode never exceeds the profile's `max_sandboxes`. To find the
+hardware's limit rather than the config's, raise it in
+`/etc/openbloxd/config.yaml` for the run, then put it back. Edit the file in
+place, so it keeps its owner and mode (`root:openbloxd`, `0640`); the daemon
+cannot read a copy owned by root alone. Run `systemctl restart openbloxd`
+after each edit.
+
+Options: `--rounds`, `--levels "1 2 4"`, `--job-mb`, `--cpu`, `--floor-mb` and
+`--profile`. The header of the script describes each one.
+
 ## Upgrading
 
 Run the script again. It keeps your settings, so there is nothing to repeat:

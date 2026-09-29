@@ -68,6 +68,18 @@ Running it again is safe, and it writes `openblox-uninstall.sh`, which removes
 exactly what it added. Sizing, remote callers and upgrades:
 **[A dedicated host](https://docs.openblox.sh/self-hosting/)**.
 
+**Benchmark your hardware (optional).** Once the daemon runs, `bench.sh` times what a
+caller feels: creating a sandbox, an exec, a Python job next to the same job
+on the host. `--mode stress` steps concurrency up until the host tops out, and
+names the level where it does:
+
+```bash
+curl -fsSL https://openblox.sh/bench.sh | sudo sh
+curl -fsSL https://openblox.sh/bench.sh | sudo sh -s -- --mode stress
+```
+
+What the numbers mean: **[Benchmarking](https://docs.openblox.sh/self-hosting/#benchmarking)**.
+
 **The library.** For a single process that may hold the Docker socket:
 
 ```bash

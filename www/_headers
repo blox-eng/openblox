@@ -35,6 +35,10 @@
   Content-Type: text/plain; charset=utf-8
   Cache-Control: public, max-age=300
 
+/bench.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
 # A weight of a typeface does not change once it is published. If one is ever
 # replaced it gets a new filename, so a year is safe here and only here.
 /assets/fonts/*
