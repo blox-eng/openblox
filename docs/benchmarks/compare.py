@@ -142,7 +142,10 @@ class Docker:
         return p.returncode, p.stdout
 
     def delete(self, h):
-        subprocess.run(["docker", "rm", "-f", h], capture_output=True, check=False)
+        try:
+            subprocess.run(["docker", "rm", "-f", h], capture_output=True, check=False, timeout=180)
+        except subprocess.TimeoutExpired:
+            print(f"docker rm -f {h}: no answer after 180s, left behind", file=sys.stderr)
 
 
 class Openblox:
@@ -357,8 +360,11 @@ BACKENDS = {
 }
 
 
-def sh(args):
-    p = subprocess.run(args, capture_output=True, text=True, check=False)
+def sh(args, timeout=180):
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"{shlex.join(args)}: no answer after {timeout}s") from e
     if p.returncode != 0:
         raise RuntimeError(f"{shlex.join(args)}: {p.stderr.strip() or p.stdout.strip()}")
     return p.stdout.strip()
