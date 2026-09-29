@@ -10,6 +10,15 @@ the rows where openblox loses.
 Measured 2026-09-29 on one small, old host. Treat the numbers as relative, not
 absolute: a newer CPU moves all of them.
 
+**In short**, openblox adds no isolation of its own. Its boundary is gVisor's,
+at gVisor's speed.
+- What it adds is policy: safe defaults, which a caller cannot weaken.
+- It keeps the Docker socket, and the sandboxes, away from the application.
+- Its claims are tested.
+
+If you are the only caller and trust your own flags, hand-rolled gVisor
+measures the same. If you need the fastest cold start, a microVM tool is faster.
+
 ## What we found
 
 **Where openblox loses**
@@ -61,6 +70,16 @@ absolute: a newer CPU moves all of them.
 
 **Per tool**
 
+- **microsandbox** (libkrun microVMs):
+  - It is the fastest here.
+  - Its SDK's `Network.none()`, which we used, is a deny policy. The virtio-net
+    device and the host-side userspace TCP stack stay attached, which is why the
+    probe sees `eth0`. The Rust SDK's `disable_network()` removes the device;
+    the Python and Go create paths do not reach it.
+  - The per-sandbox `msb machine` process has no seccomp, no namespaces and no
+    cgroup, and runs as whoever launched it. In this benchmark that was root.
+    libkrun's own README says the guest and that process share a security
+    context, and that the embedder must confine it.
 - **Kata Containers** (QEMU, through Docker):
   - It took 8.0 s to create a sandbox on this 2012 CPU and costs 205 MiB per
     idle VM.
@@ -133,7 +152,7 @@ express them. Each tool is driven through its own interface:
 | openblox | `openbloxd`'s HTTP API | setup.sh's `code-exec` profile: 512 MiB, 2 CPUs, 256 MiB disk, 256 processes, egress `none` |
 | docker-runsc, docker-runc | the `docker` CLI | openblox's own hardening flags: memory with swap off, `--cpus`, `--network none`, `--pids-limit 256`, uid 1000, `--read-only`, `--cap-drop ALL`, `no-new-privileges`, two 128 MiB tmpfs |
 | docker-kata | the `docker` CLI, `--runtime kata` | the same flags. Kata 4.2.0 runtime-rs with QEMU, registered in `daemon.json` and picked up with `systemctl reload docker`. `default_memory` was lowered from 2048 to 256 MiB; left at 2048, each 512 MiB sandbox would be a 2.5 GiB VM. |
-| microsandbox | its Python SDK | `memory=512, cpus=2, network=Network.none(), user="1000:1000", security=RESTRICTED` |
+| microsandbox | its Python SDK, run as root | `memory=512, cpus=2, network=Network.none()` (a deny policy; the network device stays attached), `user="1000:1000", security=RESTRICTED` |
 | opensandbox | its Python SDK against its server | `resource={"cpu": "2", "memory": "512Mi"}`, `secure_runtime` gVisor. There is no network-off option under gVisor (see above). Server 1.1.1rc1 was installed from its git tag because the 1.1.0 wheel on PyPI is missing a module and does not start. Execs use the SDK's shell-text form because execd rejected the argv form. |
 | llm-sandbox | `SandboxSession` | the docker-runsc flags passed through `runtime_configs`, and `skip_environment_setup=True`; the setup would `pip install` over the network |
 
