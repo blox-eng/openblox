@@ -70,6 +70,12 @@ jobs:
           skip-save-cache: true
         env:
           GOPROXY: https://proxy.golang.org,direct
+      # actionlint does not lint shell without shellcheck, and nothing else
+      # did either: install.sh shipped with only human review.
+      - name: shellcheck
+        run: sudo apt-get install -y -qq shellcheck && make lint-sh
+      - name: setup.sh unit tests
+        run: make test-setup
 
   test:
     name: Test

@@ -1,0 +1,30 @@
+name: Host setup
+
+on:
+  pull_request:
+    paths: ['www/setup.sh', 'www/install.sh', '.github/scripts/setup-*.sh', '.github/workflows/host-setup.yml']
+  push:
+    branches: [main]
+    paths: ['www/setup.sh', 'www/install.sh', '.github/scripts/setup-*.sh', '.github/workflows/host-setup.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu:
+    name: Host setup (Ubuntu 24.04)
+    # A hosted runner is a real VM with root and its own kernel — the only CI
+    # place setup.sh can install Docker, gVisor and a firewall for real.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: setup, re-run, add a client, uninstall, reinstall
+        run: sh .github/scripts/setup-e2e.sh
+        env:
+          # The runner has gh, so install.sh and pin_image verify provenance,
+          # and gh needs a token to read the attestations.
+          GH_TOKEN: ${{ github.token }}

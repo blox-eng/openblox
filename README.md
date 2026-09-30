@@ -55,6 +55,19 @@ Pin a version in production, and pick your own target if you want one:
 OPENBLOX_VERSION=v0.8.1 OPENBLOX_BIN_DIR=~/.local/bin sh install.sh
 ```
 
+**A dedicated host.** On a fresh Debian 13 or Ubuntu 24.04 machine, one
+script installs Docker, gVisor, the daemon and its service, a firewall and,
+if you want remote callers, an mTLS listener. Then it proves the host with a
+sandbox:
+
+```bash
+curl -fsSL https://openblox.sh/setup.sh | sh
+```
+
+Running it again is safe, and it writes `openblox-uninstall.sh`, which removes
+exactly what it added. Sizing, remote callers and upgrades:
+**[A dedicated host](https://docs.openblox.sh/self-hosting/)**.
+
 **The library.** For a single process that may hold the Docker socket:
 
 ```bash
@@ -103,7 +116,9 @@ application ──unix socket──► openbloxd ──Docker API──► Docke
 ```
 
 Deployment, verification, compatibility, upgrades and troubleshooting:
-**[Running in production](https://docs.openblox.sh/production/)**.
+**[Running in production](https://docs.openblox.sh/production/)**. For a
+machine of its own, `setup.sh` does all of it:
+**[A dedicated host](https://docs.openblox.sh/self-hosting/)**.
 
 ## Where this sits
 

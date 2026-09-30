@@ -15,6 +15,18 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ### Added
 
+- **`setup.sh`: a dedicated sandbox host from a fresh OS install.**
+  `curl -fsSL https://openblox.sh/setup.sh | sh` takes a Debian 13 or Ubuntu
+  24.04 machine to a working, hardened `openbloxd` host. It installs Docker,
+  gVisor, the daemon and its service, a pinned sandbox image, an nftables
+  firewall and automatic security updates. With `OPENBLOX_LISTEN`, it adds an
+  mTLS listener with one client bundle per caller. It sizes `max_sandboxes`
+  from RAM and finishes with a smoke-test sandbox. A re-run never rewrites
+  your config or certificates. The generated `openblox-uninstall.sh` removes
+  exactly what setup added. A new CI job, *Host setup (Ubuntu 24.04)*, runs
+  all of it on a fresh VM. See
+  [A dedicated host](https://docs.openblox.sh/self-hosting/).
+
 - **Kata evidence: the conformance suite against a second runtime.** A new,
   non-gating workflow (`kata.yml`) runs `pkg/conformance` under Kata
   Containers on hosted amd64 runners and records which properties fail;
