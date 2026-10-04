@@ -34,6 +34,11 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   default and the only runtime that gates merges. arm64 is not measured:
   hosted arm64 runners expose no KVM.
 
+### Fixed
+
+- The Discord invite linked from the README, the docs and the landing page
+  no longer expires; the old one would have stopped working on 2026-10-21 (#74).
+
 ## [0.9.0] - 2026-09-22
 
 ### Added
@@ -193,7 +198,7 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   return `ErrUnsupported` depending on configuration gives back, one level up,
   the visible-but-unreachable confusion `openbloxd` exists to remove. A microVM
   runtime is in scope precisely because it is the same integration point.
-- The project now has a [Discord](https://discord.gg/ksxTebDjj), linked from
+- The project now has a [Discord](https://discord.gg/EDbBgzvAY6), linked from
   the README, the landing page and the documentation, so a question that is not
   an issue has somewhere to go.
 - After cutting a tag, the release workflow now opens the `docs:` PR that

@@ -121,4 +121,4 @@ gate merges.
 - [The image contract](image.md) — what an image must provide
 
 A question that is not an issue belongs on
-[Discord](https://discord.gg/ksxTebDjj).
+[Discord](https://discord.gg/EDbBgzvAY6).
