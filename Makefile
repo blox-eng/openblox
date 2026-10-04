@@ -1,4 +1,4 @@
-.PHONY: all vet lint test test-integration cover tidy image image-verify build-daemon licenses social-preview
+.PHONY: all vet lint lint-sh test test-setup test-integration cover tidy image image-verify build-daemon licenses social-preview
 
 # The reference sandbox image. See image/README.md for the contract it satisfies.
 IMAGE ?= openblox-sandbox:dev
@@ -11,8 +11,16 @@ vet:
 lint:
 	golangci-lint run
 
+# Every shell script we ship or run in CI.
+lint-sh:
+	shellcheck -x -s sh www/install.sh www/setup.sh .github/scripts/setup-unit.sh .github/scripts/setup-e2e.sh
+
 test:
 	CGO_ENABLED=1 go test -race -cover ./...
+
+# Unit tests for www/setup.sh. They need no root.
+test-setup:
+	sh .github/scripts/setup-unit.sh
 
 # Requires a gVisor-capable Docker host. See CONTRIBUTING.md.
 test-integration:

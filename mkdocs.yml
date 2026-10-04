@@ -41,6 +41,7 @@ nav:
   - Home: index.md
   - Quick start: getting-started.md
   - Production: production.md
+  - A dedicated host: self-hosting.md
   - Security model: security.md
   - The image contract: image.md
   - Contributing: contributing.md
