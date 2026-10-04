@@ -13,7 +13,7 @@ lint:
 
 # Every shell script we ship or run in CI.
 lint-sh:
-	shellcheck -x -s sh www/install.sh www/setup.sh .github/scripts/setup-unit.sh .github/scripts/setup-e2e.sh
+	shellcheck -x -s sh www/install.sh www/setup.sh www/bench.sh .github/scripts/setup-unit.sh .github/scripts/setup-e2e.sh
 
 test:
 	CGO_ENABLED=1 go test -race -cover ./...

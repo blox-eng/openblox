@@ -2,10 +2,10 @@ name: Host setup
 
 on:
   pull_request:
-    paths: ['www/setup.sh', 'www/install.sh', '.github/scripts/setup-*.sh', '.github/workflows/host-setup.yml']
+    paths: ['www/setup.sh', 'www/install.sh', 'www/bench.sh', '.github/scripts/setup-*.sh', '.github/workflows/host-setup.yml']
   push:
     branches: [main]
-    paths: ['www/setup.sh', 'www/install.sh', '.github/scripts/setup-*.sh', '.github/workflows/host-setup.yml']
+    paths: ['www/setup.sh', 'www/install.sh', 'www/bench.sh', '.github/scripts/setup-*.sh', '.github/workflows/host-setup.yml']
   workflow_dispatch:
 
 permissions:
@@ -28,3 +28,7 @@ jobs:
           # The runner has gh, so install.sh and pin_image verify provenance,
           # and gh needs a token to read the attestations.
           GH_TOKEN: ${{ github.token }}
+      - name: benchmark the host it left behind
+        run: |
+          sudo sh www/bench.sh --rounds 2
+          sudo sh www/bench.sh --mode stress --levels "1 2" --rounds 1

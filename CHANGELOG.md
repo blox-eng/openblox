@@ -13,6 +13,16 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Added
+
+- **`bench.sh`: benchmark a host.** `curl -fsSL https://openblox.sh/bench.sh | sudo sh`
+  times a sandbox's create, exec and delete, and a Python job next to the same
+  job run on the host. `--mode stress` steps concurrency up until throughput
+  stops growing, jobs fail or memory runs low, and names the level where
+  throughput levels off. It is optional: `setup.sh` never runs it, and ends by
+  printing the stress command. See
+  [Benchmarking](https://docs.openblox.sh/self-hosting/#benchmarking).
+
 ## [0.10.0] - 2026-10-04
 
 ### Added
