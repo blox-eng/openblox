@@ -13,6 +13,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-04
+
 ### Added
 
 - **`setup.sh`: a dedicated sandbox host from a fresh OS install.**
@@ -463,7 +465,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
 
-[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/blox-eng/openblox/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/blox-eng/openblox/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/blox-eng/openblox/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/blox-eng/openblox/compare/v0.7.0...v0.8.0
