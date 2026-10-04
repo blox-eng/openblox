@@ -61,7 +61,7 @@ if you want remote callers, an mTLS listener. Then it proves the host with a
 sandbox:
 
 ```bash
-curl -fsSL https://openblox.sh/setup.sh | sh
+curl -fsSL https://openblox.sh/setup.sh -o setup.sh && sh setup.sh
 ```
 
 Running it again is safe, and it writes `openblox-uninstall.sh`, which removes

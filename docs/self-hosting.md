@@ -6,15 +6,15 @@ its service, plus an optional mTLS listener for remote callers, a firewall and
 automatic security updates. Then it runs a sandbox to prove the host works.
 
 ```sh
-curl -fsSL https://openblox.sh/setup.sh | sh
+curl -fsSL https://openblox.sh/setup.sh -o setup.sh && sh setup.sh
 ```
 
-Or fetch it once, read it, and run what you read:
+Or read it before you run it:
 
 ```sh
 curl -fsSL https://openblox.sh/setup.sh -o setup.sh
 less setup.sh
-sudo sh setup.sh
+sh setup.sh
 ```
 
 The source is [`www/setup.sh`](https://github.com/blox-eng/openblox/blob/main/www/setup.sh).
@@ -63,9 +63,9 @@ gVisor yourself and use [`install.sh`](getting-started.md#install).
 ## Run it
 
 As root, or as a user with `sudo`: the script re-runs itself through `sudo`.
-Settings are environment variables, so they work with `curl … | sh`. Each is
-also a flag when you run the script from a file. With `sudo sh setup.sh`, use
-the flags: `sudo` drops environment variables.
+Settings are environment variables, so they work in front of `sh setup.sh`. Each is
+also a flag. Under an explicit `sudo`, use the flags, because `sudo` drops
+environment variables.
 
 Settings are kept in `/var/lib/openblox/settings`. Running the script again
 with none keeps them, and settings you give again replace them, except client
@@ -114,9 +114,9 @@ Your application usually runs on another machine. Give the daemon a listener
 on a private address and name one client per caller:
 
 ```sh
-curl -fsSL https://openblox.sh/setup.sh |
+curl -fsSL https://openblox.sh/setup.sh -o setup.sh &&
   OPENBLOX_LISTEN=10.0.0.5:9443 OPENBLOX_CLIENTS="app-staging app-prod" \
-  OPENBLOX_ALLOW_FROM=10.0.0.0/24 sh
+  OPENBLOX_ALLOW_FROM=10.0.0.0/24 sh setup.sh
 ```
 
 Each caller gets a bundle in `/etc/openbloxd/clients/<name>/`:
@@ -156,8 +156,8 @@ that address, whether over a LAN, a VPN or a tailnet, is up to you.
 Run the script again. It keeps your settings, so there is nothing to repeat:
 
 ```sh
-curl -fsSL https://openblox.sh/setup.sh | sh                          # the latest release
-curl -fsSL https://openblox.sh/setup.sh | OPENBLOX_VERSION=vX.Y.Z sh  # or a chosen one
+curl -fsSL https://openblox.sh/setup.sh -o setup.sh && sh setup.sh                      # the latest release
+curl -fsSL https://openblox.sh/setup.sh -o setup.sh && OPENBLOX_VERSION=vX.Y.Z sh setup.sh  # or a chosen one
 ```
 
 It upgrades the daemon and pulls the matching image. It never rewrites

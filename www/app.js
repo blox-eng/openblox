@@ -48,7 +48,7 @@
       read: false
     },
     't-host': {
-      cmd: 'curl -fsSL https://openblox.sh/setup.sh | sh',
+      cmd: 'curl -fsSL https://openblox.sh/setup.sh -o setup.sh && sh setup.sh',
       note: 'Debian 13 or Ubuntu 24.04 · a machine of its own · Docker, gVisor, daemon, firewall',
       read: '/setup.sh'
     }

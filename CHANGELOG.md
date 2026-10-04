@@ -16,7 +16,7 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 ### Added
 
 - **`setup.sh`: a dedicated sandbox host from a fresh OS install.**
-  `curl -fsSL https://openblox.sh/setup.sh | sh` takes a Debian 13 or Ubuntu
+  `curl -fsSL https://openblox.sh/setup.sh -o setup.sh && sh setup.sh` takes a Debian 13 or Ubuntu
   24.04 machine to a working, hardened `openbloxd` host. It installs Docker,
   gVisor, the daemon and its service, a pinned sandbox image, an nftables
   firewall and automatic security updates. With `OPENBLOX_LISTEN`, it adds an
