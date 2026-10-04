@@ -23,7 +23,7 @@ container is the state.
 [Getting started](https://docs.openblox.sh/getting-started/) ·
 [Production](https://docs.openblox.sh/production/) · [Architecture](ARCHITECTURE.md) ·
 [Threat model](THREAT_MODEL.md) · [Security](SECURITY.md) · [Releasing](RELEASING.md) ·
-[Discord](https://discord.gg/ksxTebDjj)
+[Discord](https://discord.gg/EDbBgzvAY6)
 
 > **Status: pre-release (`0.x`).** The API will change; breaking changes bump the
 > minor version and are listed in the [changelog](CHANGELOG.md).
@@ -258,7 +258,7 @@ open a public issue.
 Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Commits follow
 [Conventional Commits](https://www.conventionalcommits.org/); CI enforces it.
 For a question that is not an issue, there is a
-[Discord](https://discord.gg/ksxTebDjj).
+[Discord](https://discord.gg/EDbBgzvAY6).
 
 ## License
 
