@@ -204,8 +204,8 @@ On the same machine:
       12     11228      1389      1952     7.78     98       1963      0
       16     14234      1881      2401     7.71     99       1506      0
 
-throughput peaks at 4 concurrent sandboxes (7.92 jobs/s); past that, more
-sandboxes add no throughput: the CPU is saturated, so jobs queue for it.
+throughput levels off at 4 concurrent sandboxes (7.92 jobs/s); past that, more
+sandboxes add little throughput: the CPU is saturated, so jobs queue for it.
 ```
 
 Read the columns like this:
