@@ -40,6 +40,7 @@ JOB_MB=64
 CPU=3000000
 FLOOR_MB=512
 PROFILE=code-exec
+SAMPLER='' t=''
 
 say() { printf '%s\n' "$*"; }
 fatal() { printf 'bench: %s\n' "$*" >&2; exit 1; }
@@ -94,7 +95,9 @@ create() { # name → 0 ok, 2 at capacity, 1 other failure
   case $out in *'"id"'*) return 0 ;; *at_capacity*) return 2 ;; *) say "create $1: $out" >&2; return 1 ;; esac
 }
 
-destroy() { api DELETE "/sandboxes/$1" >/dev/null 2>&1 || true; }
+destroy() { # an HTTP error must not pass as a deleted sandbox
+  curl -fsS --unix-socket "$SOCKET" -X DELETE "http://openbloxd/sandboxes/$1" >/dev/null || { say "could not delete $1" >&2; return 1; }
+}
 
 run() { # name, argv-json
   out=$(api POST "/sandboxes/$1/exec" "{\"argv\":$2,\"timeout\":\"120s\"}") || return 1
@@ -102,8 +105,10 @@ run() { # name, argv-json
 }
 
 cleanup() {
+  [ -z "$SAMPLER" ] || kill "$SAMPLER" 2>/dev/null
+  [ -z "$t" ] || rm -rf "$t"
   names=$(api GET /sandboxes 2>/dev/null | grep -o "\"name\":\"$RUN-[^\"]*\"" | cut -d'"' -f4) || true
-  for n in $names; do destroy "$n"; done
+  for n in $names; do destroy "$n" || true; done
 }
 
 job_code() { printf "b=b'x'*(%s<<20); print(len(b)>>20, sum(i*i for i in range(%s)))" "$JOB_MB" "$CPU"; }
@@ -125,7 +130,7 @@ latency() {
     a=$(now); run "$n" '["python3","-c","pass"]' || fatal "python3 failed"; b=$(now); ms "$a" "$b" >>"$t/py"
     a=$(now); run "$n" "$(job_argv)" || fatal "the job failed; lower --job-mb below the profile's memory_mb"
     b=$(now); ms "$a" "$b" >>"$t/job"
-    a=$(now); destroy "$n"; b=$(now); ms "$a" "$b" >>"$t/delete"
+    a=$(now); destroy "$n" || fatal "could not delete a sandbox"; b=$(now); ms "$a" "$b" >>"$t/delete"
     if command -v python3 >/dev/null; then
       a=$(now); python3 -c pass; b=$(now); ms "$a" "$b" >>"$t/hpy"
       a=$(now); python3 -c "$(job_code)" >/dev/null; b=$(now); ms "$a" "$b" >>"$t/hjob"
@@ -149,7 +154,7 @@ stress() {
   say "stress: levels $LEVELS, $ROUNDS jobs per sandbox, job = fill ${JOB_MB} MiB + a ${CPU}-step loop"
   say "        stops before host free memory drops under ${FLOOR_MB} MiB"
   printf '  %6s %9s %9s %9s %8s %6s %10s %6s\n' sandboxes create_ms job_p50 job_max jobs/s cpu% free_MiB failed
-  best=0 best_c=0 best_cpu=0 last_c=0 stop=
+  best=0 best_c=0 best_cpu=0 peak=0 peak_c=0 last_c=0 stop=
   for c in $LEVELS; do
     t=$(mktemp -d)
     free=$(mem_free)
@@ -165,7 +170,8 @@ stress() {
       j=0; while [ $j -lt "$c" ]; do j=$((j + 1)); destroy "$RUN-$c-$j" & done; wait; rm -rf "$t"; break
     fi
 
-    (while :; do mem_free >>"$t/mem"; sleep 0.2; done) & sampler=$!
+    # below the floor, stop starting jobs; the ones in flight finish
+    (while :; do f=$(mem_free); echo "$f" >>"$t/mem"; [ "$f" -ge "$FLOOR_MB" ] || : >"$t/stop"; sleep 0.2; done) & SAMPLER=$!
     x=$(cpu_ticks); busy0=${x% *} idle0=${x#* }
     a=$(now); j=0 pids=
     while [ $j -lt "$c" ]; do
@@ -173,16 +179,16 @@ stress() {
       (
         grep -qx 0 "$t/c$j" || { echo fail >>"$t/fail"; exit; }
         r=0
-        while [ $r -lt "$ROUNDS" ]; do
+        while [ $r -lt "$ROUNDS" ] && [ ! -e "$t/stop" ]; do
           r=$((r + 1)); s=$(now)
-          if run "$RUN-$c-$j" "$(job_argv)"; then ms "$s" "$(now)" >>"$t/job.$j"; else echo fail >>"$t/fail.$j"; fi
+          if run "$RUN-$c-$j" "$(job_argv)"; then ms "$s" "$(now)" >>"$t/job.$j"; else echo fail >>"$t/fail.$j"; : >"$t/stop"; fi
         done
       ) &
       pids="$pids $!"
     done
     # shellcheck disable=SC2086 # a list of PIDs
     wait $pids; b=$(now)
-    kill "$sampler" 2>/dev/null; wait "$sampler" 2>/dev/null || true
+    kill "$SAMPLER" 2>/dev/null; wait "$SAMPLER" 2>/dev/null || true; SAMPLER=
     x=$(cpu_ticks); busy=$((${x% *} - busy0)) idle=$((${x#* } - idle0))
 
     cat "$t"/job.* 2>/dev/null | sort -n >"$t/jobs" || true
@@ -199,6 +205,7 @@ stress() {
     j=0; while [ $j -lt "$c" ]; do j=$((j + 1)); destroy "$RUN-$c-$j" & done; wait
     rm -rf "$t"
     last_c=$c
+    if awk -v x="$tput" -v y="$peak" 'BEGIN {exit !(x > y)}'; then peak=$tput peak_c=$c; fi
     if awk -v x="$tput" -v y="$best" 'BEGIN {exit !(x > y * 1.1)}'; then best=$tput best_c=$c best_cpu=$cpu; fi
     [ "$failed" = 0 ] || { stop="jobs failed at $c sandboxes (out of memory, or the daemon refused them)"; break; }
     [ "${minfree:-0}" -ge "$FLOOR_MB" ] || { stop="host free memory fell under ${FLOOR_MB} MiB at $c sandboxes"; break; }
@@ -207,9 +214,10 @@ stress() {
   if [ "$best_c" != 0 ] && [ "$best_c" = "$last_c" ]; then
     say "throughput was still growing at $best_c concurrent sandboxes ($best jobs/s)."
   elif [ "$best_c" != 0 ]; then
-    why="more sandboxes add no throughput"
+    why="more sandboxes add little throughput"
     [ "$best_cpu" -lt 90 ] || why="$why: the CPU is saturated, so jobs queue for it"
-    say "throughput peaks at $best_c concurrent sandboxes ($best jobs/s); past that, $why."
+    say "throughput levels off at $best_c concurrent sandboxes ($best jobs/s); past that, $why."
+    [ "$peak_c" = "$best_c" ] || say "the highest rate measured was $peak jobs/s, at $peak_c."
   fi
   [ -z "$stop" ] || say "stopped: $stop."
 }
