@@ -288,10 +288,26 @@ func (s *dockerSandbox) attach(ctx context.Context, cmd sandbox.Command, user st
 
 	attached, err := s.cli.ContainerExecAttach(ctx, created.ID, container.ExecAttachOptions{})
 	if err != nil {
-		return "", types.HijackedResponse{}, fmt.Errorf("exec attach in %q: %w", s.info.Name, err)
+		return "", types.HijackedResponse{}, s.classifyAttach(ctx, err)
 	}
 
 	return created.ID, attached, nil
+}
+
+// classifyAttach explains a refused exec start. The Docker client reports a
+// refusal as a plain "unable to upgrade to tcp, received 409" with no type to
+// match, so the container's state is asked for instead. A memory kill under
+// gVisor stops the sandbox a moment before an exec already created against it
+// is started; the caller has to see that as stopped, not as a daemon fault.
+func (s *dockerSandbox) classifyAttach(ctx context.Context, attachErr error) error {
+	inspect, err := s.cli.ContainerInspect(ctx, s.id)
+	switch {
+	case cerrdefs.IsNotFound(err):
+		return fmt.Errorf("%w: %q", sandbox.ErrNotFound, s.info.Name)
+	case err == nil && inspect.ContainerJSONBase != nil && inspect.State != nil && !inspect.State.Running:
+		return fmt.Errorf("%w: %q", sandbox.ErrStopped, s.info.Name)
+	}
+	return fmt.Errorf("exec attach in %q: %w", s.info.Name, attachErr)
 }
 
 // pumpStdin feeds a command's stdin and half-closes it at EOF.

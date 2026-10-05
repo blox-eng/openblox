@@ -21,6 +21,11 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   removed (by `MaxAge`, `docker rm` or a host restart) now returns
   `ErrNotFound` instead of an unclassified error, so a client that caches
   sandbox handles can drop the handle and create a new sandbox (#72).
+- In direct (Docker) mode, an exec sent just after a sandbox was killed for
+  going over its memory limit now returns `stopped`, not HTTP 500
+  `internal`. Docker refuses the exec's start with a 409 a moment before it
+  reports the container stopped; openblox now reads the container's state to
+  classify it (part of #69).
 
 ## [0.11.0] - 2026-10-04
 
