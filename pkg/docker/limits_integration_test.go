@@ -216,6 +216,11 @@ func TestMemoryHogIsKilledAndTheHostSurvives(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Errorf("memory hog exited 0 — it allocated without bound inside a %d-byte cap", memCap)
 	}
+	// Going over the cap kills the whole sandbox; the call that did it has to say
+	// so, and say why, rather than leave the caller to guess from the exit code.
+	if !res.Stopped || !res.OOMKilled {
+		t.Errorf("Stopped=%v OOMKilled=%v after the memory cap killed the sandbox, want both true", res.Stopped, res.OOMKilled)
+	}
 
 	// Where it died is the substantive check: the last successful doubling puts
 	// an upper bound on how much it ever held. Allow an order of magnitude over

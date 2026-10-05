@@ -146,6 +146,38 @@ func TestBrokerReportsTruncatedOutput(t *testing.T) {
 	}
 }
 
+// The flag has to survive the wire: a caller behind the broker learns the sandbox
+// died under its command from the same result it would get in direct mode.
+func TestBrokerReportsASandboxThatDiedMidCommand(t *testing.T) {
+	c := startBroker(t)
+	sb := create(t, c, "openblox-broker-diedmid")
+	ctx := context.Background()
+
+	done := make(chan sandbox.Result, 1)
+	go func() {
+		res, err := sb.Exec(ctx, sandbox.Command{
+			Argv:    []string{"sh", "-c", "echo started; sleep 30"},
+			Timeout: 60 * time.Second,
+		})
+		if err != nil {
+			t.Errorf("Exec = %v; a command killed with its sandbox is a result, not an error", err)
+		}
+		done <- res
+	}()
+	time.Sleep(1500 * time.Millisecond)
+	if err := sb.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	res := <-done
+	if !res.Stopped || res.OOMKilled {
+		t.Errorf("Stopped=%v OOMKilled=%v, want Stopped true and OOMKilled false for an operator stop", res.Stopped, res.OOMKilled)
+	}
+	if !strings.Contains(string(res.Stdout), "started") {
+		t.Errorf("Stdout = %q, want the output produced before the stop", res.Stdout)
+	}
+}
+
 // Root must be refused at the broker too — by the profile's config validation
 // in practice, and by the library underneath if a Config is built in code.
 func TestBrokerRefusesARootProfile(t *testing.T) {

@@ -164,6 +164,18 @@ type Result struct {
 	// Truncated reports that Stdout or Stderr reached MaxOutputBytes and the
 	// rest of that stream was discarded. The command still ran to completion.
 	Truncated bool
+	// Stopped reports that the sandbox was no longer running when the command
+	// ended, so a non-zero ExitCode is the sandbox dying, not the command
+	// failing: nothing in the sandbox survives, and the next call on the handle
+	// returns ErrStopped. Stdout and Stderr hold what was produced before.
+	//
+	// ErrStopped covers an operation begun on a stopped sandbox; Stopped covers
+	// one that was running when the sandbox stopped under it.
+	Stopped bool
+	// OOMKilled narrows Stopped: the sandbox was killed for exceeding its memory
+	// limit. A sandbox can stop for other reasons, such as the process cap or an
+	// operator, and then this stays false.
+	OOMKilled bool
 }
 
 // MaxOutputBytes caps each of a command's output streams as held in memory.

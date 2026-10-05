@@ -55,6 +55,8 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		Stderr:    res.Stderr,
 		ExitCode:  res.ExitCode,
 		Truncated: res.Truncated,
+		Stopped:   res.Stopped,
+		OOMKilled: res.OOMKilled,
 	})
 }
 
