@@ -129,6 +129,12 @@ reserved for openblox failing to run it at all — including `sandbox.ErrTimeout
 which the command has been killed. Each output stream is capped at 16 MiB;
 `res.Truncated` reports when output was discarded.
 
+One non-zero exit is not the program's doing: going over the memory limit kills the
+whole sandbox, and the command that did it comes back like any other failure.
+`res.Stopped` says the sandbox died under the command, and `res.OOMKilled` that
+the memory limit was the cause. Stop retrying on that sandbox and create a fresh one;
+the output captured before the kill is still in `res.Stdout`.
+
 !!! note "Argv, not a shell string"
     `Command.Argv` is passed directly to `exec`. Nothing in it is parsed as shell
     syntax, so a caller cannot accidentally create an injection by interpolating

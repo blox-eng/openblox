@@ -13,6 +13,19 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Added
+
+- **`Result.Stopped` and `Result.OOMKilled`: the command that ends the sandbox
+  now says so.** Going over the memory limit kills the whole sandbox, and the
+  call that did it came back as a plain non-zero exit, so a caller needed a
+  second call to learn the sandbox was gone, and a guess to learn why.
+  `Stopped` reports that the sandbox died under the command; `OOMKilled` that
+  the memory limit was the cause. The output captured before the kill is
+  kept. Both travel over the broker as `stopped` and `oom_killed`, omitted when
+  false, so existing clients see the same response. Only an exit of 128 or 137
+  (what a memory kill and a stop produce) waits up to two seconds for Docker
+  to record the stop; every other failure returns at once (#69).
+
 ## [0.11.2] - 2026-10-05
 
 ### Fixed

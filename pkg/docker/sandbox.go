@@ -137,12 +137,68 @@ func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user, pid
 	}
 
 	// A non-zero exit is the command's result, not our error.
-	return sandbox.Result{
+	res := sandbox.Result{
 		Stdout:    stdout.buf.Bytes(),
 		Stderr:    stderr.buf.Bytes(),
 		ExitCode:  inspect.ExitCode,
 		Truncated: stdout.truncated || stderr.truncated,
-	}, nil
+	}
+	// Only the two exits a sandbox death was observed to produce are worth
+	// asking about, so every other failure (1, 2, 127, 130, 255) never pays for
+	// the question.
+	if mayHaveDied(res.ExitCode) {
+		res.Stopped, res.OOMKilled = s.diedUnder(inspectCtx)
+	}
+	return res, nil
+}
+
+// The exit statuses a dying sandbox hands the command in it. 128 is runsc losing
+// the sandbox under its own wait, which is what the memory limit produces under
+// gVisor; 137 is SIGKILL, which is what stopping the sandbox produces. Other
+// statuses at or above 128 are ordinary: scripts exit 255 and 130 by themselves.
+const (
+	exitLostWait = 128
+	exitKilled   = 137
+)
+
+// mayHaveDied reports whether an exit status is one a sandbox death produces.
+func mayHaveDied(exitCode int) bool {
+	return exitCode == exitLostWait || exitCode == exitKilled
+}
+
+// stopSettle bounds how long diedUnder waits for Docker to record a stop. The
+// exec returns when the stream closes, which can be a few hundred milliseconds
+// before the container reads as exited; Blox saw about a second.
+const stopSettle = 2 * time.Second
+
+// diedUnder reports whether the sandbox has stopped and, if so, whether the
+// memory limit killed it.
+//
+// Going over a limit under gVisor kills the whole sandbox, and the exec that
+// did it comes back as a plain non-zero exit, the same as a command that failed
+// by itself. Docker knows which it was, but not yet at that instant: the exec
+// stream closes before the container's state does. So this waits for the stop
+// event rather than reading the state once, and gives up after stopSettle. A
+// command that kills itself while the sandbox survives therefore costs the full
+// wait; nothing else does.
+//
+// Any failure reports not stopped. The command's own exit code then stands,
+// which is a safer answer than a flag set on a guess.
+func (s *dockerSandbox) diedUnder(ctx context.Context) (stopped, oomKilled bool) {
+	waitCtx, cancel := context.WithTimeout(ctx, stopSettle)
+	defer cancel()
+	statusCh, errCh := s.cli.ContainerWait(waitCtx, s.id, container.WaitConditionNotRunning)
+	select {
+	case <-statusCh:
+	case <-errCh:
+		return false, false
+	}
+
+	in, err := s.cli.ContainerInspect(ctx, s.id)
+	if err != nil || in.ContainerJSONBase == nil || in.State == nil || in.State.Running {
+		return false, false
+	}
+	return true, in.State.OOMKilled
 }
 
 // groupScript records the process group a command runs in, then runs it.

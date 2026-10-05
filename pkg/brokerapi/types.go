@@ -52,6 +52,10 @@ type ExecResponse struct {
 	ExitCode int    `json:"exit_code"`
 	// Truncated mirrors sandbox.Result.Truncated.
 	Truncated bool `json:"truncated,omitempty"`
+	// Stopped and OOMKilled mirror sandbox.Result. Both are omitted when false,
+	// so a client that predates them sees the response it always did.
+	Stopped   bool `json:"stopped,omitempty"`
+	OOMKilled bool `json:"oom_killed,omitempty"`
 }
 
 // ProcessRequest starts a detached background process.
