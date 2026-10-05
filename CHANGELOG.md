@@ -13,6 +13,13 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed
+
+- In direct (Docker) mode, an operation on a sandbox whose container was
+  removed (by `MaxAge`, `docker rm` or a host restart) now returns
+  `ErrNotFound` instead of an unclassified error, so a client that caches
+  sandbox handles can drop the handle and create a new sandbox (#72).
+
 ## [0.11.0] - 2026-10-04
 
 ### Added

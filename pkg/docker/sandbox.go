@@ -277,6 +277,12 @@ func (s *dockerSandbox) attach(ctx context.Context, cmd sandbox.Command, user st
 		if cerrdefs.IsConflict(err) {
 			return "", types.HijackedResponse{}, fmt.Errorf("%w: %q", sandbox.ErrStopped, s.info.Name)
 		}
+		// 404 is a container removed behind this handle: MaxAge, an operator's
+		// docker rm, a host restart. A caller that caches handles needs
+		// ErrNotFound to know to drop it and create a new sandbox.
+		if cerrdefs.IsNotFound(err) {
+			return "", types.HijackedResponse{}, fmt.Errorf("%w: %q", sandbox.ErrNotFound, s.info.Name)
+		}
 		return "", types.HijackedResponse{}, fmt.Errorf("exec create in %q: %w", s.info.Name, err)
 	}
 
