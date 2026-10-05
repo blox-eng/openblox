@@ -60,3 +60,13 @@ func TestCreateFailsCleanlyWhenDockerIsUnreachable(t *testing.T) {
 		t.Fatal("Create hung until the deadline instead of failing")
 	}
 }
+
+// Scripts exit 255 and 130 by themselves; only the statuses a sandbox death
+// produces may pay for the question of whether it died.
+func TestMayHaveDiedOnlyForDeathExits(t *testing.T) {
+	for code, want := range map[int]bool{0: false, 1: false, 2: false, 127: false, 128: true, 130: false, 137: true, 143: false, 255: false} {
+		if got := mayHaveDied(code); got != want {
+			t.Errorf("mayHaveDied(%d) = %v, want %v", code, got, want)
+		}
+	}
+}

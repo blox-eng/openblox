@@ -146,7 +146,7 @@ func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user, pid
 	// Only the two exits a sandbox death was observed to produce are worth
 	// asking about, so every other failure (1, 2, 127, 130, 255) never pays for
 	// the question.
-	if res.ExitCode == exitLostWait || res.ExitCode == exitKilled {
+	if mayHaveDied(res.ExitCode) {
 		res.Stopped, res.OOMKilled = s.diedUnder(inspectCtx)
 	}
 	return res, nil
@@ -160,6 +160,11 @@ const (
 	exitLostWait = 128
 	exitKilled   = 137
 )
+
+// mayHaveDied reports whether an exit status is one a sandbox death produces.
+func mayHaveDied(exitCode int) bool {
+	return exitCode == exitLostWait || exitCode == exitKilled
+}
 
 // stopSettle bounds how long diedUnder waits for Docker to record a stop. The
 // exec returns when the stream closes, which can be a few hundred milliseconds

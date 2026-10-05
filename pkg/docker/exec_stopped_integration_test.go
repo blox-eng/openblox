@@ -76,15 +76,9 @@ func TestExecThatFailsOnItsOwnLeavesTheSandboxRunning(t *testing.T) {
 		"kills itself":   "kill -9 $$",
 		"command absent": "nosuchcommand-xyz",
 	} {
-		start := time.Now()
 		res, err := sb.Exec(ctx, sandbox.Command{Argv: []string{"sh", "-c", script}})
 		if err != nil {
 			t.Fatalf("%s: Exec = %v", name, err)
-		}
-		// Only the exits a death produces may wait for Docker; 255 and 130 are
-		// ordinary and must come back at once.
-		if (name == "exit 255" || name == "exit 130") && time.Since(start) > stopSettle/2 {
-			t.Errorf("%s took %v: an ordinary exit waited for a stop that was never coming", name, time.Since(start))
 		}
 		if res.ExitCode == 0 {
 			t.Fatalf("%s: exit 0, want a failure", name)
