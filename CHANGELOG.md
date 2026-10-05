@@ -13,6 +13,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-05
+
 ### Fixed
 
 - In direct (Docker) mode, an exec sent just after a sandbox was killed for
@@ -494,7 +496,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
 
-[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/blox-eng/openblox/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/blox-eng/openblox/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/blox-eng/openblox/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/blox-eng/openblox/compare/v0.9.0...v0.10.0
