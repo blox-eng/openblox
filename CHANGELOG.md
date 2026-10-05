@@ -22,9 +22,9 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   `Stopped` reports that the sandbox died under the command; `OOMKilled` that
   the memory limit was the cause. The output captured before the kill is
   kept. Both travel over the broker as `stopped` and `oom_killed`, omitted when
-  false, so existing clients see the same response. An exit of 128 or above
-  waits up to two seconds for Docker to record a stop; ordinary failures do
-  not wait (#69).
+  false, so existing clients see the same response. Only an exit of 128 or 137
+  (what a memory kill and a stop produce) waits up to two seconds for Docker
+  to record the stop; every other failure returns at once (#69).
 
 ## [0.11.2] - 2026-10-05
 

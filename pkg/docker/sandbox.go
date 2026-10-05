@@ -143,17 +143,23 @@ func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user, pid
 		ExitCode:  inspect.ExitCode,
 		Truncated: stdout.truncated || stderr.truncated,
 	}
-	// Only an exit that a death can produce is worth asking about, so an
-	// ordinary failure (1, 2, 127) never pays for the question.
-	if res.ExitCode >= signalExit {
+	// Only the two exits a sandbox death was observed to produce are worth
+	// asking about, so every other failure (1, 2, 127, 130, 255) never pays for
+	// the question.
+	if res.ExitCode == exitLostWait || res.ExitCode == exitKilled {
 		res.Stopped, res.OOMKilled = s.diedUnder(inspectCtx)
 	}
 	return res, nil
 }
 
-// signalExit is the lowest exit status a death produces: 128+n for a signal
-// (137 for SIGKILL), and 128 itself when runsc loses the sandbox under a wait.
-const signalExit = 128
+// The exit statuses a dying sandbox hands the command in it. 128 is runsc losing
+// the sandbox under its own wait, which is what the memory limit produces under
+// gVisor; 137 is SIGKILL, which is what stopping the sandbox produces. Other
+// statuses at or above 128 are ordinary: scripts exit 255 and 130 by themselves.
+const (
+	exitLostWait = 128
+	exitKilled   = 137
+)
 
 // stopSettle bounds how long diedUnder waits for Docker to record a stop. The
 // exec returns when the stream closes, which can be a few hundred milliseconds

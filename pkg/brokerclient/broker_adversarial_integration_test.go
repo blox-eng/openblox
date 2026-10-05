@@ -156,7 +156,7 @@ func TestBrokerReportsASandboxThatDiedMidCommand(t *testing.T) {
 	done := make(chan sandbox.Result, 1)
 	go func() {
 		res, err := sb.Exec(ctx, sandbox.Command{
-			Argv:    []string{"sh", "-c", "echo started; sleep 30"},
+			Argv:    []string{"sh", "-c", "echo started; touch /tmp/ready; sleep 30"},
 			Timeout: 60 * time.Second,
 		})
 		if err != nil {
@@ -164,7 +164,15 @@ func TestBrokerReportsASandboxThatDiedMidCommand(t *testing.T) {
 		}
 		done <- res
 	}()
-	time.Sleep(1500 * time.Millisecond)
+	// Stop only once the command is running, so it can only land mid-command.
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if r, err := sb.Exec(ctx, sandbox.Command{Argv: []string{"test", "-f", "/tmp/ready"}}); err == nil && r.ExitCode == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the command under test never started")
+		}
+	}
 	if err := sb.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
