@@ -118,7 +118,7 @@ before choosing a different group.
 **3. Configure profiles.** Start from `openbloxd.example.yaml` and install it as
 `/etc/openbloxd/config.yaml`. Pin every image **by digest**, and size
 `max_sandboxes × memory_mb` across all profiles to what the host can hold, with
-headroom. For untrusted code keep `egress: none`, and set `runtime` to `runsc` (the
+headroom (see [`memory_mb` is approximate](#memory_mb-is-approximate)). For untrusted code keep `egress: none`, and set `runtime` to `runsc` (the
 default) or a microVM runtime such as `kata` — never `runc`.
 Unknown keys, negative bounds and root users are refused at start-up.
 
@@ -145,6 +145,27 @@ sb, err := client.Create(ctx, "session-1", brokerclient.WithProfile("code-exec")
 `brokerclient.Client` implements the same `sandbox.Backend` as the Docker backend.
 A containerized application mounts the **directory** `/run/openbloxd`, not the socket
 file, so it survives a daemon restart.
+
+### `memory_mb` is approximate
+
+`memory_mb` is the limit handed to the container runtime (Docker's `--memory`, with
+swap equal to it), and openbloxd cannot tighten it: how soon the kill lands depends
+on how the host accounts gVisor's guest memory. On one host a process in a sandbox
+with `memory_mb: 2048` reached about 2.8 GiB resident (`VmRSS`) before it was killed,
+roughly 1.4× the configured figure ([#30](https://github.com/blox-eng/openblox/issues/30)).
+On another (Ubuntu 24.04, kernel 6.17, cgroup v2 with the systemd driver, runsc
+release-20260803.0) it was killed at 0.90–0.98× across 512 to 4096 MiB. The kill
+still lands either way, so the limit holds; whether it bites at the number you set
+depends on the host.
+
+Plan for the worst case: count each sandbox as **1.4 × `memory_mb`**:
+
+    host RAM − 1 GiB  ≥  1.4 × Σ (max_sandboxes × memory_mb)  over all profiles
+
+To see which case your host is in, read `VmRSS` from `/proc/self/status` inside a
+sandbox that allocates past its limit, and compare `docker stats` for the
+container: where `docker stats` stays flat while `VmRSS` climbs, the cgroup is not
+charging guest memory and the overshoot applies.
 
 ## Operating it
 
