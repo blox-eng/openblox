@@ -150,24 +150,27 @@ file, so it survives a daemon restart.
 ### `memory_mb` is approximate
 
 `memory_mb` is the limit handed to the container runtime: Docker's `--memory`, with
-`--memory-swap` set to the same value, so there is no swap. openbloxd passes it
-through as is. How soon the kill lands depends on how the host accounts gVisor's
-guest memory. On one host a process in a sandbox
-with `memory_mb: 2048` reached about 2.8 GiB resident (`VmRSS`) before it was killed,
-roughly 1.4× the configured figure ([#30](https://github.com/blox-eng/openblox/issues/30)).
-On another (Ubuntu 24.04, kernel 6.17, cgroup v2 with the systemd driver, runsc
-release-20260803.0) it was killed at 0.91–0.98× across 512 to 4096 MiB. The kill
-lands either way, so memory stays bounded; whether the bound is the number you set
-depends on the host.
+`--memory-swap` set to the same value, so there is no swap. The exception is a cgroup
+v1 host without swap accounting: Docker drops the swap limit there, and a sandbox can
+use host swap on top of its memory limit (see [Troubleshooting](#troubleshooting)).
+openbloxd passes the limit through as is. How soon the kill lands depends on how the
+host accounts gVisor's guest memory. On one host a process in a sandbox with
+`memory_mb: 2048` reached about 2.8 GiB resident (`VmRSS`) before it was killed,
+roughly 1.4× the configured figure
+([#30](https://github.com/blox-eng/openblox/issues/30)). On another (Ubuntu 24.04,
+kernel 6.17, cgroup v2 with the systemd driver, runsc release-20260803.0) it was
+killed at 0.91–0.98× across 512 to 4096 MiB. The kill lands either way, so memory
+stays bounded; whether the bound is the number you set depends on the host.
 
-Plan for the worst case: count each sandbox as **1.4 × `memory_mb`**:
+Plan for the largest overshoot seen so far: count each sandbox as
+**1.4 × `memory_mb`**. It is a measured starting estimate, not a proven bound:
 
     host RAM − 1 GiB  ≥  1.4 × Σ (max_sandboxes × memory_mb)  over all profiles
 
-To see which case your host is in, read `VmRSS` from `/proc/self/status` inside a
-sandbox that allocates past its limit, and compare `docker stats` for the
-container: where `docker stats` stays flat while `VmRSS` climbs, the cgroup is not
-charging guest memory and the overshoot applies.
+To see which case your host is in, run a sandbox that allocates past its limit
+and read `VmRSS` from `/proc/self/status` inside it until the kill. The last
+reading is where your host enforces the limit: well above `memory_mb` means the
+overshoot applies, and at or just under it means the limit holds as set.
 
 ## Operating it
 
