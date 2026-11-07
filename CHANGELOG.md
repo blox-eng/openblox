@@ -13,6 +13,15 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`brokerclient.Create` rejects a policy option even when it is set to its
+  default value.** Before, `WithRuntime("runsc")`, `WithEgress(EgressNone)` and
+  the like left the resolved spec looking exactly as if nothing was passed, so
+  the option was dropped in favour of the profile and the caller was not told.
+  Isolation was never weakened: the profile won either way. Blox's brokered
+  path passes only `WithProfile`, so it is not affected (#25).
+
 ## [0.13.0] - 2026-11-07
 
 ### Breaking
