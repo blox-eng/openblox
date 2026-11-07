@@ -113,7 +113,7 @@ func (s *dockerSandbox) exec(ctx context.Context, cmd sandbox.Command, user, pid
 		// unblocks StdCopy, so without this a timed-out command would still take
 		// as long as the command itself.
 		attached.Close()
-		<-copyDone
+		<-copyDone //nolint:errcheck // the copy's error is the close above
 		// Closing the stream does not stop the command, and Docker has no call
 		// that kills an exec — so without this the command runs on, unobserved,
 		// until the sandbox is reaped.
@@ -190,7 +190,7 @@ func (s *dockerSandbox) diedUnder(ctx context.Context) (stopped, oomKilled bool)
 	statusCh, errCh := s.cli.ContainerWait(waitCtx, s.id, container.WaitConditionNotRunning)
 	select {
 	case <-statusCh:
-	case <-errCh:
+	case <-errCh: //nolint:errcheck // any failure reports not stopped; see above
 		return false, false
 	}
 
