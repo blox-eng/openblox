@@ -8,6 +8,7 @@ package brokerclient
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/blox-eng/openblox/pkg/preview"
 	"github.com/blox-eng/openblox/pkg/sandbox"
@@ -91,6 +92,87 @@ func policyFields(spec sandbox.Spec) []string {
 		set = append(set, "timeouts")
 	}
 	return set
+}
+
+// policyFieldsSet reports which policy options opts set, including one set to
+// the library default.
+//
+// A resolved Spec cannot show that: an option written to its default leaves the
+// Spec identical to one where nothing was passed. So each option is also applied
+// to a Spec holding a value no caller would choose in every policy field, and a
+// field that moves was written. That needs no bookkeeping inside package
+// sandbox, so it holds for an option a caller defines themselves and for one
+// added to package sandbox later. TestEveryCreateOptionIsClassified makes a new
+// option an explicit decision.
+//
+// An option that writes nothing, such as WithResources with every field zero,
+// is no intent and is not reported.
+func policyFieldsSet(opts ...sandbox.CreateOption) []string {
+	set := map[string]bool{}
+	for _, f := range policyFields(sandbox.NewSpec(opts...)) {
+		set[f] = true
+	}
+	for _, opt := range opts {
+		probe := sentinelSpec()
+		opt(&probe)
+		for _, f := range policyFieldsWrittenTo(probe) {
+			set[f] = true
+		}
+	}
+	var out []string
+	for _, f := range policyFieldNames {
+		if set[f] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// policyFieldNames fixes the order of a rejection message.
+var policyFieldNames = []string{"image", "runtime", "user", "egress", "resources", "lifetime", "timeouts"}
+
+// sentinelSpec fills every policy field with a value that is not a default and
+// that no option would write on purpose.
+func sentinelSpec() sandbox.Spec {
+	return sandbox.Spec{
+		Image:     "\x00sentinel",
+		Runtime:   "\x00sentinel",
+		User:      "\x00sentinel",
+		Egress:    sandbox.EgressPolicy(-1 << 20),
+		Resources: sandbox.Resources{CPUs: -1.5, MemoryBytes: -1, DiskBytes: -1, MaxProcesses: -1},
+		Lifetime:  sandbox.Lifetime{IdleTimeout: -time.Nanosecond, MaxAge: -time.Nanosecond},
+
+		DefaultTimeout: -time.Nanosecond,
+		MaxTimeout:     -time.Nanosecond,
+	}
+}
+
+// policyFieldsWrittenTo names the policy fields that no longer hold the sentinel.
+func policyFieldsWrittenTo(spec sandbox.Spec) []string {
+	sentinel := sentinelSpec()
+	var written []string
+	if spec.Image != sentinel.Image {
+		written = append(written, "image")
+	}
+	if spec.Runtime != sentinel.Runtime {
+		written = append(written, "runtime")
+	}
+	if spec.User != sentinel.User {
+		written = append(written, "user")
+	}
+	if spec.Egress != sentinel.Egress {
+		written = append(written, "egress")
+	}
+	if spec.Resources != sentinel.Resources {
+		written = append(written, "resources")
+	}
+	if spec.Lifetime != sentinel.Lifetime {
+		written = append(written, "lifetime")
+	}
+	if spec.DefaultTimeout != sentinel.DefaultTimeout || spec.MaxTimeout != sentinel.MaxTimeout {
+		written = append(written, "timeouts")
+	}
+	return written
 }
 
 // plural picks the verb form for a policyFields message: one offending field
