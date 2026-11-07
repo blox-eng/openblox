@@ -149,14 +149,15 @@ file, so it survives a daemon restart.
 
 ### `memory_mb` is approximate
 
-`memory_mb` is the limit handed to the container runtime (Docker's `--memory`, with
-swap equal to it), and openbloxd cannot tighten it: how soon the kill lands depends
-on how the host accounts gVisor's guest memory. On one host a process in a sandbox
+`memory_mb` is the limit handed to the container runtime: Docker's `--memory`, with
+`--memory-swap` set to the same value, so there is no swap. openbloxd passes it
+through as is. How soon the kill lands depends on how the host accounts gVisor's
+guest memory. On one host a process in a sandbox
 with `memory_mb: 2048` reached about 2.8 GiB resident (`VmRSS`) before it was killed,
 roughly 1.4× the configured figure ([#30](https://github.com/blox-eng/openblox/issues/30)).
 On another (Ubuntu 24.04, kernel 6.17, cgroup v2 with the systemd driver, runsc
 release-20260803.0) it was killed at 0.91–0.98× across 512 to 4096 MiB. The kill
-still lands either way, so the limit holds; whether it bites at the number you set
+lands either way, so memory stays bounded; whether the bound is the number you set
 depends on the host.
 
 Plan for the worst case: count each sandbox as **1.4 × `memory_mb`**:

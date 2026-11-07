@@ -32,9 +32,9 @@ that does other work, you don't need this. Install the binary and follow
 - **Disk:** an SSD. Every sandbox's writable layer lives on it.
 - **Memory:** the RAM decides how many sandboxes can run at once. A sandbox
   can hold up to about 1.4× its `memory_mb` before the kernel's limit lands,
-  depending on the host ([`memory_mb` is approximate](production.md#memory_mb-is-approximate)),
-  and the host keeps
-  1 GiB for itself:
+  depending on the host
+  ([`memory_mb` is approximate](production.md#memory_mb-is-approximate)), and the
+  host keeps 1 GiB for itself:
 
     `max_sandboxes = floor((RAM − 1 GiB) / (1.4 × memory_mb))`, at least 1
 
