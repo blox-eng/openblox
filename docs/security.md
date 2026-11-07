@@ -36,8 +36,9 @@ higher cost per sandbox. openblox does not rank them — it checks only that the
 is registered — so a deployment that has chosen a microVM runtime is supported. Kata on
 amd64 is measured by openblox — the conformance suite, in a workflow that does not gate
 merges — with one defence-in-depth layer lost: `/dev/shm` is not `noexec,nosuid` in its
-guest, and Kata discards the options openblox could set on it. One lifecycle claim — that `Exec` on a crashed sandbox fails promptly and `Create`
-recovers it — is unmeasured under Kata. See
+guest, and Kata discards the options openblox could set on it. One lifecycle claim —
+that `Exec` on a crashed sandbox fails promptly and `Create` recovers it — is
+unmeasured under Kata. See
 [THREAT_MODEL.md](https://github.com/blox-eng/openblox/blob/main/THREAT_MODEL.md#under-kata)
 and [SECURITY.md](https://github.com/blox-eng/openblox/blob/main/SECURITY.md#the-isolation-runtime).
 
@@ -154,7 +155,7 @@ it from. Each release attaches the binary for `amd64` and `arm64`, alongside the
 unit and an example config:
 
 ```sh
-VERSION=v0.6.1; ARCH=amd64     # pin a version; do not install "latest"
+VERSION=v0.12.0; ARCH=amd64     # pin a version; do not install "latest"
 gh release download "$VERSION" -R blox-eng/openblox \
   -p "openbloxd-linux-$ARCH" -p "openbloxd-linux-$ARCH.sha256"
 sha256sum -c "openbloxd-linux-$ARCH.sha256"        # integrity
@@ -195,15 +196,17 @@ resolves the path fresh on every connection and picks up the new socket.
 a Unix socket is a kernel object with no wire to intercept, and mTLS would add a CA,
 issuance and rotation for no real gain here. That calculus only holds while caller and
 daemon share a host; see [Remote transport](#remote-transport) below for the network
-case, where a CA is unavoidable and buys something real. Two different groups do two different jobs
-here, and they are easy to conflate: `socket_group` in the daemon's own config file
-(`deploy/openbloxd.example.yaml`) names the group that may reach the socket — the
-daemon itself creates the socket `0660` and chowns it to that group in `Listen`
-(`internal/daemon/listener.go`), not the unit file. `SupplementaryGroups=docker` in
-`deploy/openbloxd.service` is unrelated: it grants the daemon *itself* membership of the
-`docker` group so it can reach `/var/run/docker.sock`. Anything in `socket_group` reaches
-the full broker surface, with no per-caller distinction inside it — grant it only to
-processes that should be able to create sandboxes.
+case, where a CA is unavoidable and buys something real.
+
+Two different groups do two different jobs here, and they are easy to conflate:
+`socket_group` in the daemon's own config file (`deploy/openbloxd.example.yaml`) names
+the group that may reach the socket — the daemon itself creates the socket `0660` and
+chowns it to that group in `Listen` (`internal/daemon/listener.go`), not the unit file.
+`SupplementaryGroups=docker` in `deploy/openbloxd.service` is unrelated: it grants the
+daemon *itself* membership of the `docker` group so it can reach `/var/run/docker.sock`.
+Anything in `socket_group` reaches the full broker surface, with no per-caller
+distinction inside it — grant it only to processes that should be able to create
+sandboxes.
 
 `socket_group` must be the daemon user's primary group, or `Group=` must be set on the
 unit to match it. systemd creates `RuntimeDirectory` (`/run/openbloxd`) owned by the
@@ -297,13 +300,17 @@ automatically should revoke them automatically too.
 ### Issuing the certificates
 
 openbloxd is not a certificate authority and does not want to be. A minimal
-private CA, sufficient for one daemon and one caller (bash/zsh — `<(...)`
-process substitution is not POSIX `sh`):
+private setup, sufficient for one daemon and one caller (bash/zsh — `<(...)`
+process substitution is not POSIX `sh`). It uses two CAs, as `setup.sh` does:
+the daemon trusts every certificate the client CA signs, so that CA signs
+callers and nothing else.
 
 ```bash
-# A CA that signs nothing else.
+# Two CAs: one signs the daemon's certificate, one signs callers and nothing else.
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
-  -keyout ca.key -out ca.crt -subj "/CN=openbloxd-ca"
+  -keyout server-ca.key -out server-ca.crt -subj "/CN=openbloxd-server-ca"
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
+  -keyout clients-ca.key -out clients-ca.crt -subj "/CN=openbloxd-clients-ca"
 
 # The daemon's certificate. The SAN must match the address callers dial —
 # DNS:<daemon-hostname>, or IP:<daemon-address> when callers dial by address.
@@ -311,25 +318,25 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 
 # SAN here would be a certificate no remote caller can verify.
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
   -keyout server.key -out server.csr -subj "/CN=openbloxd"
-openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+openssl x509 -req -in server.csr -CA server-ca.crt -CAkey server-ca.key -CAcreateserial \
   -days 825 -out server.crt \
   -extfile <(printf "subjectAltName=DNS:openbloxd.internal.example\nextendedKeyUsage=serverAuth")
 
 # One caller. The CN is what goes in allowed_client_cns.
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
   -keyout client.key -out client.csr -subj "/CN=sandbox-caller"
-openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+openssl x509 -req -in client.csr -CA clients-ca.crt -CAkey clients-ca.key -CAcreateserial \
   -days 825 -out client.crt \
   -extfile <(printf "extendedKeyUsage=clientAuth")
 ```
 
-Keep `ca.key` off both machines once the certificates are issued.
+Keep both CA keys off the caller's machine once the certificates are issued.
 
-`server.crt`/`server.key` and `ca.crt` stay on the daemon's host, as
+`server.crt`/`server.key` and `clients-ca.crt` stay on the daemon's host, as
 `cert_file`, `key_file` and `client_ca_file`; the CN `sandbox-caller` is what
 goes in `allowed_client_cns`. `client.crt`/`client.key` are the only pair
 that leaves the daemon's host at all — they travel to the caller, which
-configures its own TLS client with them and with `ca.crt` to verify the
+configures its own TLS client with them and with `server-ca.crt` to verify the
 server.
 
 ## Reporting a vulnerability

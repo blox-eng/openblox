@@ -76,22 +76,22 @@ another, which on this host is not a distinction worth losing.
 ```sh
 curl -fsSL https://openblox.sh/install.sh -o install.sh
 less install.sh
-sudo OPENBLOX_VERSION=v0.8.1 sh install.sh
-/usr/local/bin/openbloxd --version   # must print v0.8.1, not "dev"
+sudo OPENBLOX_VERSION=v0.12.0 sh install.sh
+/usr/local/bin/openbloxd --version   # must print v0.12.0, not "dev"
 ```
 
 It installs the binary and nothing else — no unit, no config, no user. Steps 3
 and 4 below need two more files from the same release:
 
 ```sh
-gh release download v0.8.1 -R blox-eng/openblox \
+gh release download v0.12.0 -R blox-eng/openblox \
   -p openbloxd.service -p openbloxd.example.yaml
 ```
 
 The same steps by hand, for watching each one succeed on its own:
 
 ```sh
-VERSION=v0.8.1; ARCH=amd64
+VERSION=v0.12.0; ARCH=amd64
 gh release download "$VERSION" -R blox-eng/openblox \
   -p "openbloxd-linux-$ARCH" -p "openbloxd-linux-$ARCH.sha256" \
   -p openbloxd.service -p openbloxd.example.yaml
