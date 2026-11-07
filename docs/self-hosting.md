@@ -162,7 +162,7 @@ removes every sandbox it creates. The source is
 [`www/bench.sh`](https://github.com/blox-eng/openblox/blob/main/www/bench.sh).
 
 ```sh
-curl -fsSL https://openblox.sh/bench.sh | sudo sh
+curl -fsSL https://openblox.sh/bench.sh -o bench.sh && sudo sh bench.sh
 ```
 
 The default mode, `latency`, runs one sandbox at a time. Below is a 2012
@@ -190,7 +190,7 @@ once before the host is the bottleneck. It steps concurrency up (1, 2, 4, 8,
 16 by default), and every sandbox at a level runs the job at the same time:
 
 ```sh
-curl -fsSL https://openblox.sh/bench.sh | sudo sh -s -- --mode stress
+sudo sh bench.sh --mode stress
 ```
 
 On the same machine:
