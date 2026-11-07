@@ -32,14 +32,14 @@
 
   var COMMANDS = {
     't-daemon': {
-      cmd: 'curl -fsSL https://openblox.sh/install.sh | sh',
+      cmd: 'curl -fsSL https://openblox.sh/install.sh -o install.sh && sh install.sh',
       note: 'Linux · amd64 or arm64 · needs Docker with ',
       runtime: true,
       read: '/install.sh'
     },
     't-source': {
       cmd: 'go install github.com/blox-eng/openblox/cmd/openbloxd@latest',
-      note: 'The same daemon, built by your own toolchain. Go 1.27+',
+      note: 'The same daemon, built by your own toolchain, so --version reports dev. Go 1.27+',
       read: false
     },
     't-lib': {
