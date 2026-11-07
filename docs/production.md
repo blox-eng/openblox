@@ -118,8 +118,9 @@ before choosing a different group.
 **3. Configure profiles.** Start from `openbloxd.example.yaml` and install it as
 `/etc/openbloxd/config.yaml`. Pin every image **by digest**, and size
 `max_sandboxes × memory_mb` across all profiles to what the host can hold, with
-headroom (see [`memory_mb` is approximate](#memory_mb-is-approximate)). For untrusted code keep `egress: none`, and set `runtime` to `runsc` (the
-default) or a microVM runtime such as `kata` — never `runc`.
+headroom (see [`memory_mb` is approximate](#memory_mb-is-approximate)). For
+untrusted code keep `egress: none`, and set `runtime` to `runsc` (the default) or a
+microVM runtime such as `kata` — never `runc`.
 Unknown keys, negative bounds and root users are refused at start-up.
 
 **4. Install the unit and start it.**
@@ -154,7 +155,7 @@ on how the host accounts gVisor's guest memory. On one host a process in a sandb
 with `memory_mb: 2048` reached about 2.8 GiB resident (`VmRSS`) before it was killed,
 roughly 1.4× the configured figure ([#30](https://github.com/blox-eng/openblox/issues/30)).
 On another (Ubuntu 24.04, kernel 6.17, cgroup v2 with the systemd driver, runsc
-release-20260803.0) it was killed at 0.90–0.98× across 512 to 4096 MiB. The kill
+release-20260803.0) it was killed at 0.91–0.98× across 512 to 4096 MiB. The kill
 still lands either way, so the limit holds; whether it bites at the number you set
 depends on the host.
 
