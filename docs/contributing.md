@@ -12,7 +12,7 @@ cd openblox
 make            # vet + lint + test
 ```
 
-Requires Go 1.25+ and [golangci-lint](https://golangci-lint.run) v2.
+Requires Go 1.27+ and [golangci-lint](https://golangci-lint.run) v2.
 
 **Install golangci-lint before you push.** `go vet` and `go test` catch less than CI
 does — the lint step adds revive, gosec, errorlint and bodyclose. Without it on your

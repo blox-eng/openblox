@@ -13,6 +13,23 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Breaking
+
+- **Go 1.27 or newer is required.** `go.mod` now says `go 1.27.3`, so a
+  library user on Go 1.26 or older must upgrade before taking this release.
+  Go 1.25, the previous minimum, is out of support and gets no more security
+  fixes (#92).
+
+### Security
+
+- **`openbloxd` and the library are built with Go 1.27.3.** Go 1.25.13 carried
+  ten reachable standard-library vulnerabilities that no 1.25 release will fix.
+  The ones that matter most to the daemon's mTLS listener are HTTP/2 server
+  memory exhaustion and a crash (GO-2026-6603, GO-2026-6617), and
+  `crypto/x509` not distrusting compromised intermediates (GO-2026-6809).
+  Anyone running a released `openbloxd` was affected; upgrade the daemon to
+  the release that carries this (#92).
+
 ## [0.12.0] - 2026-10-05
 
 ### Added

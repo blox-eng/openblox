@@ -41,7 +41,7 @@ The full trust model is in
 | Docker Engine | a current release, with the API version negotiated | the release on GitHub's `ubuntu-latest` image; Docker 29.1 |
 | gVisor (`runsc`) | a current release, registered as a Docker runtime named `runsc`; the default `systrap` platform needs no KVM | the latest release at CI time; `release-20260803.0` |
 | Kata (optional) | a microVM runtime instead of gVisor, registered with Docker and named in the profile; needs KVM, nested on a VM host ([setup](getting-started.md#using-kata-instead)) | 4.2.0 (runtime-rs + QEMU), amd64 only, conformance suite in a separate workflow that does not gate merges; arm64 not measured |
-| Go (library users) | the version in `go.mod` (1.25) or newer | 1.25 |
+| Go (library users) | the version in `go.mod` (1.27) or newer | 1.27 |
 | macOS, Windows, Docker Desktop | not supported — gVisor and Kata run on Linux only | — |
 
 ## Compatibility
