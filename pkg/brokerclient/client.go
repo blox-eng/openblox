@@ -101,14 +101,15 @@ func (c *Client) PreviewHandler() *preview.Handler {
 //
 // Every CreateOption that would set host policy — runtime, egress, image,
 // user, resources, lifetime — is daemon configuration now, chosen by profile.
-// Passing one here is rejected rather than ignored: see policyFields.
+// Passing one here is rejected rather than ignored, even set to its default
+// value: see policyFieldsSet.
 func (c *Client) Create(ctx context.Context, name string, opts ...sandbox.CreateOption) (sandbox.Sandbox, error) {
 	spec := sandbox.NewSpec(opts...)
 	profile := spec.Labels[profileLabel]
 	if profile == "" {
 		return nil, fmt.Errorf("%w: no profile; pass brokerclient.WithProfile", sandbox.ErrInvalid)
 	}
-	if set := policyFields(spec); len(set) > 0 {
+	if set := policyFieldsSet(opts...); len(set) > 0 {
 		return nil, fmt.Errorf(
 			"%w: %s %s daemon policy and cannot be set per-request; configure them in the profile",
 			sandbox.ErrInvalid, strings.Join(set, ", "), plural(len(set)))
