@@ -39,7 +39,7 @@
     },
     't-source': {
       cmd: 'go install github.com/blox-eng/openblox/cmd/openbloxd@latest',
-      note: 'The same daemon, built by your own toolchain. Go 1.25+',
+      note: 'The same daemon, built by your own toolchain. Go 1.27+',
       read: false
     },
     't-lib': {

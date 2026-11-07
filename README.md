@@ -11,7 +11,7 @@
 [![Coverage](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/coverage.json)](https://github.com/blox-eng/openblox/issues/10)
 [![Lines of Go](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/loc.json)](ARCHITECTURE.md)
 [![Go Reference](https://pkg.go.dev/badge/github.com/blox-eng/openblox.svg)](https://pkg.go.dev/github.com/blox-eng/openblox)
-[![Go 1.25](https://img.shields.io/badge/go-1.25-00ADD8.svg)](https://go.dev/dl/)
+[![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8.svg)](https://go.dev/dl/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
 Run untrusted, AI-generated code on your own hardware. A Go library over Docker
@@ -309,7 +309,7 @@ be worth reading, and requests to cross it get declined on that basis. See
 Linux on `amd64` and `arm64`, both tested natively in CI against a real gVisor
 runtime. Docker Engine with `runsc` registered, or a microVM runtime such as Kata
 selected explicitly; Kata is measured on amd64 in a separate workflow that does not
-gate merges. Go 1.25+ for library users. The
+gate merges. Go 1.27+ for library users. The
 [compatibility matrix](https://docs.openblox.sh/production/#compatibility) covers
 `openbloxd`, clients, images, Docker and the runtime.
 

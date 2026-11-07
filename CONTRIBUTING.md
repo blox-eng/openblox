@@ -25,7 +25,7 @@ cd openblox
 make            # vet + lint + test
 ```
 
-Requires Go 1.25+ and [golangci-lint](https://golangci-lint.run) v2.
+Requires Go 1.27+ and [golangci-lint](https://golangci-lint.run) v2.
 
 ### What `make test` does to your machine
 
