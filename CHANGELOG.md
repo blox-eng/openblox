@@ -13,6 +13,16 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Changed
+
+- **The sandbox image runs Python 3.15, up from 3.12.** Code that runs in a
+  sandbox gets the newer interpreter. Two differences can change what it does:
+  the modules [PEP 594](https://peps.python.org/pep-0594/) removed in 3.13
+  (`cgi`, `telnetlib`, `imghdr` and others) are gone, and UTF-8 mode is on by
+  default ([PEP 686](https://peps.python.org/pep-0686/)), so `open()` without an
+  `encoding` reads and writes UTF-8. A caller that needs 3.12 pins the
+  `0.13.1` image in its profile.
+
 ## [0.13.1] - 2026-11-07
 
 ### Fixed
