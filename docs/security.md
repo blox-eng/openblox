@@ -81,7 +81,8 @@ profile, through `max_sandboxes` — without it a caller looping on create exhau
 memory while every individual sandbox stays inside its policy. Size a host against
 `memory_mb` × `max_sandboxes` **with headroom**: the runtime enforces `memory_mb`
 approximately rather than exactly, and roughly 1.4× the configured figure has been
-observed resident before the kill lands.
+observed resident before the kill lands, depending on the host
+([`memory_mb` is approximate](production.md#memory_mb-is-approximate)).
 
 ### Bounded lifetime
 
