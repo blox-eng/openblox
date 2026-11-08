@@ -52,6 +52,8 @@ jobs:
           cache: true
       - name: Changelog documents the latest release
         run: .github/scripts/changelog-guard.sh
+      - name: Docs pin the latest release
+        run: .github/scripts/pin-docs.sh --check
       # Build the licence bundle on every PR, not only at release time. The
       # script fails on a dependency that ships no licence file, and the PR that
       # adds such a dependency is the moment to find out — at release time the
@@ -208,7 +210,7 @@ jobs:
             done
           }
           retry curl -fsSL --max-time 60 -o /tmp/gvisor-archive.key https://gvisor.dev/archive.key
-          sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg < /tmp/gvisor-archive.key
+          sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg /tmp/gvisor-archive.key
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
             | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
           retry sudo apt-get update -qq

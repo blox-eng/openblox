@@ -188,11 +188,14 @@ jobs:
           # The script validates VERSION itself and refuses anything that is not
           # plain semver, so it never reaches git or gh as a branch name unchecked.
           .github/scripts/promote-changelog.sh "$VERSION" "$(date -u +%Y-%m-%d)"
+          # The install commands readers copy, in the same commit as the
+          # changelog, so Lint's pin check passes on main (#91).
+          .github/scripts/pin-docs.sh "$VERSION"
 
           # Already recorded: a re-run, or a maintainer who stamped it by hand
           # before this job got there. Not a failure.
-          if git diff --quiet -- CHANGELOG.md; then
-            echo "CHANGELOG.md already records v${VERSION}: nothing to open."
+          if git diff --quiet; then
+            echo "CHANGELOG.md and the doc pins already record v${VERSION}: nothing to open."
             exit 0
           fi
 
@@ -201,7 +204,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
-          git add CHANGELOG.md
+          git add -u
           git commit -m "$title"
           # gh hands GH_TOKEN to git as a credential helper, so the token never
           # sits in a command line. A re-run pushes the same change again and
@@ -213,7 +216,8 @@ jobs:
             "Opened by the Release workflow after cutting v${VERSION}." \
             "" \
             "Moves the \`## [Unreleased]\` entries under a dated \`## [${VERSION}]\`" \
-            "heading and adds its compare link. No prose changed: this is the" \
+            "heading and adds its compare link, and points the install commands in" \
+            "the README and docs at v${VERSION}. No prose changed: this is the" \
             "mechanical half of RELEASING.md §8." \
             "" \
             "It merges itself once its checks pass. Until it merges," \

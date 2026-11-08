@@ -52,7 +52,7 @@ Its source is [`www/install.sh`](www/install.sh) — that URL serves this file.
 Pin a version in production, and pick your own target if you want one:
 
 ```bash
-OPENBLOX_VERSION=v0.12.0 OPENBLOX_BIN_DIR=~/.local/bin sh install.sh
+OPENBLOX_VERSION=v0.13.1 OPENBLOX_BIN_DIR=~/.local/bin sh install.sh
 ```
 
 **A dedicated host.** On a fresh Debian 13 or Ubuntu 24.04 machine, one
