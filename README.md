@@ -52,7 +52,7 @@ Its source is [`www/install.sh`](www/install.sh) — that URL serves this file.
 Pin a version in production, and pick your own target if you want one:
 
 ```bash
-OPENBLOX_VERSION=v0.8.1 OPENBLOX_BIN_DIR=~/.local/bin sh install.sh
+OPENBLOX_VERSION=v0.12.0 OPENBLOX_BIN_DIR=~/.local/bin sh install.sh
 ```
 
 **A dedicated host.** On a fresh Debian 13 or Ubuntu 24.04 machine, one
@@ -74,8 +74,9 @@ on the host. `--mode stress` steps concurrency up until the host tops out, and
 names the level where it does:
 
 ```bash
-curl -fsSL https://openblox.sh/bench.sh | sudo sh
-curl -fsSL https://openblox.sh/bench.sh | sudo sh -s -- --mode stress
+curl -fsSL https://openblox.sh/bench.sh -o bench.sh
+sudo sh bench.sh
+sudo sh bench.sh --mode stress
 ```
 
 What the numbers mean: **[Benchmarking](https://docs.openblox.sh/self-hosting/#benchmarking)**.
@@ -329,8 +330,7 @@ build provenance. [RELEASING.md](RELEASING.md#verifying-a-release) shows how to
 verify them.
 
 Written for [Blox](https://bloxng.com), where it is the only sandbox backend and
-replaced a hosted platform. Its own production rollout is gated on migrating its
-callers off the Docker socket and onto `openbloxd`. No support SLA.
+replaced a hosted platform. Blox reaches it through `openbloxd`. No support SLA.
 
 ## Security
 

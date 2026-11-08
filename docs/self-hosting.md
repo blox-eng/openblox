@@ -31,9 +31,10 @@ that does other work, you don't need this. Install the binary and follow
 - **CPU:** amd64 or arm64, at least 4 cores.
 - **Disk:** an SSD. Every sandbox's writable layer lives on it.
 - **Memory:** the RAM decides how many sandboxes can run at once. A sandbox
-  holds about 1.4× its `memory_mb` before the kernel's limit lands
-  ([#30](https://github.com/blox-eng/openblox/issues/30)), and the host keeps
-  1 GiB for itself:
+  can hold about 1.4× its `memory_mb` (the most seen so far) before the kernel's
+  limit lands, depending on the host
+  ([`memory_mb` is approximate](production.md#memory_mb-is-approximate)), and the
+  host keeps 1 GiB for itself:
 
     `max_sandboxes = floor((RAM − 1 GiB) / (1.4 × memory_mb))`, at least 1
 
@@ -161,7 +162,7 @@ removes every sandbox it creates. The source is
 [`www/bench.sh`](https://github.com/blox-eng/openblox/blob/main/www/bench.sh).
 
 ```sh
-curl -fsSL https://openblox.sh/bench.sh | sudo sh
+curl -fsSL https://openblox.sh/bench.sh -o bench.sh && sudo sh bench.sh
 ```
 
 The default mode, `latency`, runs one sandbox at a time. Below is a 2012
@@ -189,7 +190,7 @@ once before the host is the bottleneck. It steps concurrency up (1, 2, 4, 8,
 16 by default), and every sandbox at a level runs the job at the same time:
 
 ```sh
-curl -fsSL https://openblox.sh/bench.sh | sudo sh -s -- --mode stress
+sudo sh bench.sh --mode stress
 ```
 
 On the same machine:

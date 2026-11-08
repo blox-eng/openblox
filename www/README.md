@@ -16,11 +16,12 @@ no choice to carry across from the landing page in the first place. Inlining a
 small script instead is not an option either: `_headers` sets `script-src 'self'`
 with no `'unsafe-inline'`, and that is worth more than a toggle on an error page.
 
-`install.sh` is served from here too, at the URL the page's own install command
-prints. It is in the repository rather than pasted into a hosting dashboard so
-that the script people are asked to pipe into a shell goes through the same
-review and the same checks as everything else — and so "read it first", which
-the page links, reaches something a reader can diff against its history.
+`install.sh`, `setup.sh` and `bench.sh` are served from here too, at the URLs
+the page and the docs print. They are in the repository rather than pasted into
+a hosting dashboard so that the scripts people are asked to download and run go
+through the same review and the same checks as everything else — and so "read
+it first", which the page links, reaches something a reader can diff against its
+history.
 
 The argument for openblox — the two-tier guarantee, the isolation-versus-
 placement rule, what it does not do — lives in the documentation. This page's
@@ -37,8 +38,8 @@ Cloudflare, which is what makes apex support and the edge redirects free; GitHub
 Pages could not serve both sites, because one repository gets one custom domain.
 
 Connecting the project and repointing the apex are manual steps in the
-Cloudflare dashboard, done once and not by anything in this repository. Until
-they are, nothing here is served at `openblox.sh`. The settings to use:
+Cloudflare dashboard, done once and not by anything in this repository. The
+settings in use:
 
 | Setting | Value |
 |---|---|
