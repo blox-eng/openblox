@@ -13,6 +13,36 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-07
+
+### Fixed
+
+- **`brokerclient.Create` rejects a policy option even when it is set to its
+  default value.** Before, `WithRuntime("runsc")`, `WithEgress(EgressNone)` and
+  the like left the resolved spec looking exactly as if nothing was passed, so
+  the option was dropped in favour of the profile and the caller was not told.
+  Isolation was never weakened: the profile won either way. Blox's brokered
+  path passes only `WithProfile`, so it is not affected (#25).
+
+## [0.13.0] - 2026-11-07
+
+### Breaking
+
+- **Go 1.27 or newer is required.** `go.mod` now says `go 1.27.3`, so a
+  library user on Go 1.26 or older must upgrade before taking this release.
+  Go 1.25, the previous minimum, is out of support and gets no more security
+  fixes (#92).
+
+### Security
+
+- **`openbloxd` and the library are built with Go 1.27.3.** Go 1.25.13 carried
+  ten reachable standard-library vulnerabilities that no 1.25 release will fix.
+  The ones that matter most to the daemon's mTLS listener are HTTP/2 server
+  memory exhaustion and a crash (GO-2026-6603, GO-2026-6617), and
+  `crypto/x509` not distrusting compromised intermediates (GO-2026-6809).
+  Anyone running a released `openbloxd` was affected; upgrade the daemon to
+  the release that carries this (#92).
+
 ## [0.12.0] - 2026-10-05
 
 ### Added
@@ -511,7 +541,9 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
 
-[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/blox-eng/openblox/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/blox-eng/openblox/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/blox-eng/openblox/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/blox-eng/openblox/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/blox-eng/openblox/compare/v0.11.0...v0.11.1
