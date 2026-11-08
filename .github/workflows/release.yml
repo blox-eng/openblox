@@ -202,8 +202,11 @@ jobs:
           git checkout -b "$branch"
           git add CHANGELOG.md
           git commit -m "$title"
-          # A re-run pushes the same change again and finds its pull request.
-          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" "$branch:$branch"
+          # gh hands GH_TOKEN to git as a credential helper, so the token never
+          # sits in a command line. A re-run pushes the same change again and
+          # finds its pull request.
+          gh auth setup-git
+          git push --force origin "$branch:$branch"
 
           body="$(printf '%s\n' \
             "Opened by the Release workflow after cutting v${VERSION}." \
@@ -215,9 +218,13 @@ jobs:
             "It merges itself once its checks pass. Until it merges," \
             "\`changelog-guard.sh\` fails Lint on every other pull request.")"
 
-          gh pr view "$branch" >/dev/null 2>&1 ||
+          # An empty list means no pull request yet. An API error fails the step
+          # here, so a re-run never mistakes a lookup failure for a missing one.
+          open="$(gh pr list --head "$branch" --state open --json number --jq length)"
+          if [ "$open" = 0 ]; then
             gh pr create --base main --head "$branch" --title "$title" --body "$body" ||
-            { echo "::error::opening the changelog pull request failed: RELEASE_TOKEN needs Pull requests: read and write (RELEASING.md, Credentials)"; exit 1; }
+              { echo "::error::opening the changelog pull request failed (gh says why above). An expired RELEASE_TOKEN, or one without Pull requests: read and write, is the usual cause (RELEASING.md, Credentials)."; exit 1; }
+          fi
           gh pr merge "$branch" --squash --auto ||
             echo "::warning::Auto-merge is off: merge the v${VERSION} changelog pull request by hand."
 
@@ -232,8 +239,15 @@ jobs:
           set -euo pipefail
           branch="docs/changelog-v${VERSION}"
           for _ in $(seq 1 40); do
-            state="$(gh pr view "$branch" --json state,mergeStateStatus -q '.state + " " + .mergeStateStatus')" ||
-              { echo "no pull request for $branch"; exit 0; }
+            # An empty list means the step above opened nothing. An API error
+            # is retried on the next poll, not taken for a missing pull request.
+            state="$(gh pr list --head "$branch" --state all --limit 1 --json state,mergeStateStatus \
+              --jq '.[0] // empty | .state + " " + .mergeStateStatus')" || {
+              echo "::warning::could not read the $branch pull request; retrying"
+              sleep 60
+              continue
+            }
+            [ -n "$state" ] || { echo "no pull request for $branch"; exit 0; }
             case "$state" in
               MERGED*) echo "merged"; exit 0 ;;
               CLOSED*) echo "::warning::the v${VERSION} changelog pull request was closed"; exit 0 ;;

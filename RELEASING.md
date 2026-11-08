@@ -77,9 +77,10 @@ while properties fail under Kata, and `release.yml` does not wait for it.
 
 The version is computed with a read-only token. The tag and release are then created
 by `gh release create --target <verified sha>` using `RELEASE_TOKEN`, a
-fine-grained PAT with `Contents: write` on this repository only. A PAT is needed
-because tags pushed with the built-in token do not start other workflows. The
-third-party semantic-release binary never sees it.
+fine-grained PAT on this repository only, with `Contents` and `Pull requests`: read
+and write. A PAT is needed because tags pushed, and pull requests opened, with the
+built-in token do not start other workflows. The third-party semantic-release
+binary never sees it.
 
 `v*` tags are protected by a ruleset: they cannot be moved or deleted.
 
