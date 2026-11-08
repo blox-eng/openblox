@@ -23,7 +23,7 @@
 # starts from the same base. Dependabot bumps the digest weekly; the tag stays
 # for readability. Package versions from apt below are not pinned, so the
 # image is not bit-for-bit reproducible — see RELEASING.md.
-FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
+FROM python:3.15-slim-bookworm@sha256:4e03260adeeebafccd084f3584e6b84823aba5651cfb53ef8a078ed441ddf9cd
 
 # netcat-openbsd gives the preview relay its fast path; without it the relay
 # falls back to python3, which works but pays interpreter startup per connection.

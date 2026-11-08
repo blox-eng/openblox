@@ -64,7 +64,7 @@ re-asserts it against the pushed manifest.
 
 ## What is in it
 
-`python:3.12-slim-bookworm`, plus `bash`, `netcat-openbsd`, and `ca-certificates`,
+`python:3.15-slim-bookworm`, plus `bash`, `netcat-openbsd`, and `ca-certificates`,
 running as `sandbox` (uid/gid 1000) with a writable `/workspace`.
 
 Debian rather than Alpine deliberately: sandboxes run Python, musl has no
