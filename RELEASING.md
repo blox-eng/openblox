@@ -138,8 +138,13 @@ the change.
 Promoting that section to a released version is mechanical, so `release.yml` does
 it: after cutting a tag it runs
 [`.github/scripts/promote-changelog.sh`](.github/scripts/promote-changelog.sh),
-which moves the entries under a dated heading and adds the compare link, and opens
-a `docs:` PR with the result (a `docs:` commit does not trigger another release).
+which moves the entries under a dated heading and adds the compare link. Then
+[`.github/scripts/pin-docs.sh`](.github/scripts/pin-docs.sh) points the install
+commands in the README and docs at the new version. The job opens a `docs:` PR
+with both (a `docs:` commit does not trigger another release). Lint runs
+`pin-docs.sh --check` on every PR, so a pin that differs from the newest release
+in the changelog fails CI. To add a pin to the docs, add it to the script's `PINS`
+list as well.
 The PR merges itself once its checks pass, and the job keeps its branch up to date
 until it does. Nothing else in the release waits on it, but `changelog-guard.sh`
 fails Lint on every other PR until it lands.
@@ -148,10 +153,13 @@ A PR rather than a push because the `main` ruleset requires one. `RELEASE_TOKEN`
 opens it: GitHub runs no workflow on a PR opened with the built-in token, so its
 required checks would never report. If the job cannot open the PR, the token has
 expired or lacks `Pull requests: read and write`, and the job fails after the
-release has already shipped. Fix the token, then run the script by hand:
+release has already shipped. Fix the token, then run the scripts by hand, with
+the version that release just cut:
 
 ```sh
-.github/scripts/promote-changelog.sh 0.8.1 "$(date -u +%Y-%m-%d)"
+VERSION=0.14.0   # the release just cut, without the "v"
+.github/scripts/promote-changelog.sh "$VERSION" "$(date -u +%Y-%m-%d)"
+.github/scripts/pin-docs.sh "$VERSION"
 ```
 
 ## Verifying a release
