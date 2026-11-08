@@ -139,13 +139,15 @@ it: after cutting a tag it runs
 [`.github/scripts/promote-changelog.sh`](.github/scripts/promote-changelog.sh),
 which moves the entries under a dated heading and adds the compare link, and opens
 a `docs:` PR with the result (a `docs:` commit does not trigger another release).
-Review and merge it; nothing else in the release waits on it, but
-`changelog-guard.sh` fails Lint on every other PR until it lands.
+The PR merges itself once its checks pass, and the job keeps its branch up to date
+until it does. Nothing else in the release waits on it, but `changelog-guard.sh`
+fails Lint on every other PR until it lands.
 
-A PR rather than a push because the `main` ruleset requires one. If the workflow
-cannot open it — Actions barred from creating PRs, or the token expired — it warns
-instead of failing a release that has already shipped, and the guard is what makes
-sure the gap is not missed. Run the script by hand in that case:
+A PR rather than a push because the `main` ruleset requires one. `RELEASE_TOKEN`
+opens it: GitHub runs no workflow on a PR opened with the built-in token, so its
+required checks would never report. If the job cannot open the PR, the token has
+expired or lacks `Pull requests: read and write`, and the job fails after the
+release has already shipped. Fix the token, then run the script by hand:
 
 ```sh
 .github/scripts/promote-changelog.sh 0.8.1 "$(date -u +%Y-%m-%d)"
@@ -276,7 +278,7 @@ not in a public PR. Then:
 
 | Secret | Scope | Used by |
 |---|---|---|
-| `RELEASE_TOKEN` | fine-grained PAT, this repository, `Contents: write` | the final step of `release.yml` only |
+| `RELEASE_TOKEN` | fine-grained PAT, this repository, `Contents` and `Pull requests`: read and write | `release.yml` only: the tag and release, and the changelog pull request |
 | `GITHUB_TOKEN` | per-job, least privilege, declared in each workflow | everything else |
 
 No secret is available to pull-request workflows beyond the built-in read-only
