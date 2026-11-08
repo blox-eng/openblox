@@ -177,6 +177,7 @@ jobs:
       # report and it can never merge (#96). The token needs Contents and Pull
       # requests, read and write (RELEASING.md, Credentials).
       - name: Promote the Unreleased section and open a pull request
+        id: pr
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -218,41 +219,48 @@ jobs:
             "It merges itself once its checks pass. Until it merges," \
             "\`changelog-guard.sh\` fails Lint on every other pull request.")"
 
-          # An empty list means no pull request yet. An API error fails the step
-          # here, so a re-run never mistakes a lookup failure for a missing one.
-          open="$(gh pr list --head "$branch" --state open --json number --jq length)"
-          if [ "$open" = 0 ]; then
-            gh pr create --base main --head "$branch" --title "$title" --body "$body" ||
+          # Only a pull request from this repository's own branch counts: a fork
+          # can open one whose head has the same name, and RELEASE_TOKEN must
+          # never merge or update that one. From here on the job uses the number.
+          # An API error fails the step, so a re-run never mistakes a lookup
+          # failure for a missing pull request.
+          number="$(gh pr list --head "$branch" --state open --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')"
+          if [ -z "$number" ]; then
+            url="$(gh pr create --base main --head "$branch" --title "$title" --body "$body")" ||
               { echo "::error::opening the changelog pull request failed (gh says why above). An expired RELEASE_TOKEN, or one without Pull requests: read and write, is the usual cause (RELEASING.md, Credentials)."; exit 1; }
+            number="${url##*/}"
           fi
-          gh pr merge "$branch" --squash --auto ||
-            echo "::warning::Auto-merge is off: merge the v${VERSION} changelog pull request by hand."
+          [[ "$number" =~ ^[0-9]+$ ]] || { echo "::error::unexpected pull request number '$number'"; exit 1; }
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          gh pr merge "$number" --squash --auto ||
+            echo "::warning::Auto-merge is off: merge changelog pull request #${number} by hand."
 
       # main takes only up-to-date branches, and auto-merge never updates one:
       # a pull request that merged meanwhile would hold this one back forever.
       - name: Keep the pull request up to date until it merges
+        # No number: CHANGELOG.md already recorded the release, so no pull
+        # request was opened.
+        if: steps.pr.outputs.number != ''
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          VERSION: ${{ needs.release.outputs.version }}
+          NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           set -euo pipefail
-          branch="docs/changelog-v${VERSION}"
           for _ in $(seq 1 40); do
-            # An empty list means the step above opened nothing. An API error
-            # is retried on the next poll, not taken for a missing pull request.
-            state="$(gh pr list --head "$branch" --state all --limit 1 --json state,mergeStateStatus \
-              --jq '.[0] // empty | .state + " " + .mergeStateStatus')" || {
-              echo "::warning::could not read the $branch pull request; retrying"
+            # The pull request exists, so a failed read is an API error: retry
+            # on the next poll.
+            state="$(gh pr view "$NUMBER" --json state,mergeStateStatus -q '.state + " " + .mergeStateStatus')" || {
+              echo "::warning::could not read pull request #${NUMBER}; retrying"
               sleep 60
               continue
             }
-            [ -n "$state" ] || { echo "no pull request for $branch"; exit 0; }
             case "$state" in
               MERGED*) echo "merged"; exit 0 ;;
-              CLOSED*) echo "::warning::the v${VERSION} changelog pull request was closed"; exit 0 ;;
-              *BEHIND) gh pr update-branch "$branch" || true ;;
+              CLOSED*) echo "::warning::changelog pull request #${NUMBER} was closed"; exit 0 ;;
+              *BEHIND) gh pr update-branch "$NUMBER" || true ;;
             esac
             sleep 60
           done
-          echo "::warning::the v${VERSION} changelog pull request has not merged in 40 min: merge it by hand (RELEASING.md §8)"
+          echo "::warning::changelog pull request #${NUMBER} has not merged in 40 min: merge it by hand (RELEASING.md §8)"
