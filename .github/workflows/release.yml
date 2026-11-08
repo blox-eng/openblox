@@ -110,8 +110,8 @@ jobs:
       # would ship without its container image.
       #
       # RELEASE_TOKEN is a fine-grained PAT scoped to this repository with
-      # Contents: write — enough to create the tag and release, and nothing
-      # else. It expires; when it does this step fails outright rather than
+      # Contents and Pull requests, read and write: the tag and release here,
+      # the changelog pull request in the job below. It expires; when it does this step fails outright rather than
       # silently skipping the image.
       #
       # The version is re-validated before it reaches the tag, and the notes —
@@ -159,22 +159,27 @@ jobs:
     needs: release
     if: needs.release.outputs.version != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The job waits for its pull request to merge: up to 40 minutes, below.
+    timeout-minutes: 45
+    # RELEASE_TOKEN does the writes. The built-in token stays read-only.
     permissions:
-      # Pushing the branch, and opening the pull request for it.
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The released commit, not the tip: main may have moved on, and this
           # branch must carry that release's changelog and nothing else.
           ref: ${{ needs.release.outputs.sha }}
-          fetch-depth: 0
+          persist-credentials: false
 
+      # RELEASE_TOKEN, not GITHUB_TOKEN: GitHub runs no workflow on a pull
+      # request opened with the built-in token, so its required checks never
+      # report and it can never merge (#96). The token needs Contents and Pull
+      # requests, read and write (RELEASING.md, Credentials).
       - name: Promote the Unreleased section and open a pull request
+        id: pr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.release.outputs.version }}
         run: |
@@ -184,45 +189,78 @@ jobs:
           # plain semver, so it never reaches git or gh as a branch name unchecked.
           .github/scripts/promote-changelog.sh "$VERSION" "$(date -u +%Y-%m-%d)"
 
-          # Already recorded — a re-run, or a maintainer who stamped it by hand
+          # Already recorded: a re-run, or a maintainer who stamped it by hand
           # before this job got there. Not a failure.
           if git diff --quiet -- CHANGELOG.md; then
-            echo "CHANGELOG.md already records v${VERSION} — nothing to open."
+            echo "CHANGELOG.md already records v${VERSION}: nothing to open."
             exit 0
           fi
 
           branch="docs/changelog-v${VERSION}"
+          title="docs: pin the current release, v${VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add CHANGELOG.md
-          git commit -m "docs: pin the current release, v${VERSION}"
-          git push origin "$branch"
+          git commit -m "$title"
+          # gh hands GH_TOKEN to git as a credential helper, so the token never
+          # sits in a command line. A re-run pushes the same change again and
+          # finds its pull request.
+          gh auth setup-git
+          git push --force origin "$branch:$branch"
 
-          # Spelled out rather than --fill: whoever finds this pull request did
-          # not run the release, and the first thing they need to know is that
-          # merging it is not urgent and cannot break anything.
           body="$(printf '%s\n' \
             "Opened by the Release workflow after cutting v${VERSION}." \
             "" \
             "Moves the \`## [Unreleased]\` entries under a dated \`## [${VERSION}]\`" \
-            "heading and adds its compare link. No prose changed — this is the" \
+            "heading and adds its compare link. No prose changed: this is the" \
             "mechanical half of RELEASING.md §8." \
             "" \
-            "The tag, the GitHub release and its assets already exist; this only" \
-            "records them. Until it merges, \`changelog-guard.sh\` fails Lint on" \
-            "every other pull request, so merging it unblocks them.")"
+            "It merges itself once its checks pass. Until it merges," \
+            "\`changelog-guard.sh\` fails Lint on every other pull request.")"
 
-          gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "docs: pin the current release, v${VERSION}" \
-            --body "$body"
+          # Only a pull request from this repository's own branch counts: a fork
+          # can open one whose head has the same name, and RELEASE_TOKEN must
+          # never merge or update that one. From here on the job uses the number.
+          # An API error fails the step, so a re-run never mistakes a lookup
+          # failure for a missing pull request.
+          number="$(gh pr list --head "$branch" --state open --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository | not)][0].number // empty')"
+          if [ -z "$number" ]; then
+            url="$(gh pr create --base main --head "$branch" --title "$title" --body "$body")" ||
+              { echo "::error::opening the changelog pull request failed (gh says why above). An expired RELEASE_TOKEN, or one without Pull requests: read and write, is the usual cause (RELEASING.md, Credentials)."; exit 1; }
+            number="${url##*/}"
+          fi
+          [[ "$number" =~ ^[0-9]+$ ]] || { echo "::error::unexpected pull request number '$number'"; exit 1; }
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          gh pr merge "$number" --squash --auto ||
+            echo "::warning::Auto-merge is off: merge changelog pull request #${number} by hand."
 
-          # The release has already shipped by this point, so a repository that
-          # forbids Actions from opening pull requests, or has auto-merge off,
-          # must not turn a successful release into a red workflow. Warn and
-          # leave the work for a human; changelog-guard.sh is the backstop that
-          # makes sure it is not forgotten.
-          gh pr merge "$branch" --squash --auto \
-            || echo "::warning::Auto-merge unavailable; merge the changelog pull request by hand."
+      # main takes only up-to-date branches, and auto-merge never updates one:
+      # a pull request that merged meanwhile would hold this one back forever.
+      - name: Keep the pull request up to date until it merges
+        # No number: CHANGELOG.md already recorded the release, so no pull
+        # request was opened.
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 40); do
+            # The pull request exists, so a failed read is an API error: retry
+            # on the next poll.
+            state="$(gh pr view "$NUMBER" --json state,mergeStateStatus -q '.state + " " + .mergeStateStatus')" || {
+              echo "::warning::could not read pull request #${NUMBER}; retrying"
+              sleep 60
+              continue
+            }
+            case "$state" in
+              MERGED*) echo "merged"; exit 0 ;;
+              CLOSED*) echo "::warning::changelog pull request #${NUMBER} was closed"; exit 0 ;;
+              *BEHIND) gh pr update-branch "$NUMBER" || true ;;
+            esac
+            sleep 60
+          done
+          echo "::warning::changelog pull request #${NUMBER} has not merged in 40 min: merge it by hand (RELEASING.md §8)"
