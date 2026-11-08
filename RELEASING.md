@@ -153,11 +153,13 @@ A PR rather than a push because the `main` ruleset requires one. `RELEASE_TOKEN`
 opens it: GitHub runs no workflow on a PR opened with the built-in token, so its
 required checks would never report. If the job cannot open the PR, the token has
 expired or lacks `Pull requests: read and write`, and the job fails after the
-release has already shipped. Fix the token, then run the scripts by hand:
+release has already shipped. Fix the token, then run the scripts by hand, with
+the version that release just cut:
 
 ```sh
-.github/scripts/promote-changelog.sh 0.8.1 "$(date -u +%Y-%m-%d)"
-.github/scripts/pin-docs.sh 0.8.1
+VERSION=0.14.0   # the release just cut, without the "v"
+.github/scripts/promote-changelog.sh "$VERSION" "$(date -u +%Y-%m-%d)"
+.github/scripts/pin-docs.sh "$VERSION"
 ```
 
 ## Verifying a release

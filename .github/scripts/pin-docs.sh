@@ -26,6 +26,8 @@ PINS=(
   "docs/image.md|openblox-sandbox:"
 )
 SEMVER='[0-9]+\.[0-9]+\.[0-9]+'
+# The whole version token, suffix included, so v0.13.1-rc.1 is not read as 0.13.1.
+TOKEN='[0-9][0-9A-Za-z.+-]*'
 
 case "${1:-}" in
   --check)
@@ -53,15 +55,18 @@ status=0
 for pin in "${PINS[@]}"; do
   file="${pin%%|*}"
   prefix="${pin#*|}"
-  found="$(grep -oE "${prefix}${SEMVER}" "$file" | grep -oE "${SEMVER}$" | sort -u)" || {
+  found="$(grep -oE "${prefix}${TOKEN}" "$file" | sed -E "s/^${prefix}//" | sort -u)" || {
     echo "FAIL: $file has no pin matching '${prefix}X.Y.Z': update PINS in $0" >&2
     status=1
     continue
   }
-  if [ "$mode" = write ]; then
-    sed -E -i "s/(${prefix})${SEMVER}/\1${want}/g" "$file"
+  if grep -qvxE "$SEMVER" <<<"$found"; then
+    echo "FAIL: $file pins '$(paste -sd, - <<<"$found")' at '${prefix}': a pin must be a plain release version (X.Y.Z)" >&2
+    status=1
+  elif [ "$mode" = write ]; then
+    sed -E -i "s/(${prefix})${TOKEN}/\1${want}/g" "$file"
   elif [ "$found" != "$want" ]; then
-    echo "FAIL: $file pins $(echo "$found" | paste -sd, -) at '${prefix}', but the newest release in CHANGELOG.md is $want." >&2
+    echo "FAIL: $file pins $(paste -sd, - <<<"$found") at '${prefix}', but the newest release in CHANGELOG.md is $want." >&2
     echo "      Run .github/scripts/pin-docs.sh $want" >&2
     status=1
   fi
