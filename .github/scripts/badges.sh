@@ -41,7 +41,7 @@ integration=$(count_tests "$integration_files")
 
 # One run, both badges. Running the suite twice would let the tests badge and
 # the coverage badge observe different outcomes and disagree with each other.
-if go test -coverprofile="$WORK/cover.out" ./... > "$WORK/test.log" 2>&1; then
+if go test -covermode=atomic -coverpkg=./... -coverprofile="$WORK/cover.out" ./... > "$WORK/test.log" 2>&1; then
   badge tests tests "$unit passing" brightgreen
 else
   badge tests tests failing red
@@ -51,9 +51,10 @@ fi
 
 badge integration "integration tests" "$integration" blue
 
-# Coverage over the unit suite only. Labelled as such: most of pkg/docker is
-# exercised by the integration suite, which does not run in CI (issue #3), so an
-# unqualified "coverage" number here would overstate what CI verifies.
+# Coverage over the unit suite only, measured the way CI's coverage job measures
+# its "unit" column, so the badge and that table agree. Labelled as such: most of
+# pkg/docker is reached only by the integration suite, which needs a runtime this
+# job does not have. CI's coverage report has the number with integration.
 #
 # A failing suite may leave no profile at all, so its absence reports zero
 # rather than aborting the whole badge run.
