@@ -269,15 +269,17 @@ jobs:
           retention-days: 7
 
   # Coverage per package, unit and with integration, with the change against
-  # main (#10). It reports and never gates: release.yml releases only after a
-  # green run, so a reporting hiccup here must not cost a release. There is
-  # deliberately no minimum; see #10 for why a floor would push tests toward
-  # mocking the Docker API.
+  # main (#10). It reports and never gates: release.yml releases only when the
+  # whole run concludes success, so continue-on-error keeps any failure in here
+  # (a missing artifact, a bad baseline, the timeout) from costing a release.
+  # There is deliberately no minimum; see #10 for why a floor would push tests
+  # toward mocking the Docker API.
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
     needs: [test, integration]
     if: ${{ !cancelled() && needs.test.result == 'success' }}
+    continue-on-error: true
     timeout-minutes: 10
     permissions:
       contents: read
@@ -339,7 +341,6 @@ jobs:
       # pull request does not collect one per push.
       - name: Comment on the pull request
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
