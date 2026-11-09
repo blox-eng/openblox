@@ -8,7 +8,7 @@
 [![CI](https://github.com/blox-eng/openblox/actions/workflows/ci.yml/badge.svg)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/tests.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
 [![Integration tests](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/integration.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/coverage.json)](https://github.com/blox-eng/openblox/issues/10)
+[![Coverage](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/coverage.json)](https://github.com/blox-eng/openblox/actions/workflows/ci.yml)
 [![Lines of Go](https://img.shields.io/endpoint?url=https://docs.openblox.sh/badges/loc.json)](ARCHITECTURE.md)
 [![Go Reference](https://pkg.go.dev/badge/github.com/blox-eng/openblox.svg)](https://pkg.go.dev/github.com/blox-eng/openblox)
 [![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8.svg)](https://go.dev/dl/)
@@ -317,6 +317,9 @@ gate merges. Go 1.27+ for library users. The
 ## Status
 
 The badges above are measured from the source on every deploy, not typed here.
+The coverage badge is the unit suite alone. Each CI run reports coverage per
+package, unit and with the integration suite, in its summary, and on a pull
+request as a comment with the change against `main`.
 Three direct dependencies (`docker/docker`, `containerd/errdefs`, `yaml.v3`).
 
 CI runs lint, race-enabled tests, CodeQL and `govulncheck` (gating on newly
