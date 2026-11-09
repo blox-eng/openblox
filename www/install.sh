@@ -135,13 +135,28 @@ Nothing was installed. Please report this: https://github.com/$REPO/security"
     *) say ""; say "  $bindir is not on your PATH. Add it:"; say "    export PATH=\"$bindir:\$PATH\"" ;;
   esac
 
+  # 7. Say what is true of this host. On an upgrade the service still runs the
+  #    binary it started with, so the one step left is the restart; printing
+  #    the first-install text there would hide it (#102).
   say ""
-  say "openbloxd is installed but not running, and it is not configured yet."
-  say "It needs Docker with gVisor registered as the runsc runtime (the default)"
-  say "or a microVM runtime such as Kata, and a config file defining the profiles"
-  say "callers may name."
-  say ""
-  say "  Next: https://docs.openblox.sh/production/"
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet openbloxd 2>/dev/null; then
+    say "The openbloxd service is still running the version it started with."
+    say "Restart it to run $version:"
+    say ""
+    say "  sudo systemctl restart openbloxd"
+  elif command -v systemctl >/dev/null 2>&1 && systemctl cat openbloxd >/dev/null 2>&1; then
+    say "openbloxd $version is installed. Its service exists but is not running."
+    say "Start it:"
+    say ""
+    say "  sudo systemctl start openbloxd"
+  else
+    say "openbloxd is installed but not running, and it is not configured yet."
+    say "It needs Docker with gVisor registered as the runsc runtime (the default)"
+    say "or a microVM runtime such as Kata, and a config file defining the profiles"
+    say "callers may name."
+    say ""
+    say "  Next: https://docs.openblox.sh/production/"
+  fi
 }
 
 main "$@"
