@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+// The reaper measures idleness from this value, so it must come back exactly
+// as written, nanoseconds included.
 func TestLastUsedReadsTheRecordedTime(t *testing.T) {
 	d := &execDaemon{session: replies("2026-11-09T10:00:00.123456789Z\n", "")}
 	s := newExecDaemon(t, d)

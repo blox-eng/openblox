@@ -17,12 +17,13 @@ import (
 
 const previewBase = "https://preview.example"
 
-var previewKey = bytes.Repeat([]byte{7}, preview.MinKeyBytes)
+var unitPreviewKey = bytes.Repeat([]byte{7}, preview.MinKeyBytes)
 
 // refusingDialer stands in for the backend: any request that gets past the
 // handler's credential check fails at the dial, so a 502 means "authorised".
 type refusingDialer struct{}
 
+// DialPort refuses every dial.
 func (refusingDialer) DialPort(context.Context, string, int) (net.Conn, error) {
 	return nil, errors.New("no sandbox in this test")
 }
@@ -31,7 +32,7 @@ func (refusingDialer) DialPort(context.Context, string, int) (net.Conn, error) {
 // as two sandboxes of one backend do.
 func previewSandboxes(t *testing.T) (box, other *dockerSandbox) {
 	t.Helper()
-	signer, err := preview.NewSigner(previewKey)
+	signer, err := preview.NewSigner(unitPreviewKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,21 +51,23 @@ func serve(s *dockerSandbox, p sandbox.Preview) int {
 	return rec.Code
 }
 
+// A short key or a missing base URL fails at New, not at the first Expose.
 func TestWithPreviewsRejectsABadConfiguration(t *testing.T) {
-	if err := WithPreviews(previewKey[:preview.MinKeyBytes-1], previewBase)(&Backend{}); err == nil {
+	if err := WithPreviews(unitPreviewKey[:preview.MinKeyBytes-1], previewBase)(&Backend{}); err == nil {
 		t.Error("a key shorter than preview.MinKeyBytes was accepted")
 	}
-	if err := WithPreviews(previewKey, "")(&Backend{}); !errors.Is(err, sandbox.ErrInvalid) {
+	if err := WithPreviews(unitPreviewKey, "")(&Backend{}); !errors.Is(err, sandbox.ErrInvalid) {
 		t.Errorf("empty base URL = %v, want ErrInvalid", err)
 	}
 }
 
+// Callers mount the handler only when it is non-nil.
 func TestPreviewHandlerExistsOnlyWhenConfigured(t *testing.T) {
 	if h := (&Backend{}).PreviewHandler(); h != nil {
 		t.Error("a backend without previews returned a handler")
 	}
 	b := &Backend{}
-	if err := WithPreviews(previewKey, previewBase)(b); err != nil {
+	if err := WithPreviews(unitPreviewKey, previewBase)(b); err != nil {
 		t.Fatal(err)
 	}
 	if b.PreviewHandler() == nil {
@@ -122,6 +125,7 @@ func TestExposeMintsACredentialForThisSandboxAndPortOnly(t *testing.T) {
 	}
 }
 
+// No lifetime gets the default, and no credential outlives preview.MaxTTL.
 func TestExposeBoundsTheLifetime(t *testing.T) {
 	box, _ := previewSandboxes(t)
 	for _, tc := range []struct {
@@ -147,6 +151,7 @@ func TestExposeBoundsTheLifetime(t *testing.T) {
 	}
 }
 
+// A revoked credential is refused at once, before it expires.
 func TestRevokeWithdrawsTheCredential(t *testing.T) {
 	box, _ := previewSandboxes(t)
 	p, err := box.Expose(context.Background(), 8080, time.Minute)

@@ -74,6 +74,7 @@ func TestRelayFailsClearlyWithoutNcOrPython(t *testing.T) {
 	}
 }
 
+// nc is tried first: it is the smaller process, and busybox images ship it.
 func TestRelayPrefersNc(t *testing.T) {
 	dir := toolDir(t, []string{"python3"}, map[string]string{"nc": `echo "nc $*"`})
 
@@ -155,6 +156,8 @@ func TestRelayEndsTheStreamWhenNothingListens(t *testing.T) {
 	}
 }
 
+// A bad port is the caller's error and is refused before any sandbox is
+// looked up.
 func TestDialPortRejectsPortsOutOfRange(t *testing.T) {
 	for _, port := range []int{-1, 0, 65536} {
 		if _, err := (&Backend{}).DialPort(context.Background(), "box", port); !errors.Is(err, sandbox.ErrInvalid) {
@@ -163,6 +166,7 @@ func TestDialPortRejectsPortsOutOfRange(t *testing.T) {
 	}
 }
 
+// The preview proxy tells a stopped sandbox from a broken daemon by this error.
 func TestDialPortOnAStoppedSandboxReportsStopped(t *testing.T) {
 	s := newExecDaemon(t, &execDaemon{createStatus: http.StatusConflict})
 
@@ -194,6 +198,7 @@ func echoSession(conn net.Conn, in *bufio.Reader) {
 	_, _ = stdcopy.NewStdWriter(conn, stdcopy.Stdout).Write([]byte("bye"))
 }
 
+// dialEcho opens a connection to a sandbox whose relay is echoSession.
 func dialEcho(ctx context.Context, t *testing.T) (net.Conn, *execDaemon) {
 	t.Helper()
 	d := &execDaemon{session: echoSession}
@@ -205,6 +210,8 @@ func dialEcho(ctx context.Context, t *testing.T) (net.Conn, *execDaemon) {
 	return conn, d
 }
 
+// Without stdin attached the connection has no inbound half, and the relay
+// must never run as root.
 func TestDialRunsTheRelayWithThePortAndStdinAttached(t *testing.T) {
 	_, d := dialEcho(context.Background(), t)
 
@@ -326,6 +333,7 @@ func TestReadDeadlineEndsTheConnection(t *testing.T) {
 	}
 }
 
+// Proxy logs and errors name the connection by its RemoteAddr.
 func TestExecConnNamesTheSandboxPort(t *testing.T) {
 	conn, _ := dialEcho(context.Background(), t)
 

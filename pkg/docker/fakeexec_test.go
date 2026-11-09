@@ -31,6 +31,7 @@ type execDaemon struct {
 	exitCode     int
 }
 
+// newExecDaemon starts d and returns a sandbox handle whose client talks to it.
 func newExecDaemon(t *testing.T, d *execDaemon) *dockerSandbox {
 	t.Helper()
 	d.created = make(chan container.ExecOptions, 16)
