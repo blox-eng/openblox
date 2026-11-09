@@ -157,10 +157,19 @@ openbloxd passes the limit through as is. How soon the kill lands depends on how
 host accounts gVisor's guest memory. On one host a process in a sandbox with
 `memory_mb: 2048` reached about 2.8 GiB resident (`VmRSS`) before it was killed,
 roughly 1.4× the configured figure
-([#30](https://github.com/blox-eng/openblox/issues/30)). On another (Ubuntu 24.04,
-kernel 6.17, cgroup v2 with the systemd driver, runsc release-20260803.0) it was
-killed at 0.91–0.98× across 512 to 4096 MiB. The kill lands either way, so memory
-stays bounded; whether the bound is the number you set depends on the host.
+([#30](https://github.com/blox-eng/openblox/issues/30)). Two other hosts hold the
+limit as set:
+
+| Host | Measured | Last `VmRSS` before the kill |
+|---|---|---|
+| Ubuntu 24.04, kernel 6.17, cgroup v2 (systemd driver), runsc release-20260803.0 | 512 to 4096 MiB | 0.91–0.98× |
+| Debian 13, kernel 6.12, cgroup v2, runsc release-20260921.0 | 512 MiB | 0.90× |
+
+On the Debian host the container's cgroup counts the guest's memory: its
+`memory.current` rose with each allocation and `memory.peak` stopped at exactly
+`memory.max` when the kill landed. The host that showed 1.4× is not known, so the
+cause there is not either. The kill lands in every case, so memory stays bounded;
+whether the bound is the number you set depends on the host.
 
 Plan for the largest overshoot seen so far: count each sandbox as
 **1.4 × `memory_mb`**. It is a measured starting estimate, not a proven bound:
@@ -170,7 +179,17 @@ Plan for the largest overshoot seen so far: count each sandbox as
 To see which case your host is in, run a sandbox that allocates past its limit
 and read `VmRSS` from `/proc/self/status` inside it until the kill. The last
 reading is where your host enforces the limit: well above `memory_mb` means the
-overshoot applies, and at or just under it means the limit holds as set.
+overshoot applies, and at or just under it means the limit holds as set. On the
+host, read the sandbox's cgroup while it allocates:
+
+    cat /sys/fs/cgroup/system.slice/docker-<container id>.scope/memory.{current,peak,max}
+
+That path is for Docker's systemd cgroup driver, the default on systemd hosts.
+With the cgroupfs driver it is `/sys/fs/cgroup/docker/<container id>/`.
+If `memory.current` follows the allocation and `memory.peak` stops at
+`memory.max`, the kernel enforces the limit as set. If it stays at tens of MiB
+while the guest grows, the cgroup does not see the guest's memory, and the 1.4×
+plan applies.
 
 ## Operating it
 
