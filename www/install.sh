@@ -138,13 +138,33 @@ Nothing was installed. Please report this: https://github.com/$REPO/security"
   # 7. Say what is true of this host. On an upgrade the service still runs the
   #    binary it started with, so the one step left is the restart; printing
   #    the first-install text there would hide it (#102).
+  #
+  #    A restart only helps if the service runs the file just written. The
+  #    unit names its own binary, and this install may have gone elsewhere
+  #    ($HOME/.local/bin, or OPENBLOX_BIN_DIR), so the two are compared first.
+  service=none
+  service_bin=""
+  if command -v systemctl >/dev/null 2>&1 && systemctl cat openbloxd >/dev/null 2>&1; then
+    service=stopped
+    systemctl is-active --quiet openbloxd 2>/dev/null && service=active
+    service_bin=$(systemctl show -p ExecStart --value openbloxd 2>/dev/null |
+      sed -n 's/.*path=\([^ ;]*\).*/\1/p' | head -n 1)
+  fi
+
   say ""
-  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet openbloxd 2>/dev/null; then
+  if [ "$service" != none ] && [ -n "$service_bin" ] && [ "$service_bin" != "$bindir/openbloxd" ]; then
+    say "The openbloxd service runs $service_bin, not the binary just installed,"
+    say "so it stays on its old version. Install over the service's binary:"
+    say ""
+    say "  OPENBLOX_VERSION=$version OPENBLOX_BIN_DIR=${service_bin%/*} sh install.sh"
+    say ""
+    say "Run that as root (under sudo, pass the variables with 'sudo env')."
+  elif [ "$service" = active ]; then
     say "The openbloxd service is still running the version it started with."
     say "Restart it to run $version:"
     say ""
     say "  sudo systemctl restart openbloxd"
-  elif command -v systemctl >/dev/null 2>&1 && systemctl cat openbloxd >/dev/null 2>&1; then
+  elif [ "$service" = stopped ]; then
     say "openbloxd $version is installed. Its service exists but is not running."
     say "Start it:"
     say ""

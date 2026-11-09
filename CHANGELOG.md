@@ -30,7 +30,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   on a host where the service was running. It never said to restart, so the
   service kept running the old version. It now says to restart a running
   service, says to start a stopped one, and keeps the first-install text for a
-  new host (#102).
+  new host. If the service runs a different file than the one just installed,
+  it says so, and how to install over the right one (#102).
 
 ## [0.13.1] - 2026-11-07
 

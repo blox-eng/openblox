@@ -19,12 +19,14 @@ case $url in
 esac
 STUB
 # systemctl answers from SERVICE: active, stopped (a unit that is not running)
-# or none.
+# or none. The unit's binary is SERVICE_BIN, in the form `systemctl show` uses.
 cat > "$tmp/stubs/systemctl" <<'STUB'
 #!/bin/sh
 case "$1:$SERVICE" in
   is-active:active) exit 0 ;;
   cat:active | cat:stopped) exit 0 ;;
+  show:active | show:stopped)
+    echo "{ path=$SERVICE_BIN ; argv[]=$SERVICE_BIN --config /etc/openbloxd/config.yaml ; ignore_errors=no }" ;;
   *) exit 1 ;;
 esac
 STUB
@@ -36,9 +38,9 @@ for tool in sh uname mktemp sha256sum cut install cp chmod mkdir rm printf head 
 done
 
 fails=0
-run() { # service state
-  SERVICE=$1 PATH="$tmp/stubs" OPENBLOX_VERSION=v9.9.9 OPENBLOX_BIN_DIR="$tmp/bin" \
-    sh "$here/www/install.sh" 2>&1
+run() { # service state, [the unit's binary; default: the one being installed]
+  SERVICE=$1 SERVICE_BIN=${2:-$tmp/bin/openbloxd} PATH="$tmp/stubs" \
+    OPENBLOX_VERSION=v9.9.9 OPENBLOX_BIN_DIR="$tmp/bin" sh "$here/www/install.sh" 2>&1
 }
 has() { # name, output, want
   case $2 in *"$3"*) printf 'ok   %s\n' "$1" ;;
@@ -58,6 +60,15 @@ lacks "upgrade does not claim it is unconfigured" "$out" "not configured"
 out=$(run stopped)
 has   "a stopped service says to start it"         "$out" "sudo systemctl start openbloxd"
 lacks "a stopped service is not called unconfigured" "$out" "not configured"
+
+# The service runs another file than the one installed: a restart would keep
+# the old version, so the message must not promise the new one.
+for state in active stopped; do
+  out=$(run "$state" /usr/local/bin/openbloxd)
+  has   "$state service on another binary names that binary" "$out" "runs /usr/local/bin/openbloxd, not the binary just installed"
+  has   "$state service on another binary says where to install" "$out" "OPENBLOX_BIN_DIR=/usr/local/bin sh install.sh"
+  lacks "$state service on another binary is not told to restart" "$out" "systemctl"
+done
 
 out=$(run none)
 has   "a first install keeps today's text" "$out" "installed but not running, and it is not configured yet"
