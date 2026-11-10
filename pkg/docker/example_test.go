@@ -54,6 +54,7 @@ func ExampleBackend_Create() {
 	}
 	defer backend.Close()
 
+	defer backend.Destroy(ctx, "session-1")
 	_, err = backend.Create(ctx, "session-1",
 		sandbox.WithImage("ghcr.io/blox-eng/openblox-sandbox:latest"),
 		sandbox.WithResources(sandbox.Resources{MemoryBytes: 512 << 20}),
@@ -86,6 +87,7 @@ func Example_exec() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer backend.Destroy(ctx, "session-1")
 
 	res, err := sb.Exec(ctx, sandbox.Command{
 		// Argv runs without a shell. Ask for one when the command needs it.
@@ -123,6 +125,7 @@ func Example_files() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer backend.Destroy(ctx, "session-1")
 
 	input := bytes.NewBufferString("b\na\n")
 	if err := sb.WriteFile(ctx, "/workspace/in.txt", 0o644, input); err != nil {
@@ -167,13 +170,20 @@ func ExampleWithPreviews() {
 	// openblox runs no server. Mount the handler on your own.
 	mux := http.NewServeMux()
 	mux.Handle(preview.RoutePrefix+"/", backend.PreviewHandler())
-	go func() { log.Fatal(http.ListenAndServe("127.0.0.1:8080", mux)) }()
+	srv := &http.Server{Addr: "127.0.0.1:8080", Handler: mux}
+	go func() {
+		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	}()
+	defer srv.Close()
 
 	sb, err := backend.Create(ctx, "session-1",
 		sandbox.WithImage("ghcr.io/blox-eng/openblox-sandbox:latest"))
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer backend.Destroy(ctx, "session-1")
 	if err := sb.StartProcess(ctx, "web", sandbox.Command{
 		Argv: []string{"python3", "-m", "http.server", "8000", "--bind", "127.0.0.1"},
 	}); err != nil {

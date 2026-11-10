@@ -20,7 +20,9 @@
 //
 //   - /bin/sh. openblox replaces the entrypoint with its own idle loop, so an
 //     ENTRYPOINT or CMD the image declares is overridden.
-//   - A non-root default USER. A sandbox does not run as uid 0.
+//   - A userland that works for an unprivileged user. A sandbox runs as uid:gid
+//     1000:1000 unless [sandbox.WithUser] names another, and never as 0. The
+//     USER the image declares is not used.
 //   - nc or python3, for previews only. A sandbox has no network interface, so
 //     [Backend.DialPort] reaches a port through a relay that runs inside the
 //     sandbox. An image with neither runs commands but cannot serve previews.
