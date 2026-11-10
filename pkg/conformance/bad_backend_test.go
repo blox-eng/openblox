@@ -32,6 +32,9 @@ func TestMain(m *testing.M) {
 		_ = os.RemoveAll(guestRoot)
 		_, _ = io.Copy(io.Discard, os.Stdin) // returns when the owner dies
 		killOwned(owner)
+		if root := os.Getenv(watchdogRootEnv); strings.HasPrefix(filepath.Base(root), guestRootPattern) {
+			_ = os.RemoveAll(root)
+		}
 		os.Exit(0)
 	}
 	killOrphaned()
@@ -46,6 +49,9 @@ func TestMain(m *testing.M) {
 // guestScratch is the one guest-only path the suite's probes write into. It
 // exists inside any real sandbox and nowhere on a developer's host.
 const guestScratch = "/workspace"
+
+// guestRootPattern is the name prefix of every guestRoot.
+const guestRootPattern = "openblox-conf-badbackend-workspace-"
 
 // guestRoot is the host directory badSandbox serves guestScratch from, made
 // once per run and removed by TestMain.
@@ -70,7 +76,7 @@ const guestScratch = "/workspace"
 // meaning at all, so serving it from a real directory adds no boundary; it
 // only lets the attack land somewhere instead of erroring out before it runs.
 var guestRoot = func() string {
-	d, err := os.MkdirTemp("", "openblox-conf-badbackend-workspace-*")
+	d, err := os.MkdirTemp("", guestRootPattern+"*")
 	if err != nil {
 		panic("conformance: negative control cannot provide " + guestScratch + ": " + err.Error())
 	}
@@ -106,7 +112,11 @@ func rewriteScratch(s string) string {
 const ownerEnv = "OPENBLOX_CONFORMANCE_OWNER"
 
 // watchdogEnv turns this test binary into the watchdog for the named owner.
-const watchdogEnv = "OPENBLOX_CONFORMANCE_WATCHDOG"
+// watchdogRootEnv names that owner's guestRoot, which the watchdog removes too.
+const (
+	watchdogEnv     = "OPENBLOX_CONFORMANCE_WATCHDOG"
+	watchdogRootEnv = "OPENBLOX_CONFORMANCE_WATCHDOG_ROOT"
+)
 
 // ownerTag identifies this test process: its pid and its start time. The pid
 // alone is not an identity, because the kernel reuses it.
@@ -188,7 +198,7 @@ func startWatchdog() {
 		panic("conformance: negative control cannot start its watchdog: " + err.Error())
 	}
 	c := exec.Command(os.Args[0])
-	c.Env = append(os.Environ(), watchdogEnv+"="+ownerTag)
+	c.Env = append(os.Environ(), watchdogEnv+"="+ownerTag, watchdogRootEnv+"="+guestRoot)
 	c.Stdin = r
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := c.Start(); err != nil {
