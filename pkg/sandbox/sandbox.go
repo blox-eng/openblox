@@ -16,6 +16,10 @@ type Backend interface {
 	//
 	// Options are applied only when the sandbox is created. Calling Create again
 	// with different options on a live sandbox does not reconfigure it.
+	//
+	// It reports ErrRuntimeUnavailable when the host cannot give the isolation
+	// asked for, ErrImageUnavailable when the image cannot be obtained, and
+	// ErrInvalid for a malformed name or option.
 	Create(ctx context.Context, name string, opts ...CreateOption) (Sandbox, error)
 
 	// Open returns an existing sandbox. It reports ErrNotFound if name has no
@@ -43,7 +47,10 @@ type Sandbox interface {
 
 	// Exec runs a command to completion and returns its output. A non-zero exit
 	// status is reported in Result.ExitCode, not as an error — err is non-nil
-	// only when the command could not be run or did not finish.
+	// only when the command could not be run or did not finish: ErrTimeout when
+	// it exceeded its deadline, ErrStopped when the sandbox is not running.
+	//
+	// Each output stream is capped at MaxOutputBytes; see Result.Truncated.
 	Exec(ctx context.Context, cmd Command) (Result, error)
 
 	// WriteFile writes src to path inside the sandbox, creating parent
@@ -67,6 +74,11 @@ type Sandbox interface {
 	Expose(ctx context.Context, port int, ttl time.Duration) (Preview, error)
 
 	// Revoke invalidates a token returned by Expose before it expires.
+	//
+	// Revocation is best-effort. A token is checked against its signature alone,
+	// with no shared state, so a revocation holds only in the process that
+	// recorded it. The expiry is the guarantee: keep the ttl passed to Expose
+	// short, and treat Revoke as prompt cleanup.
 	Revoke(ctx context.Context, port int, token string) error
 
 	// Stop halts the sandbox, freeing its CPU and memory. The sandbox's

@@ -99,6 +99,10 @@ func (h *Handler) isRevoked(token string) bool {
 	return ok
 }
 
+// ServeHTTP proxies a request for "<prefix>/<sandbox>/<port>/<path>" to that
+// port, if the request carries a valid token for it as "Authorization: Bearer
+// <token>". Without one it answers 401. The token is removed before the request
+// enters the sandbox.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name, port, rest, ok := parseRoute(r.URL.EscapedPath())
 	if !ok {

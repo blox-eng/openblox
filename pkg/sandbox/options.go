@@ -203,6 +203,10 @@ type CreateOption func(*Spec)
 
 // WithImage sets the container image. Pin a digest rather than a tag: a tag can
 // be repointed under you, and the image is the sandbox's entire userland.
+//
+// The Docker backend has no default image, and states what an image must
+// provide in its package documentation. With the openbloxd daemon, the image
+// comes from the profile instead.
 func WithImage(ref string) CreateOption {
 	return func(s *Spec) { s.Image = ref }
 }

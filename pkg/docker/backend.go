@@ -1,9 +1,42 @@
 // Package docker implements the openblox sandbox contract on Docker with the
 // gVisor (runsc) runtime.
 //
+// [New] returns a [Backend], which satisfies [sandbox.Backend]; the sandboxes it
+// returns satisfy [sandbox.Sandbox]. The contract, the options and the errors
+// are documented in package sandbox. This package adds only what is specific to
+// Docker: [Backend.Reap], image pulls, and previews.
+//
 // It holds no state of its own. Container labels are the sandbox registry, so
 // sandboxes survive the process that created them and several processes may
 // manage the same set without coordinating.
+//
+// A caller needs access to the Docker socket, which is root on the host. To run
+// sandboxes without it, use package brokerclient against the openbloxd daemon.
+//
+// # The image contract
+//
+// There is no default image: pass [sandbox.WithImage]. Any image works if it
+// provides three things.
+//
+//   - /bin/sh. openblox replaces the entrypoint with its own idle loop, so an
+//     ENTRYPOINT or CMD the image declares is overridden.
+//   - A userland that works for an unprivileged user. A sandbox runs as uid:gid
+//     1000:1000 unless [sandbox.WithUser] names another, and never as 0. The
+//     USER the image declares is not used.
+//   - nc or python3, for previews only. A sandbox has no network interface, so
+//     [Backend.DialPort] reaches a port through a relay that runs inside the
+//     sandbox. An image with neither runs commands but cannot serve previews.
+//
+// ghcr.io/blox-eng/openblox-sandbox meets the contract and is the reference
+// image. Pin a digest, not a tag; [IsDigestPinned] checks a reference.
+//
+// # Errors
+//
+// Match errors with [errors.Is]. [Backend.Create] fails with
+// [sandbox.ErrRuntimeUnavailable] when the runtime asked for, gVisor by default,
+// is not registered with the Docker daemon. It never falls back to a weaker
+// one. It fails with [sandbox.ErrImageUnavailable] when the image is absent and
+// cannot be pulled.
 package docker
 
 import (
@@ -74,7 +107,8 @@ type Backend struct {
 type Option func(*Backend) error
 
 // New connects to the Docker daemon using the standard environment
-// (DOCKER_HOST, DOCKER_CERT_PATH, DOCKER_API_VERSION).
+// (DOCKER_HOST, DOCKER_CERT_PATH, DOCKER_API_VERSION). It does not contact the
+// daemon: a host without Docker or gVisor is reported by the first Create.
 func New(opts ...Option) (*Backend, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {

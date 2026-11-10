@@ -11,8 +11,8 @@
 // options has no network, dropped capabilities, a read-only root filesystem, a
 // non-root user, and bounded CPU, memory, and process count:
 //
-//	sb, err := backend.Create(ctx, "session-1")                     // locked down
-//	sb, err := backend.Create(ctx, "session-1", WithEgress(policy)) // deliberately not
+//	sb, err := backend.Create(ctx, "session-1", WithImage(ref))                     // locked down
+//	sb, err := backend.Create(ctx, "session-1", WithImage(ref), WithEgress(policy)) // deliberately not
 //
 // This inverts the common design where a permissive default is hardened by
 // remembering the right flags. Forgetting an option here can only make a
