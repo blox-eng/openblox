@@ -8,8 +8,11 @@
 #
 #   /bin/sh          openblox replaces the entrypoint with its own idle loop, so
 #                    the image needs a shell but no CMD or ENTRYPOINT of its own.
-#   a non-root USER  sandboxes must not run as uid 0. openblox does its own
-#                    privileged bookkeeping as root explicitly, per exec.
+#   a usable non-root user
+#                    openblox runs the sandbox as the numeric uid:gid it is
+#                    given (1000:1000 by default) and refuses root, whatever
+#                    USER the image declares. openblox does its own privileged
+#                    bookkeeping as root explicitly, per exec.
 #   nc or python3    the preview relay reaches a port inside the sandbox over the
 #                    exec channel, because the container has no network
 #                    interface. It uses nc when present and falls back to

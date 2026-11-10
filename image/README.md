@@ -52,8 +52,11 @@ An openblox image must provide:
 - **`/bin/sh`** — openblox replaces the entrypoint with its own idle loop, so the
   image needs a shell but no `CMD`/`ENTRYPOINT` of its own. One it declares is
   overridden.
-- **a non-root default `USER`** — sandboxes must not run as uid 0. openblox does
-  its own privileged bookkeeping as root explicitly, per exec.
+- **a usable non-root user** — openblox runs the sandbox as the numeric
+  `uid:gid` it is given (`1000:1000` by default) and refuses root, whatever the
+  image's own `USER` says. That user must be able to write `/workspace` and
+  `/tmp`, which openblox mounts as tmpfs. openblox does its own privileged
+  bookkeeping as root explicitly, per exec.
 - **`nc` or `python3`** — the preview relay reaches a port inside the sandbox
   over the exec channel, because the container has no network interface. It
   prefers `nc` and falls back to `python3`. An image with neither builds and runs
