@@ -48,10 +48,9 @@ func newPlantedSuffix() string {
 // sleeps, and so the marker that identifies it.
 //
 // Unique per test process, for the same reason the planted paths are. Against
-// the negative control that process is a real host process, and the sweep that
-// cleans it up matches on argv: a fixed "sleep 3136" meant the sweep would
-// SIGKILL a stranger's own "sleep 3136" — an ordinary thing to have running —
-// on a repo they cloned only to run `go test ./...` in.
+// the negative control that process is a real host process, and the property
+// finds it by argv: a fixed "sleep 3136" would also count a stranger's own
+// "sleep 3136", or the one a second run of this suite started.
 //
 // Six digits, disjoint from the 313x markers the other process properties use,
 // and decimal by construction: splicing it into the probe's shell string
@@ -79,12 +78,12 @@ var (
 
 // sweepPlantedArtifacts removes, from the host, every file the probes can
 // create when they run against a backend that isolates nothing. Called from
-// TestMain after the whole run, alongside sweepDetachedMarkers, which does the
-// same for leaked processes.
+// TestMain after the whole run, alongside killOwned, which does the same for
+// leaked processes.
 //
 // The paths are exact and carry this process's own suffix, so this can never
-// remove a file it did not itself create — the same care sweepDetachedMarkers
-// takes with its exact-argv match, and for the same reason: strangers run
+// remove a file it did not itself create — the same care killOwned takes with
+// its owner mark, and for the same reason: strangers run
 // `go test ./...` on this repo.
 func sweepPlantedArtifacts() {
 	for _, dir := range []string{"/tmp", "/dev/shm"} {

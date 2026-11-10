@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -18,15 +17,30 @@ import (
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
 
-// TestMain is where every process badSandbox starts actually gets cleaned
-// up: reapGroup only records a pid, so nothing is killed until m.Run() has
-// finished and every property has already recorded its result. This also
-// sweeps for the one kind of leak reapGroup cannot reach at all, before the
-// binary is allowed to exit.
+// TestMain is where every process badSandbox starts gets cleaned up. Nothing
+// is killed while a property could still observe it: the kill happens after
+// m.Run() has finished and every property has recorded its result.
+//
+// The cleanup must also happen when this binary never reaches the end of
+// TestMain (a -timeout panic, a SIGKILL, a closed terminal). So a watchdog
+// process does the same kill when this one dies, and each run first kills what
+// an earlier dead run left. The probes include busy loops, and a leaked one
+// holds a full core until someone kills it by hand (#105).
 func TestMain(m *testing.M) {
+	if owner := os.Getenv(watchdogEnv); owner != "" {
+		// Package initialisers ran here too; the watchdog serves no guest.
+		_ = os.RemoveAll(guestRoot)
+		_, _ = io.Copy(io.Discard, os.Stdin) // returns when the owner dies
+		killOwned(owner)
+		if root := os.Getenv(watchdogRootEnv); strings.HasPrefix(filepath.Base(root), guestRootPattern) {
+			_ = os.RemoveAll(root)
+		}
+		os.Exit(0)
+	}
+	killOrphaned()
+	startWatchdog()
 	code := m.Run()
-	reapAllTracked()
-	sweepDetachedMarkers()
+	killOwned(ownerTag)
 	sweepPlantedArtifacts()
 	_ = os.RemoveAll(guestRoot)
 	os.Exit(code)
@@ -35,6 +49,9 @@ func TestMain(m *testing.M) {
 // guestScratch is the one guest-only path the suite's probes write into. It
 // exists inside any real sandbox and nowhere on a developer's host.
 const guestScratch = "/workspace"
+
+// guestRootPattern is the name prefix of every guestRoot.
+const guestRootPattern = "openblox-conf-badbackend-workspace-"
 
 // guestRoot is the host directory badSandbox serves guestScratch from, made
 // once per run and removed by TestMain.
@@ -59,7 +76,7 @@ const guestScratch = "/workspace"
 // meaning at all, so serving it from a real directory adds no boundary; it
 // only lets the attack land somewhere instead of erroring out before it runs.
 var guestRoot = func() string {
-	d, err := os.MkdirTemp("", "openblox-conf-badbackend-workspace-*")
+	d, err := os.MkdirTemp("", guestRootPattern+"*")
 	if err != nil {
 		panic("conformance: negative control cannot provide " + guestScratch + ": " + err.Error())
 	}
@@ -86,107 +103,114 @@ func rewriteScratch(s string) string {
 	return strings.ReplaceAll(s, guestScratch, guestRoot)
 }
 
-// detachedEscapeMarker is the one marker sweepDetachedMarkers needs to look
-// for: propSetsidEscapesTheTimeoutKill's detached "sleep <detachedSleep>". Every
-// other process-lifecycle property's marker is already reachable by reapGroup's
-// pgid-targeted kill — only setsid moves its child into a new session and
-// process group, structurally escaping that. Narrow on purpose: a sweep
-// covering the other markers too would be sweeping processes reapGroup
-// already handles, for no benefit, at the cost of a wider blast radius on
-// whatever else happens to be running on the machine.
-var detachedEscapeMarker = detachedSleep
+// ownerEnv marks every process badSandbox starts with the test binary that
+// started it. A child inherits its environment, so the mark reaches a
+// backgrounded child and a setsid-detached one alike, which a process group
+// does not. It also makes the kill exact: this runs on a developer's own
+// machine, and a match on argv or on a recycled pid could kill a process this
+// suite has no business touching.
+const ownerEnv = "OPENBLOX_CONFORMANCE_OWNER"
 
-// sweepDetachedMarkers kills any leftover host process that is exactly
-// "sleep <detachedSleep>" — argv[0] a "sleep" binary and argv[1] this run's own
-// marker, nothing else — by scanning /proc directly. It exists for
-// propSetsidEscapesTheTimeoutKill: a setsid-detached process starts its own
-// new session and process group, so it is not reachable by reapGroup's
-// pgid-targeted kill — the same reason it survives openblox's own timeout
-// kill in the real backend. This is a host-hygiene backstop run once after
-// the whole suite, not a substitute for that property's own assertions,
-// which have already run and recorded their result long before this fires.
-//
-// The match is on exact argv, not a substring of the raw cmdline: this
-// runs against whatever /proc the developer's own machine has, and a
-// substring match (the marker anywhere in the line) would also kill an
-// unrelated longer sleep, or a script whose path happens to contain the
-// digits — unprompted destruction of a process this suite has no business
-// touching, on a public repo strangers will run `go test ./...` in without
-// having read this file.
-func sweepDetachedMarkers() {
+// watchdogEnv turns this test binary into the watchdog for the named owner.
+// watchdogRootEnv names that owner's guestRoot, which the watchdog removes too.
+const (
+	watchdogEnv     = "OPENBLOX_CONFORMANCE_WATCHDOG"
+	watchdogRootEnv = "OPENBLOX_CONFORMANCE_WATCHDOG_ROOT"
+)
+
+// ownerTag identifies this test process: its pid and its start time. The pid
+// alone is not an identity, because the kernel reuses it.
+var ownerTag = func() string {
+	start, ok := procStart(os.Getpid())
+	if !ok {
+		panic("conformance: negative control cannot read its own /proc entry")
+	}
+	return strconv.Itoa(os.Getpid()) + ":" + start
+}()
+
+// procOwners maps every visible process that carries ownerEnv to its owner.
+func procOwners() map[int]string {
+	owners := map[int]string{}
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return
+		return owners
 	}
 	for _, e := range entries {
 		pid, err := strconv.Atoi(e.Name())
 		if err != nil {
 			continue
 		}
-		raw, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
+		raw, err := os.ReadFile("/proc/" + e.Name() + "/environ")
 		if err != nil {
 			continue
 		}
-		argv := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
-		if len(argv) != 2 || argv[1] != detachedEscapeMarker {
+		for _, kv := range strings.Split(string(raw), "\x00") {
+			if v, ok := strings.CutPrefix(kv, ownerEnv+"="); ok {
+				owners[pid] = v
+				break
+			}
+		}
+	}
+	return owners
+}
+
+func ownedProcs(owner string) []int {
+	var pids []int
+	for pid, o := range procOwners() {
+		if o == owner {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+func killOwned(owner string) {
+	for _, pid := range ownedProcs(owner) {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+}
+
+// killOrphaned kills what a dead run left behind: every marked process whose
+// owner no longer exists. A run that is still alive keeps its processes.
+func killOrphaned() {
+	for pid, owner := range procOwners() {
+		ownerPid, start, _ := strings.Cut(owner, ":")
+		n, err := strconv.Atoi(ownerPid)
+		if err != nil {
 			continue
 		}
-		prog := argv[0]
-		if prog != "sleep" && !strings.HasSuffix(prog, "/sleep") {
+		if cur, ok := procStart(n); ok && cur == start {
 			continue
 		}
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 	}
 }
 
-// trackedProc is a pid plus the thing that makes it an identity rather than
-// a number: the process's start time, field 22 of /proc/<pid>/stat.
-//
-// A pid alone is not a lifetime-bound handle. Every process here is started
-// with Setpgid, so reapAllTracked kills the group with Kill(-pid) — and if the
-// process has already exited and the kernel has handed its pid to something
-// else, that negated pid names a stranger's process group. On a busy machine
-// pid reuse is ordinary, and the blast radius is a SIGKILL to a process group
-// this suite has no business touching. Start time is what distinguishes the
-// process we launched from whatever now holds its number.
-type trackedProc struct {
-	pid   int
-	start string
-}
-
-var (
-	trackedMu sync.Mutex
-	tracked   []trackedProc
-)
-
-// trackForReap records pid so TestMain's reapAllTracked can kill its whole
-// process group once the run is over. A process that has already gone by the
-// time it is recorded is not tracked at all: there is nothing left to kill,
-// and its pid is already eligible for reuse.
-func trackForReap(pid int) {
-	start, ok := procStart(pid)
-	if !ok {
-		return
+// startWatchdog starts a copy of this binary that waits for this process to
+// die and then kills what it left. It learns of the death from its stdin: this
+// process holds the only write end of that pipe and never closes it. It runs in
+// its own session so that a signal to this process's group does not take it
+// too, and it holds none of this process's output pipes, which `go test` waits
+// on.
+func startWatchdog() {
+	r, w, err := os.Pipe()
+	if err != nil {
+		panic("conformance: negative control cannot start its watchdog: " + err.Error())
 	}
-	trackedMu.Lock()
-	tracked = append(tracked, trackedProc{pid: pid, start: start})
-	trackedMu.Unlock()
+	c := exec.Command(os.Args[0])
+	c.Env = append(os.Environ(), watchdogEnv+"="+ownerTag, watchdogRootEnv+"="+guestRoot)
+	c.Stdin = r
+	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := c.Start(); err != nil {
+		panic("conformance: negative control cannot start its watchdog: " + err.Error())
+	}
+	_ = r.Close()
+	watchdogPipe = w
+	go func() { _ = c.Wait() }()
 }
 
-func reapAllTracked() {
-	trackedMu.Lock()
-	defer trackedMu.Unlock()
-	for _, p := range tracked {
-		// Re-read rather than trust the number: if the process is gone, or is
-		// now a different process wearing the same pid, this group is not ours
-		// to kill.
-		if cur, ok := procStart(p.pid); !ok || cur != p.start {
-			continue
-		}
-		_ = syscall.Kill(-p.pid, syscall.SIGKILL)
-	}
-	tracked = nil
-}
+// watchdogPipe is held open for the life of the process; see startWatchdog.
+var watchdogPipe *os.File
 
 // procStart reads a process's start time from /proc/<pid>/stat.
 //
@@ -249,24 +273,6 @@ func (s badSandbox) Info() sandbox.Info {
 	return sandbox.Info{Name: s.name, State: sandbox.StateRunning}
 }
 
-// reapGroup registers pid's whole process group to be killed once the whole
-// test binary is done with it — see TestMain / reapAllTracked. It never
-// kills anything itself, and in particular never on a timer: an earlier
-// version of this function fired its own kill 5 seconds after Exec or
-// StartProcess returned, which held only because every timeout property
-// Fatalfs at the ErrTimeout check before it ever reaches countProcs. That
-// made the 5-second margin load-bearing but invisible — if badSandbox's
-// error handling ever changed to return ErrTimeout, or a slow host pushed a
-// property's own countProcs past 5 seconds, the timer could kill the
-// process out from under the property and fabricate a green result for the
-// wrong reason. Routing all cleanup through TestMain, after every test has
-// already run and recorded its result, removes that window entirely: no
-// process this backend starts is ever killed while a property could still
-// be observing it.
-func reapGroup(pid int) {
-	trackForReap(pid)
-}
-
 // shellQuoteArgv joins argv into a single POSIX shell command line, each
 // argument wrapped in single quotes with any embedded single quote escaped
 // by closing the quote, emitting an escaped quote, then reopening it.
@@ -317,16 +323,14 @@ func (badSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result
 	// splice changes nothing about any of the other 20 properties' pass/
 	// fail reasons.
 	c := exec.Command("sh", "-c", rewriteScratch(shellQuoteArgv(cmd.Argv)))
-	c.Env = append(os.Environ(), cmd.Env...)
+	c.Env = append(append(os.Environ(), cmd.Env...), ownerEnv+"="+ownerTag)
 	c.Dir = cmd.Dir
 	c.Stdin = cmd.Stdin
-	// Grouped so a background child a probe starts ("cmd &") can be reaped by
-	// pgid once the whole test binary is done with it; see reapGroup. Killing
-	// the direct process on cancellation still only reaches this one pid, not
-	// the group — badBackend leaking a backgrounded child is the correct,
-	// honest behaviour of a backend with no isolation, and reapGroup's
-	// cleanup, deferred to TestMain, never interferes with a property
-	// observing that leak.
+	// Killing the direct process on cancellation reaches only this one pid.
+	// badBackend leaking a backgrounded child is the correct, honest
+	// behaviour of a backend with no isolation. Its own group keeps a signal
+	// meant for the test binary's group away from it, so a property can
+	// observe that leak; TestMain kills it afterwards by its ownerEnv mark.
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// c.Output()/exec.CommandContext cannot be used here: a probe that
@@ -379,10 +383,6 @@ func (badSandbox) Exec(ctx context.Context, cmd sandbox.Command) (sandbox.Result
 		}
 		waitErr = <-waitDone
 	}
-	if c.Process != nil {
-		reapGroup(c.Process.Pid)
-	}
-
 	// The direct process has exited. If a backgrounded child still holds a
 	// copy of either write end, unblock the readers after a short grace
 	// period rather than waiting on it for as long as that child runs — a
@@ -447,18 +447,15 @@ func (badSandbox) StartProcess(_ context.Context, _ string, cmd sandbox.Command)
 		argv[i] = rewriteScratch(a)
 	}
 	c := exec.Command(argv[0], argv[1:]...)
-	c.Env = append(os.Environ(), cmd.Env...)
+	c.Env = append(append(os.Environ(), cmd.Env...), ownerEnv+"="+ownerTag)
 	c.Dir = cmd.Dir
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := c.Start(); err != nil {
 		return err
 	}
-	// badSandbox tracks nothing about a background process once started, the
-	// same way it isolates nothing about it while running: nobody else calls
-	// Wait, so this reaps it rather than leaving a zombie once TestMain's
-	// cleanup kills it.
+	// Nobody else calls Wait, so this reaps the process once TestMain's
+	// cleanup kills it, rather than leaving a zombie.
 	go func() { _ = c.Wait() }()
-	reapGroup(c.Process.Pid)
 	return nil
 }
 
