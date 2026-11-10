@@ -13,7 +13,7 @@ lint:
 
 # Every shell script we ship or run in CI.
 lint-sh:
-	shellcheck -x -s sh www/install.sh www/setup.sh www/bench.sh .github/scripts/setup-unit.sh .github/scripts/setup-e2e.sh
+	shellcheck -x -s sh www/install.sh www/setup.sh www/bench.sh .github/scripts/setup-unit.sh .github/scripts/setup-e2e.sh .github/scripts/install-test.sh
 
 test:
 	CGO_ENABLED=1 go test -race -cover ./...
@@ -21,6 +21,7 @@ test:
 # Unit tests for www/setup.sh. They need no root.
 test-setup:
 	sh .github/scripts/setup-unit.sh
+	sh .github/scripts/install-test.sh
 
 # Requires a gVisor-capable Docker host. See CONTRIBUTING.md.
 test-integration:
