@@ -28,6 +28,8 @@ import (
 // holds a full core until someone kills it by hand (#105).
 func TestMain(m *testing.M) {
 	if owner := os.Getenv(watchdogEnv); owner != "" {
+		// Package initialisers ran here too; the watchdog serves no guest.
+		_ = os.RemoveAll(guestRoot)
 		_, _ = io.Copy(io.Discard, os.Stdin) // returns when the owner dies
 		killOwned(owner)
 		os.Exit(0)
