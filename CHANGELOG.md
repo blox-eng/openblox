@@ -13,6 +13,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-11-10
+
 ### Changed
 
 - **The sandbox image runs Python 3.15, up from 3.12.** Code that runs in a
@@ -561,7 +563,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
 
-[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.13.2...HEAD
+[0.13.2]: https://github.com/blox-eng/openblox/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/blox-eng/openblox/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/blox-eng/openblox/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/blox-eng/openblox/compare/v0.11.2...v0.12.0
