@@ -17,14 +17,16 @@ if [ "$#" -eq 0 ]; then
   set -- docs SECURITY.md THREAT_MODEL.md
 fi
 
-# A missing path would make grep fail quietly below, and the guard would
-# pass having checked nothing.
-for f in "$@"; do
-  [ -e "$f" ] || { echo "FAIL: $f does not exist; the guard checks nothing there" >&2; exit 1; }
-done
-
-hits=$(grep -rnHE --include='*.md' 'apparmor_restrict_unprivileged_userns|TESTONLY' "$@" \
-  | grep -vE '^[^:]+:[0-9]+:> \*\*Warning' || true)
+# grep exits 1 when nothing matches, and 2 when it cannot read a path. Only 0
+# and 1 mean the docs were checked; anything else would pass having read
+# nothing.
+rc=0
+raw=$(grep -rnHE --include='*.md' 'apparmor_restrict_unprivileged_userns|TESTONLY' "$@") || rc=$?
+if [ "$rc" -gt 1 ]; then
+  echo "FAIL: could not read every path in: $* (grep exit $rc)" >&2
+  exit 1
+fi
+hits=$(printf '%s\n' "$raw" | grep -vE '^[^:]+:[0-9]+:> \*\*Warning|^$' || true)
 
 if [ -n "$hits" ]; then
   echo "FAIL: these lines tell an operator to weaken the host. Move each into a '> **Warning' line, or remove it:" >&2

@@ -201,15 +201,20 @@ func (b *Backend) Create(ctx context.Context, name string, opts ...sandbox.Creat
 	}
 	if err := checkLimitWarnings(created.Warnings); err != nil {
 		// Not the caller's ctx: a cancelled request must not leave the
-		// refused container behind.
-		_ = b.cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, container.RemoveOptions{Force: true})
+		// refused container behind. Bounded, so a stuck daemon cannot hold
+		// the call open.
+		rmCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_ = b.cli.ContainerRemove(rmCtx, created.ID, container.RemoveOptions{Force: true})
 		return nil, fmt.Errorf("create sandbox %q: %w", name, err)
 	}
 
 	if err := b.cli.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
 		// Roll back rather than leave a created-but-dead container behind for
 		// the reaper to puzzle over.
-		_ = b.cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, container.RemoveOptions{Force: true})
+		rmCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_ = b.cli.ContainerRemove(rmCtx, created.ID, container.RemoveOptions{Force: true})
 		return nil, fmt.Errorf("start sandbox %q: %w", name, err)
 	}
 

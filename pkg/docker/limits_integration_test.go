@@ -299,7 +299,9 @@ func cpuSample(t *testing.T, b *Backend, id string) (usage time.Duration, thrott
 	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
 		t.Fatalf("decode stats: %v", err)
 	}
-	return time.Duration(st.CPUStats.CPUUsage.TotalUsage), st.CPUStats.ThrottlingData.ThrottledPeriods, time.Now()
+	// st.Read is when the daemon read the counters; the time the response
+	// arrived would stretch the window and hide a cap that does not hold.
+	return time.Duration(st.CPUStats.CPUUsage.TotalUsage), st.CPUStats.ThrottlingData.ThrottledPeriods, st.Read
 }
 
 func TestBusyLoopIsHeldToTheCPUCap(t *testing.T) {
@@ -332,6 +334,9 @@ func TestBusyLoopIsHeldToTheCPUCap(t *testing.T) {
 		t.Fatalf("busy loop Exec = %v", err)
 	}
 
+	if !t1.After(t0) {
+		t.Fatalf("the daemon's two CPU samples are not in order: %v then %v", t0, t1)
+	}
 	ratio := float64(usage1-usage0) / float64(t1.Sub(t0))
 	t.Logf("CPU used %.2f cores against a cap of %.2f; throttled periods %d -> %d", ratio, cpus, throttled0, throttled1)
 
@@ -339,7 +344,10 @@ func TestBusyLoopIsHeldToTheCPUCap(t *testing.T) {
 	if ratio > 0.75 {
 		t.Errorf("sandbox used %.2f cores with CPUs=%.2f — the CPU cap is not enforced", ratio, cpus)
 	}
-	if throttled1 <= throttled0 {
+	// The kernel counts a throttled period only when the sandbox used its whole
+	// quota in it. A starved runner may never let it get that far, and then a
+	// flat count proves nothing either way.
+	if ratio >= 0.8*cpus && throttled1 <= throttled0 {
 		t.Errorf("throttled periods did not rise (%d -> %d) — the CPU cap never bit", throttled0, throttled1)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/docker/docker/api/types/system"
@@ -38,7 +39,18 @@ func checkDaemonCaps(info system.Info, runtime string) error {
 	// Measured 2026-11-20: with --ignore-cgroups, runsc runs the sandbox in the
 	// daemon's own cgroup, and Docker still reports every limit as supported.
 	registered := info.Runtimes[runtime]
-	if slices.Contains(registered.Args, "--ignore-cgroups") {
+	// runsc parses flags with Go's flag package, so -x, --x, --x=true and
+	// --x=1 all set it.
+	ignoresCgroups := false
+	for _, arg := range registered.Args {
+		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if name != "ignore-cgroups" {
+			continue
+		}
+		on, err := strconv.ParseBool(value)
+		ignoresCgroups = !hasValue || on || err != nil
+	}
+	if ignoresCgroups {
 		return fmt.Errorf("%w: runtime %q runs with --ignore-cgroups, so memory, CPU and process limits do not apply; remove the flag from the runtime's registration (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, runtime)
 	}
 	// Under rootless Docker, runsc starts only with that flag. Info carries

@@ -179,9 +179,9 @@ cap, it fails with `sandbox.ErrRuntimeUnavailable`. `openbloxd` answers
 | The message says | The fix |
 |---|---|
 | `rootless docker cannot cap a runsc sandbox` | Run `openbloxd` against the root Docker daemon: unset `DOCKER_HOST`, or point it at `unix:///var/run/docker.sock`. A runtime registered as a containerd shim (`runtimeType`, no `path`) is refused under rootless too, because Docker cannot say which runtime it is. |
-| `runtime "<name>" runs with --ignore-cgroups` | Remove `--ignore-cgroups` from that runtime's `runtimeArgs` in `daemon.json`, and restart the daemon. |
+| `runtime "<name>" runs with --ignore-cgroups` | Remove `--ignore-cgroups` from that runtime's `runtimeArgs` in `daemon.json`, and restart the daemon. A runtime registered as a containerd shim (`runtimeType`) keeps its options out of Docker's view, so openblox cannot see `ignore-cgroups` set in its `runsc.toml`: never set it there. |
 | `the docker daemon runs without cgroups` | Run the daemon with the `systemd` cgroup driver. A rootless daemon started without systemd has no cgroups. |
-| `the docker daemon cannot enforce the swap limit` | Enable swap accounting: boot the host with `swapaccount=1`, or move it to cgroup v2. `docker info` then stops printing `No swap limit support`. |
+| `the docker daemon cannot enforce the swap limit` | Enable swap accounting: boot the host with `swapaccount=1`, or move it to cgroup v2. `docker info` then stops printing `No swap limit support`. On cgroup v2, Docker also reports no swap support when `dockerd` runs in the root cgroup (`/proc/<pid>/cgroup` reads `0::/`), as a nested daemon can: run it in a child cgroup, as systemd does. |
 | `the docker daemon cannot enforce the <limit> limit` (memory, pids, cpu) | Enable that cgroup controller for the daemon. For a rootless daemon under a user's systemd, add `Delegate=cpu memory pids` under `[Service]` in `/etc/systemd/system/user@.service.d/delegate.conf`, then `sudo systemctl daemon-reload` and log in again. |
 | `the docker daemon discarded the <limit> limit` | The same fix as for that limit above. Docker accepted the limit and then dropped it; the container is removed. |
 

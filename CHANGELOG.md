@@ -26,6 +26,12 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   [the fix table](https://docs.openblox.sh/security/#rootless). Rootless Docker with
   `runsc` is refused too (see Security).
 
+  The check runs only when a sandbox is created. A sandbox that was already running
+  when you upgrade keeps running as before, uncapped on such a host. After fixing the
+  host, remove the old sandboxes with
+  `docker rm -f $(docker ps -aq --filter label=sh.openblox.managed=true)`; each is
+  created again, checked, on its next `Create`.
+
 ### Fixed
 
 - **`Create` refuses a host that cannot enforce a sandbox's caps.** Docker accepts a

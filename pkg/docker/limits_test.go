@@ -69,6 +69,10 @@ func TestDaemonWithoutCgroupsIsRefused(t *testing.T) {
 		i.SecurityOptions = []string{"name=seccomp,profile=builtin", "name=rootless", "name=cgroupns"}
 		return i
 	}
+	withArgs := func(i system.Info, args ...string) system.Info {
+		i.Runtimes["runsc"] = system.RuntimeWithStatus{Runtime: system.Runtime{Path: "/usr/bin/runsc", Args: args}}
+		return i
+	}
 	cases := []struct {
 		name    string
 		info    system.Info
@@ -99,6 +103,12 @@ func TestDaemonWithoutCgroupsIsRefused(t *testing.T) {
 			i.Runtimes["runsc"] = system.RuntimeWithStatus{Runtime: system.Runtime{Path: "/usr/bin/runsc", Args: []string{"--ignore-cgroups"}}}
 			return i
 		}(), "runsc", "--ignore-cgroups"},
+		// runsc parses its flags with Go's flag package: every spelling below
+		// turns cgroups off, except the explicit false.
+		{"root runsc with --ignore-cgroups=true", withArgs(healthy(), "--ignore-cgroups=true"), "runsc", "ignore-cgroups"},
+		{"root runsc with -ignore-cgroups", withArgs(healthy(), "-ignore-cgroups"), "runsc", "ignore-cgroups"},
+		{"root runsc with -ignore-cgroups=1", withArgs(healthy(), "-ignore-cgroups=1"), "runsc", "ignore-cgroups"},
+		{"root runsc with --ignore-cgroups=false", withArgs(healthy(), "--ignore-cgroups=false"), "runsc", ""},
 		{"rootless runc", rootless(healthy()), "runc", ""},
 	}
 	for _, c := range cases {
