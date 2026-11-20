@@ -26,6 +26,9 @@ expect_pass() { # name file...
 printf '# Setup\n\nRun this first:\n\n    sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0\n' > "$tmp/sysctl.md"
 expect_fail "sysctl in a setup step" "$tmp/sysctl.md" "sysctl.md:5"
 
+printf 'Allow rootlesskit:\n\n    echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns\n' > "$tmp/proc.md"
+expect_fail "/proc form in a setup step" "$tmp/proc.md" "proc.md:3"
+
 printf 'Register runsc:\n\n    "runtimeArgs": ["--TESTONLY-unsafe-nonroot"]\n' > "$tmp/testonly.md"
 expect_fail "TESTONLY flag in a setup step" "$tmp/testonly.md" "testonly.md:3"
 

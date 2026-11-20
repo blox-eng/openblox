@@ -23,23 +23,23 @@ func checkDaemonCaps(info system.Info, runtime string) error {
 		return fmt.Errorf("%w: the docker daemon runs without cgroups, so no memory, CPU or process limit applies; run it with the systemd cgroup driver (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable)
 	}
 	for _, c := range []struct {
-		ok         bool
-		limit      string
-		controller string
+		ok    bool
+		limit string
 	}{
-		{info.MemoryLimit, "memory", "memory"},
-		{info.SwapLimit, "swap", "memory"},
-		{info.PidsLimit, "pids", "pids"},
-		{info.CPUCfsQuota, "cpu", "cpu"},
+		{info.MemoryLimit, "memory"},
+		{info.SwapLimit, "swap"},
+		{info.PidsLimit, "pids"},
+		{info.CPUCfsQuota, "cpu"},
 	} {
 		if !c.ok {
-			return fmt.Errorf("%w: the docker daemon cannot enforce the %s limit; delegate the %s cgroup controller to the daemon's user (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, c.limit, c.controller)
+			return fmt.Errorf("%w: the docker daemon cannot enforce the %s limit; %s (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, c.limit, limitFix(c.limit))
 		}
 	}
 	// Measured 2026-11-20: under rootless Docker, runsc starts only with
 	// --ignore-cgroups, and the sandbox then runs in the daemon's own cgroup.
 	// Docker still reports every limit as supported.
-	runsc := runtime == "runsc" || path.Base(info.Runtimes[runtime].Path) == "runsc"
+	registered := info.Runtimes[runtime]
+	runsc := runtime == "runsc" || path.Base(registered.Path) == "runsc" || strings.Contains(registered.Type, "runsc")
 	if slices.Contains(info.SecurityOptions, "name=rootless") && runsc {
 		return fmt.Errorf("%w: rootless docker cannot cap a runsc sandbox: runsc runs there only with --ignore-cgroups, so memory, CPU and process limits do not apply; run openbloxd against the root docker daemon (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable)
 	}
@@ -55,16 +55,29 @@ func checkLimitWarnings(warnings []string) error {
 		if !strings.Contains(lower, "discarded") && !strings.Contains(lower, "without swap") {
 			continue
 		}
-		limit, controllers := "a resource", "memory, cpu and pids cgroup controllers"
+		limit := "resource"
 		switch {
 		case strings.Contains(lower, "swap"):
-			limit, controllers = "the swap", "memory cgroup controller"
+			limit = "swap"
 		case strings.Contains(lower, "pids"):
-			limit, controllers = "the pids", "pids cgroup controller"
+			limit = "pids"
 		case strings.Contains(lower, "memory"):
-			limit, controllers = "the memory", "memory cgroup controller"
+			limit = "memory"
 		}
-		return fmt.Errorf("%w: the docker daemon discarded %s limit; delegate the %s to the daemon's user (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, limit, controllers)
+		return fmt.Errorf("%w: the docker daemon discarded the %s limit; %s (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, limit, limitFix(limit))
 	}
 	return nil
+}
+
+// limitFix says how to give the daemon a limit it lacks. Swap is not a
+// controller of its own: it needs swap accounting in the kernel.
+func limitFix(limit string) string {
+	switch limit {
+	case "swap":
+		return "enable swap accounting: boot the host with swapaccount=1, or move it to cgroup v2"
+	case "memory", "pids", "cpu":
+		return "enable the " + limit + " cgroup controller for the docker daemon (rootless: delegate it to the daemon's user)"
+	default:
+		return "enable the memory, cpu and pids cgroup controllers for the docker daemon (rootless: delegate them to the daemon's user)"
+	}
 }

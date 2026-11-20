@@ -180,8 +180,9 @@ cap, it fails with `sandbox.ErrRuntimeUnavailable`. `openbloxd` answers
 |---|---|
 | `rootless docker cannot cap a runsc sandbox` | Run `openbloxd` against the root Docker daemon: unset `DOCKER_HOST`, or point it at `unix:///var/run/docker.sock`. |
 | `the docker daemon runs without cgroups` | Run the daemon with the `systemd` cgroup driver. A rootless daemon started without systemd has no cgroups. |
-| `the docker daemon cannot enforce the <limit> limit` | Enable that cgroup controller for the daemon. For a daemon under a user's systemd, add `Delegate=cpu memory pids` under `[Service]` in `/etc/systemd/system/user@.service.d/delegate.conf`, then `sudo systemctl daemon-reload` and log in again. |
-| `the docker daemon discarded the <limit> limit` | The same fix. Docker accepted the limit and then dropped it; the container is removed. |
+| `the docker daemon cannot enforce the swap limit` | Enable swap accounting: boot the host with `swapaccount=1`, or move it to cgroup v2. `docker info` then stops printing `No swap limit support`. |
+| `the docker daemon cannot enforce the <limit> limit` (memory, pids, cpu) | Enable that cgroup controller for the daemon. For a rootless daemon under a user's systemd, add `Delegate=cpu memory pids` under `[Service]` in `/etc/systemd/system/user@.service.d/delegate.conf`, then `sudo systemctl daemon-reload` and log in again. |
+| `the docker daemon discarded the <limit> limit` | The same fix as for that limit above. Docker accepted the limit and then dropped it; the container is removed. |
 
 ## Deploying the policy broker (`openbloxd`)
 

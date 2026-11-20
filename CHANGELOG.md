@@ -13,6 +13,19 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Breaking
+
+- **`Create` now fails on a host whose Docker daemon cannot enforce every cap.**
+  Before you upgrade, run
+  `docker info --format '{{.CgroupDriver}} {{.MemoryLimit}} {{.SwapLimit}} {{.PidsLimit}} {{.CPUCfsQuota}}'`.
+  Anything other than a driver that is not `none` and four `true`s means each
+  `Create` returns `ErrRuntimeUnavailable` (`openbloxd`: `503 runtime_unavailable`)
+  after the upgrade. The common case is a cgroup v1 host without swap accounting,
+  where `docker info` prints `No swap limit support`: boot it with `swapaccount=1`, or
+  move it to cgroup v2. Each message names its fix; see
+  [the fix table](https://docs.openblox.sh/security/#rootless). Rootless Docker with
+  `runsc` is refused too (see Security).
+
 ### Fixed
 
 - **`Create` refuses a host that cannot enforce a sandbox's caps.** Docker accepts a

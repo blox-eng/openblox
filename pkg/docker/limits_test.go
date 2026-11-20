@@ -78,13 +78,18 @@ func TestDaemonWithoutCgroupsIsRefused(t *testing.T) {
 		{"healthy", healthy(), "runsc", ""},
 		{"no cgroups", func() system.Info { i := healthy(); i.CgroupDriver = "none"; return i }(), "runsc", "cgroup"},
 		{"no memory", func() system.Info { i := healthy(); i.MemoryLimit = false; return i }(), "runsc", "memory"},
-		{"no swap", func() system.Info { i := healthy(); i.SwapLimit = false; return i }(), "runsc", "swap"},
-		{"no pids", func() system.Info { i := healthy(); i.PidsLimit = false; return i }(), "runsc", "pids"},
+		{"no swap", func() system.Info { i := healthy(); i.SwapLimit = false; return i }(), "runsc", "swapaccount=1"},
+		{"no pids", func() system.Info { i := healthy(); i.PidsLimit = false; return i }(), "runsc", "enable the pids cgroup controller"},
 		{"no cpu quota", func() system.Info { i := healthy(); i.CPUCfsQuota = false; return i }(), "runsc", "cpu"},
 		{"rootless runsc", rootless(healthy()), "runsc", "rootless"},
 		{"rootless runsc under another name", func() system.Info {
 			i := rootless(healthy())
 			i.Runtimes["gvisor"] = system.RuntimeWithStatus{Runtime: system.Runtime{Path: "/usr/local/bin/runsc"}}
+			return i
+		}(), "gvisor", "rootless"},
+		{"rootless runsc shim", func() system.Info {
+			i := rootless(healthy())
+			i.Runtimes["gvisor"] = system.RuntimeWithStatus{Runtime: system.Runtime{Type: "io.containerd.runsc.v1"}}
 			return i
 		}(), "gvisor", "rootless"},
 		{"rootless runc", rootless(healthy()), "runc", ""},
