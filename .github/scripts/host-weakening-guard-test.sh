@@ -35,6 +35,8 @@ expect_fail "TESTONLY flag in a setup step" "$tmp/testonly.md" "testonly.md:3"
 printf '> **Warning:** never set kernel.apparmor_restrict_unprivileged_userns=0 or pass --TESTONLY-unsafe-nonroot.\n' > "$tmp/warning.md"
 expect_pass "the same text inside a Warning" "$tmp/warning.md"
 
+expect_fail "a path that does not exist" "$tmp/no-such-docs" "no-such-docs"
+
 expect_pass "the real docs"
 
 exit "$fail"

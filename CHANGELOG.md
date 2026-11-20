@@ -41,7 +41,9 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   there only with `--ignore-cgroups`, and a sandbox held 400 MiB under a 128 MiB cap,
   ran 205 processes under a 50-process cap and used 4.1 CPUs under a 0.5-CPU cap,
   while Docker reported every limit as supported. Anyone who ran `runsc` under
-  rootless Docker had uncapped sandboxes; such a host now fails at `Create`. Run the
+  rootless Docker had uncapped sandboxes; such a host now fails at `Create`. So does
+  any daemon whose runtime is registered with `--ignore-cgroups`, and, under rootless
+  Docker, a runtime registered as a containerd shim, which Docker cannot identify. Run the
   daemon as root and put `openbloxd` in front of it. See
   [Rootless Docker](https://docs.openblox.sh/security/#rootless).
 

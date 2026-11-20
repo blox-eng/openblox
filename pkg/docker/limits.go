@@ -35,11 +35,16 @@ func checkDaemonCaps(info system.Info, runtime string) error {
 			return fmt.Errorf("%w: the docker daemon cannot enforce the %s limit; %s (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, c.limit, limitFix(c.limit))
 		}
 	}
-	// Measured 2026-11-20: under rootless Docker, runsc starts only with
-	// --ignore-cgroups, and the sandbox then runs in the daemon's own cgroup.
-	// Docker still reports every limit as supported.
+	// Measured 2026-11-20: with --ignore-cgroups, runsc runs the sandbox in the
+	// daemon's own cgroup, and Docker still reports every limit as supported.
 	registered := info.Runtimes[runtime]
-	runsc := runtime == "runsc" || path.Base(registered.Path) == "runsc" || strings.Contains(registered.Type, "runsc")
+	if slices.Contains(registered.Args, "--ignore-cgroups") {
+		return fmt.Errorf("%w: runtime %q runs with --ignore-cgroups, so memory, CPU and process limits do not apply; remove the flag from the runtime's registration (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, runtime)
+	}
+	// Under rootless Docker, runsc starts only with that flag. Info carries
+	// only Path and Args, so a runtime registered as a containerd shim has no
+	// path, and Docker cannot say whether it is runsc.
+	runsc := runtime == "runsc" || path.Base(registered.Path) == "runsc" || registered.Path == ""
 	if slices.Contains(info.SecurityOptions, "name=rootless") && runsc {
 		return fmt.Errorf("%w: rootless docker cannot cap a runsc sandbox: runsc runs there only with --ignore-cgroups, so memory, CPU and process limits do not apply; run openbloxd against the root docker daemon (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable)
 	}

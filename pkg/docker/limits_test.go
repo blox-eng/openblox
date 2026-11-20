@@ -87,11 +87,18 @@ func TestDaemonWithoutCgroupsIsRefused(t *testing.T) {
 			i.Runtimes["gvisor"] = system.RuntimeWithStatus{Runtime: system.Runtime{Path: "/usr/local/bin/runsc"}}
 			return i
 		}(), "gvisor", "rootless"},
-		{"rootless runsc shim", func() system.Info {
+		// Docker's Info carries only Path and Args (moby info_unix.go), so a
+		// runtime registered as a containerd shim arrives with neither.
+		{"rootless shim runtime with no path", func() system.Info {
 			i := rootless(healthy())
-			i.Runtimes["gvisor"] = system.RuntimeWithStatus{Runtime: system.Runtime{Type: "io.containerd.runsc.v1"}}
+			i.Runtimes["gvisor"] = system.RuntimeWithStatus{}
 			return i
 		}(), "gvisor", "rootless"},
+		{"root runsc with --ignore-cgroups", func() system.Info {
+			i := healthy()
+			i.Runtimes["runsc"] = system.RuntimeWithStatus{Runtime: system.Runtime{Path: "/usr/bin/runsc", Args: []string{"--ignore-cgroups"}}}
+			return i
+		}(), "runsc", "--ignore-cgroups"},
 		{"rootless runc", rootless(healthy()), "runc", ""},
 	}
 	for _, c := range cases {

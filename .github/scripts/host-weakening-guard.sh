@@ -17,6 +17,12 @@ if [ "$#" -eq 0 ]; then
   set -- docs SECURITY.md THREAT_MODEL.md
 fi
 
+# A missing path would make grep fail quietly below, and the guard would
+# pass having checked nothing.
+for f in "$@"; do
+  [ -e "$f" ] || { echo "FAIL: $f does not exist; the guard checks nothing there" >&2; exit 1; }
+done
+
 hits=$(grep -rnHE --include='*.md' 'apparmor_restrict_unprivileged_userns|TESTONLY' "$@" \
   | grep -vE '^[^:]+:[0-9]+:> \*\*Warning' || true)
 
