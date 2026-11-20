@@ -13,6 +13,29 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Create` refuses a host that cannot enforce a sandbox's caps.** Docker accepts a
+  memory, swap, pids or CPU limit it cannot enforce and only warns, so the sandbox
+  started uncapped. `Create` now fails with `ErrRuntimeUnavailable` (`openbloxd`:
+  `503 runtime_unavailable`) and names the fix when the daemon reports no cgroups or
+  no support for one of those limits, or when its create warning says a limit was
+  discarded. A host where every limit works sees no change.
+
+### Security
+
+- **Rootless Docker with `runsc` is refused.** Measured on 2026-11-20: `runsc` runs
+  there only with `--ignore-cgroups`, and a sandbox held 400 MiB under a 128 MiB cap,
+  ran 205 processes under a 50-process cap and used 4.1 CPUs under a 0.5-CPU cap,
+  while Docker reported every limit as supported. Anyone who ran `runsc` under
+  rootless Docker had uncapped sandboxes; such a host now fails at `Create`. Run the
+  daemon as root and put `openbloxd` in front of it. See
+  [Rootless Docker](https://docs.openblox.sh/security/#rootless).
+
+### Added
+
+- A test proves the CPU cap throttles a busy loop, not only that it is set.
+
 ## [0.13.2] - 2026-11-10
 
 ### Changed

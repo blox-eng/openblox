@@ -11,12 +11,16 @@ import (
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
 
+// fixDoc is where an operator reads the fix for a host that cannot cap a
+// sandbox. TestFixDocResolves holds the anchor in place.
+const fixDoc = "docs/security.md#rootless"
+
 // checkDaemonCaps refuses a daemon that would run the sandbox with a limit
 // that does not hold. Docker accepts a limit it cannot enforce and only warns,
 // so a sandbox would start uncapped and nothing would report it.
 func checkDaemonCaps(info system.Info, runtime string) error {
 	if info.CgroupDriver == "none" {
-		return fmt.Errorf("%w: the docker daemon runs without cgroups, so no memory, CPU or process limit applies; run it with the systemd cgroup driver (see docs/security.md#rootless)", sandbox.ErrRuntimeUnavailable)
+		return fmt.Errorf("%w: the docker daemon runs without cgroups, so no memory, CPU or process limit applies; run it with the systemd cgroup driver (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable)
 	}
 	for _, c := range []struct {
 		ok         bool
@@ -29,14 +33,14 @@ func checkDaemonCaps(info system.Info, runtime string) error {
 		{info.CPUCfsQuota, "cpu", "cpu"},
 	} {
 		if !c.ok {
-			return fmt.Errorf("%w: the docker daemon cannot enforce the %s limit; delegate the %s cgroup controller to the daemon's user (see docs/security.md#rootless)", sandbox.ErrRuntimeUnavailable, c.limit, c.controller)
+			return fmt.Errorf("%w: the docker daemon cannot enforce the %s limit; delegate the %s cgroup controller to the daemon's user (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, c.limit, c.controller)
 		}
 	}
 	// Measured 2026-11-20: under rootless Docker, runsc starts only with
 	// --ignore-cgroups, and the sandbox then runs in the daemon's own cgroup.
 	// Docker still reports every limit as supported.
 	if slices.Contains(info.SecurityOptions, "name=rootless") && isRunsc(info, runtime) {
-		return fmt.Errorf("%w: rootless docker cannot cap a runsc sandbox: runsc runs there only with --ignore-cgroups, so memory, CPU and process limits do not apply; run openbloxd against the root docker daemon (see docs/security.md#rootless)", sandbox.ErrRuntimeUnavailable)
+		return fmt.Errorf("%w: rootless docker cannot cap a runsc sandbox: runsc runs there only with --ignore-cgroups, so memory, CPU and process limits do not apply; run openbloxd against the root docker daemon (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable)
 	}
 	return nil
 }
@@ -63,7 +67,7 @@ func checkLimitWarnings(warnings []string) error {
 		case strings.Contains(lower, "memory"):
 			limit, controllers = "the memory", "memory cgroup controller"
 		}
-		return fmt.Errorf("%w: the docker daemon discarded %s limit; delegate the %s to the daemon's user (see docs/security.md#rootless)", sandbox.ErrRuntimeUnavailable, limit, controllers)
+		return fmt.Errorf("%w: the docker daemon discarded %s limit; delegate the %s to the daemon's user (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, limit, controllers)
 	}
 	return nil
 }

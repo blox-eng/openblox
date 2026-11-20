@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -245,4 +246,17 @@ func TestCreateRemovesAContainerWhoseLimitWasDiscarded(t *testing.T) {
 			t.Errorf("the sandbox was not started; calls: %v", d.calls)
 		}
 	})
+}
+
+// Every refusal above sends the operator to fixDoc. A renamed heading would
+// leave them at the top of a long page with no fix in sight.
+func TestFixDocResolves(t *testing.T) {
+	file, anchor, _ := strings.Cut(fixDoc, "#")
+	doc, err := os.ReadFile("../../" + file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(doc), "{ #"+anchor+" }") {
+		t.Errorf("%s has no heading with { #%s }; the refusal messages link there", file, anchor)
+	}
 }

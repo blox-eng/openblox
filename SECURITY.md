@@ -139,6 +139,9 @@ discards its options.
 - Do not run untrusted code under `runc`, the host default, or any other
   shared-kernel runtime. Going the other way — a microVM runtime such as Kata —
   is a stronger boundary and is supported.
+- Do not run `runsc` under rootless Docker. Its memory, CPU and process caps do not
+  hold there, and openblox refuses it (see
+  [docs/security.md](docs/security.md#rootless)).
 - Do not put secrets into a sandbox's environment, files or command arguments.
 - Do not trust sandbox output: escape it before rendering, bound it before parsing,
   and treat it as potential prompt injection before handing it to a model.
