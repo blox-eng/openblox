@@ -39,14 +39,11 @@ func checkDaemonCaps(info system.Info, runtime string) error {
 	// Measured 2026-11-20: under rootless Docker, runsc starts only with
 	// --ignore-cgroups, and the sandbox then runs in the daemon's own cgroup.
 	// Docker still reports every limit as supported.
-	if slices.Contains(info.SecurityOptions, "name=rootless") && isRunsc(info, runtime) {
+	runsc := runtime == "runsc" || path.Base(info.Runtimes[runtime].Path) == "runsc"
+	if slices.Contains(info.SecurityOptions, "name=rootless") && runsc {
 		return fmt.Errorf("%w: rootless docker cannot cap a runsc sandbox: runsc runs there only with --ignore-cgroups, so memory, CPU and process limits do not apply; run openbloxd against the root docker daemon (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable)
 	}
 	return nil
-}
-
-func isRunsc(info system.Info, runtime string) bool {
-	return runtime == "runsc" || path.Base(info.Runtimes[runtime].Path) == "runsc"
 }
 
 // checkLimitWarnings refuses a create whose warnings say Docker dropped a
