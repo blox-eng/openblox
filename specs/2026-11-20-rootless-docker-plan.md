@@ -54,6 +54,7 @@ What the code says today:
   - `checkLimitWarnings(warnings []string) error` returns the first match, wrapped as `fmt.Errorf("%w: the docker daemon discarded the %s limit; delegate the %q cgroup controller to the daemon's user (see docs/security.md#rootless)", sandbox.ErrRuntimeUnavailable, ...)`.
   - In `Create`, after `ContainerCreate`, on warnings that match, `ContainerRemove(Force: true)` the created container, then return the error. The sandbox never starts.
 - **Also (R1, D3):** `checkDaemonCaps(info system.Info) error` in `limits.go`, called from `assertRuntime`. It refuses `CgroupDriver == "none"` and a false `MemoryLimit`, `PidsLimit`, `CPUCfsQuota` or `SwapLimit` (R9, D11), each with `ErrRuntimeUnavailable` and a fix that names the setting. Test `TestDaemonWithoutCgroupsIsRefused` covers the cases `none`, each flag false, and all true → nil.
+- **Also (R13, ruled 2026-11-20 after Task 3):** `checkDaemonCaps(info, runtime)` also refuses when `info.SecurityOptions` holds `name=rootless` and the requested runtime is runsc: its name is `runsc`, or its registered path ends in `/runsc`. The error wraps `ErrRuntimeUnavailable`: `rootless docker cannot cap a runsc sandbox: runsc runs there only with --ignore-cgroups, so memory, CPU and process limits do not apply; run openbloxd against the root docker daemon (see docs/security.md#rootless)`. Cases: rootless + `runsc` → refused; rootless + a runtime named `gvisor` with path `/usr/bin/runsc` → refused; rootless + `runc` → nil (not measured, out of scope); root + `runsc` → nil. The fake-daemon test adds: Info rootless + runsc → no create request.
 - **Done when:** the three tests pass, and `go test ./pkg/brokerapi/...` still passes. The broker returns 503 `runtime_unavailable` with the message, so a `brokerclient` caller gets the fix text. Add one assertion for that in `pkg/brokerapi`'s error tests if they do not already carry the message.
 - **Commit:** `fix(docker): Create refuses a sandbox when Docker drops one of its limits`
 
@@ -69,7 +70,7 @@ What the code says today:
 ### Task 3: spike — rootless Docker with runsc on the workstation
 
 Outside the repository, approved on 2026-11-20.
-- **Do:** `sudo apt install docker-ce-rootless-extras uidmap`. Then `dockerd-rootless-setuptool.sh install`. The root daemon is untouched. Register `runsc` in `~/.config/docker/daemon.json` with no extra flags first. Record each flag that it needed, for example `--ignore-cgroups`. A flag that turns off cgroups is a finding, not a fix.
+- **Do:** `sudo apt install rootlesskit uidmap slirp4netns` (Ubuntu's `docker.io` host; see Changes during build). Then `dockerd-rootless-setuptool.sh install`. The root daemon is untouched. Register `runsc` in `~/.config/docker/daemon.json` with no extra flags first. Record each flag that it needed, for example `--ignore-cgroups`. A flag that turns off cgroups is a finding, not a fix.
 - **Run:** with `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock`: `docker info` (look for `rootless` and the cgroup controllers), the four cap tests, `TestConformance`.
 - **Record (R11, D13):** under a `Delegate=cpu memory` drop-in, `docker info` flags next to `cgroup.controllers` of `/user.slice/user-$UID.slice` and of `user@$UID.service`. Note any setup that makes Docker report `PidsLimit: false`.
 - **Record:** in a local build log (not committed), each controller delegated by default, each step needed, each cap test result, with the output quoted. Task 7 writes it up. Nothing is committed.
@@ -560,8 +561,8 @@ C) Investigate before choosing (recommended)
 D) Defer this proposed change only
 ✅ Nothing changes now. ✅ The row stays visible. ❌ The anti-goal gap has no owner.
 
-State: pending
-Actual answer: C) Investigate before choosing (D15, 2026-11-20)
+State: resolved
+Actual answer: C) Investigate before choosing (D15, 2026-11-20), then refuse (owner, 2026-11-20, after Task 3's evidence)
 Accepted scope: investigation only. Tasks 3–4 record per-cap PASS/FAIL under rootless + runsc; this refusal choice returns to the owner with that evidence. No refusal is approved.
 History: D15 was sent with option C listed first (recommended-first) rather than the saved A–D order; labels and descriptions matched the saved record.
 
@@ -813,6 +814,12 @@ _No new tasks from Code Quality or Performance._
 - Parallelization: 2 lanes, 1 parallel / 1 sequential (plus the host spike first)
 - Lake Score: 12/16 answers picked a 10/10 option
 - Persistence: review log NOT saved; `gstack-review-log` needs `bun`, which is not installed
+
+## Changes during build
+
+- 2026-11-20, Task 3: this workstation runs Ubuntu's `docker.io` 29.1.3, not `docker-ce`, so `docker-ce-rootless-extras` does not exist in its apt sources. Ubuntu packages the binaries as `rootlesskit` (with `uidmap` and `slirp4netns`), but not the two scripts. The spike takes `dockerd-rootless.sh` and `dockerd-rootless-setuptool.sh` from moby `docker-v29.1.3/contrib`, matching the daemon version. Ubuntu's `apparmor` package already ships `/etc/apparmor.d/rootlesskit` for `/usr/bin/rootlesskit`, so the userns sysctl stays untouched. Task 6 is unchanged: hosted runners use `docker-ce`, where `docker-ce-rootless-extras` exists. Taken by this session; the operator docs (Task 7) name both install paths.
+- 2026-11-20, Task 3 → stop rule fired. runsc under rootless Docker starts only with `--ignore-cgroups` (no flags: "systemd error: Interactive authentication required."; `--rootless`: "Rootless mode not supported with \"create\""). Measured against the root daemon as control: memory 128m held 400 MiB (root: OOM 137), pids 50 ran 205 (root: forks refused), CPU 0.5 used 410% (root: 50.6%), tmpfs 64m stopped at 64 MiB (holds). Docker reported every limit flag true and gave no create warning. Tasks 4–6 do not start.
+- 2026-11-20, R13 ruled by the owner: refuse rootless + runsc in `checkDaemonCaps`. Task 1 gains that case (see Task 1, "Also (R13)").
 
 ## GSTACK REVIEW REPORT
 

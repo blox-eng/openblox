@@ -199,6 +199,10 @@ func (b *Backend) Create(ctx context.Context, name string, opts ...sandbox.Creat
 		}
 		return nil, fmt.Errorf("create sandbox %q: %w", name, err)
 	}
+	if err := checkLimitWarnings(created.Warnings); err != nil {
+		_ = b.cli.ContainerRemove(ctx, created.ID, container.RemoveOptions{Force: true})
+		return nil, fmt.Errorf("create sandbox %q: %w", name, err)
+	}
 
 	if err := b.cli.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
 		// Roll back rather than leave a created-but-dead container behind for
@@ -304,7 +308,7 @@ func (b *Backend) assertRuntime(ctx context.Context, runtime string) error {
 	if _, ok := info.Runtimes[runtime]; !ok {
 		return fmt.Errorf("%w: runtime %q is not registered with the docker daemon", sandbox.ErrRuntimeUnavailable, runtime)
 	}
-	return nil
+	return checkDaemonCaps(info, runtime)
 }
 
 // buildConfig translates a Spec into Docker's create payload. Every containment
