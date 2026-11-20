@@ -13,6 +13,50 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+### Breaking
+
+- **`Create` now fails on a host whose Docker daemon cannot enforce every cap.**
+  Before you upgrade, run
+  `docker info --format '{{.CgroupDriver}} {{.MemoryLimit}} {{.SwapLimit}} {{.PidsLimit}} {{.CPUCfsQuota}}'`.
+  Anything other than a driver that is not `none` and four `true`s means each
+  `Create` returns `ErrRuntimeUnavailable` (`openbloxd`: `503 runtime_unavailable`)
+  after the upgrade. The common case is a cgroup v1 host without swap accounting,
+  where `docker info` prints `No swap limit support`: boot it with `swapaccount=1`, or
+  move it to cgroup v2. Each message names its fix; see
+  [the fix table](https://docs.openblox.sh/security/#rootless). Rootless Docker with
+  `runsc` is refused too (see Security).
+
+  The check runs only when a sandbox is created. A sandbox that was already running
+  when you upgrade keeps running as before, uncapped on such a host. After fixing the
+  host, remove the old sandboxes with
+  `docker rm -f $(docker ps -aq --filter label=sh.openblox.managed=true)`; each is
+  created again, checked, on its next `Create`.
+
+### Fixed
+
+- **`Create` refuses a host that cannot enforce a sandbox's caps.** Docker accepts a
+  memory, swap, pids or CPU limit it cannot enforce and only warns, so the sandbox
+  started uncapped. `Create` now fails with `ErrRuntimeUnavailable` (`openbloxd`:
+  `503 runtime_unavailable`) and names the fix when the daemon reports no cgroups or
+  no support for one of those limits, or when its create warning says a limit was
+  discarded. A host where every limit works sees no change.
+
+### Security
+
+- **Rootless Docker with `runsc` is refused.** Measured on 2026-11-20: `runsc` runs
+  there only with `--ignore-cgroups`, and a sandbox held 400 MiB under a 128 MiB cap,
+  ran 205 processes under a 50-process cap and used 4.1 CPUs under a 0.5-CPU cap,
+  while Docker reported every limit as supported. Anyone who ran `runsc` under
+  rootless Docker had uncapped sandboxes; such a host now fails at `Create`. So does
+  any daemon whose runtime is registered with `--ignore-cgroups`, and, under rootless
+  Docker, a runtime registered as a containerd shim, which Docker cannot identify. Run the
+  daemon as root and put `openbloxd` in front of it. See
+  [Rootless Docker](https://docs.openblox.sh/security/#rootless).
+
+### Added
+
+- A test proves the CPU cap throttles a busy loop, not only that it is set.
+
 ## [0.13.3] - 2026-11-20
 
 ### Security

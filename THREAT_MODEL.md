@@ -156,9 +156,10 @@ conformed any less. Everything else is an ordinary Go test name.
 | Attack | Defence | Tested | Residual |
 |---|---|---|---|
 | Memory exhaustion | cgroup memory limit, swap disabled (`MemorySwap = Memory`). | `TestMemoryHogIsKilledAndTheHostSurvives` | The limit is enforced approximately; about 1.4× the configured value has been observed resident before the kill. Size hosts with headroom. |
-| CPU exhaustion | `NanoCPUs` quota per sandbox. | — (quota is asserted in `TestContainmentIsAppliedToTheRuntime`) | No fairness across sandboxes: N busy sandboxes use N × their quota. |
+| CPU exhaustion | `NanoCPUs` quota per sandbox. | `TestBusyLoopIsHeldToTheCPUCap` | No fairness across sandboxes: N busy sandboxes use N × their quota. |
 | Disk exhaustion | Root filesystem read-only; scratch is size-capped tmpfs drawn from the memory budget; no container-log output. | `TestFillingScratchHitsTheDiskCapNotTheHost` | `/dev/shm` is a separate tmpfs, bounded by the memory limit rather than `DiskBytes`. |
 | Stdout/stderr flooding | Each stream is capped at `sandbox.MaxOutputBytes` (16 MiB) in memory; the rest is drained and discarded, `Result.Truncated` is set, and the command still completes. | `TestCappedBuffer*` (unit), `output-flood-is-capped-and-the-command-completes`, `TestBrokerReportsTruncatedOutput` | Concurrent execs each hold up to 32 MiB of output plus JSON encoding in `openbloxd`. `ReadFile` streams without a cap; its size is bounded by the sandbox's disk budget. |
+| A host that cannot enforce a cap | `Create` refuses a daemon without cgroups or without memory, swap, pids or CFS support; a create whose warnings say a limit was discarded (the container is removed); and rootless Docker with `runsc`, where the caps were measured not to hold. | `TestDaemonWithoutCgroupsIsRefused`, `TestDiscardedLimitIsRefused`, `TestCreateRemovesAContainerWhoseLimitWasDiscarded` (unit, fake daemon) | Only the rootless + `runsc` case is known; another runtime that ignores cgroups while Docker reports support would pass. See [docs/security.md](docs/security.md#rootless). |
 | Too many sandboxes | `openbloxd`: `max_sandboxes` per profile (`429 at_capacity`). | `internal/daemon/capacity_test.go` (unit) | Mode A has no global cap. Neither mode caps the total across profiles; size the host for the sum. |
 | Leaks from repeated create/destroy | Destroy removes the container; no host state is kept. | `destroy-removes-the-sandbox`, `host-retains-no-process-goroutine-or-descriptor` (host-local: goroutines, file descriptors, and a host `/proc` scan for processes still serving a destroyed sandbox) | — |
 
@@ -218,7 +219,9 @@ exactly as under gVisor, and the documented limit is the same.
 
 ## 8. Assumptions that must hold
 
-1. `runsc` is a current gVisor release, registered with Docker under that name.
+1. `runsc` is a current gVisor release, registered with Docker under that name, on a
+   Docker daemon that runs as root. Under rootless Docker its caps do not hold, and
+   openblox refuses it.
 2. The Docker daemon is not reachable by untrusted parties, and no sandbox is given
    access to it by means outside openblox.
 3. In Mode B, only processes that should control sandboxes are in `socket_group`,

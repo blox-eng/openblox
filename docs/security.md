@@ -132,16 +132,58 @@ A filtering socket proxy does not fix this. Those filter at the verb level, but
 `POST /containers/create` **is** the dangerous verb: `Binds`, `Privileged` and `PidMode`
 are fields inside a request the proxy has already allowed.
 
-Two mitigations, best used together:
+The mitigation is a policy broker in front of it: a daemon that owns the Docker
+connection and exposes only openblox's own surface, with the isolation policy enforced
+daemon-side and not settable per request. This is `openbloxd`; see below.
 
-- **Run the Docker daemon rootless**, so a socket compromise yields an unprivileged user
-  rather than the host. ([#6](https://github.com/blox-eng/openblox/issues/6))
-- **Put a policy broker in front of it** — a daemon that owns the Docker connection and
-  exposes only openblox's own surface, with the isolation policy enforced daemon-side
-  and not settable per request. This is `openbloxd`; see below.
+Rootless Docker would also shrink a socket compromise to an unprivileged user, but with
+`runsc` it drops the sandbox's resource caps, and openblox refuses it. See
+[Rootless Docker](#rootless).
 
 Where the calling process cannot run directly on the host, prefer `openbloxd` over
 handing a container the Docker socket.
+
+## Rootless Docker { #rootless }
+
+**Verdict, 2026-11-20: not recommended with `runsc`. openblox refuses it.**
+
+This is from one local run, not from CI: Ubuntu 24.04, Docker 29.1.3, gVisor
+`release-20260803.0`, cgroup v2, with systemd delegating `cpu`, `memory` and `pids`
+to the daemon's user. ([#6](https://github.com/blox-eng/openblox/issues/6))
+
+Under rootless Docker, `runsc` cannot create the sandbox's cgroup. It fails with
+`systemd error: Interactive authentication required.`, and its `--rootless` flag
+refuses to create a container. It starts only with `--ignore-cgroups`. The sandbox
+then runs in the daemon's own cgroup, and no limit of its own applies:
+
+| Cap | Test | Rootless + `runsc` | Root daemon + `runsc` |
+|---|---|---|---|
+| Memory | 128 MiB cap, a process holds 400 MiB | **not enforced**: 400 MiB held | enforced: killed (exit 137) |
+| Processes | 50-process cap, a shell starts 200 | **not enforced**: 205 running | enforced: forks refused |
+| CPU | 0.5-CPU cap, four busy loops | **not enforced**: 4.1 CPUs used | enforced: 0.5 CPUs used |
+| Scratch disk | 64 MiB tmpfs, a write of 200 MiB | enforced: stops at 64 MiB | enforced |
+
+Docker reports every limit as supported and gives no warning, so nothing else would
+tell you.
+
+> **Warning:** under rootless Docker with `runsc --ignore-cgroups`, code in a sandbox can use all host memory and every core, and can fill the process table. Each sandbox can take the host down.
+
+> **Warning:** do not make `runsc` start by setting `kernel.apparmor_restrict_unprivileged_userns=0` or by passing a `--TESTONLY-` flag. Each weakens the whole host, not only the sandbox.
+
+### When `Create` refuses a host
+
+`Create` checks the Docker daemon before each sandbox. When the host cannot enforce a
+cap, it fails with `sandbox.ErrRuntimeUnavailable`. `openbloxd` answers
+`503 runtime_unavailable` with the same message. No sandbox starts.
+
+| The message says | The fix |
+|---|---|
+| `rootless docker cannot cap a runsc sandbox` | Run `openbloxd` against the root Docker daemon: unset `DOCKER_HOST`, or point it at `unix:///var/run/docker.sock`. A runtime registered as a containerd shim (`runtimeType`, no `path`) is refused under rootless too, because Docker cannot say which runtime it is. |
+| `runtime "<name>" runs with --ignore-cgroups` | Remove `--ignore-cgroups` from that runtime's `runtimeArgs` in `daemon.json`, and restart the daemon. A runtime registered as a containerd shim (`runtimeType`) keeps its options out of Docker's view, so openblox cannot see `ignore-cgroups` set in its `runsc.toml`: never set it there. |
+| `the docker daemon runs without cgroups` | Run the daemon with the `systemd` cgroup driver. A rootless daemon started without systemd has no cgroups. |
+| `the docker daemon cannot enforce the swap limit` | Enable swap accounting: boot the host with `swapaccount=1`, or move it to cgroup v2. `docker info` then stops printing `No swap limit support`. On cgroup v2, Docker also reports no swap support when `dockerd` runs in the root cgroup (`/proc/<pid>/cgroup` reads `0::/`), as a nested daemon can: run it in a child cgroup, as systemd does. |
+| `the docker daemon cannot enforce the <limit> limit` (memory, pids, cpu) | Enable that cgroup controller for the daemon. For a rootless daemon under a user's systemd, add `Delegate=cpu memory pids` under `[Service]` in `/etc/systemd/system/user@.service.d/delegate.conf`, then `sudo systemctl daemon-reload` and log in again. |
+| `the docker daemon discarded the <limit> limit` | The same fix as for that limit above. Docker accepted the limit and then dropped it; the container is removed. |
 
 ## Deploying the policy broker (`openbloxd`)
 

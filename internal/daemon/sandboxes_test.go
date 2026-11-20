@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -352,6 +353,32 @@ func TestInternalErrorFromCreateDoesNotLeak(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "/var/lib/docker") {
 		t.Error("internal detail leaked into the response body")
+	}
+}
+
+// A host that cannot cap a sandbox refuses it with the fix in the message, and
+// the caller on the socket must see that fix, not a bare "unavailable".
+func TestRuntimeUnavailableFromCreateCarriesTheFix(t *testing.T) {
+	srv := newTestServer(t)
+	srv.backend.(*fakeBackend).createErr = fmt.Errorf("%w: the docker daemon cannot enforce the pids limit; delegate the pids cgroup controller to the daemon's user (see docs/security.md#rootless)", sandbox.ErrRuntimeUnavailable)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes",
+		strings.NewReader(`{"name":"a","profile":"code-exec"}`))
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	var body brokerapi.Error
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Kind != brokerapi.KindRuntimeUnavailable {
+		t.Errorf("kind = %q, want %q", body.Kind, brokerapi.KindRuntimeUnavailable)
+	}
+	if !strings.Contains(body.Message, "docs/security.md#rootless") {
+		t.Errorf("message %q does not carry the fix", body.Message)
 	}
 }
 

@@ -12,6 +12,8 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +21,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/docker/docker/api/types/container"
 
 	"github.com/blox-eng/openblox/pkg/sandbox"
 )
@@ -280,4 +284,79 @@ func TestFillingScratchHitsTheDiskCapNotTheHost(t *testing.T) {
 	}
 
 	assertHostStillUsable(t, b, "openblox-test-diskfill-witness")
+}
+
+// cpuSample reads the sandbox's CPU time and throttle count from the daemon.
+// Under runsc these come from the sandbox's host cgroup, which is the cap
+// being tested.
+func cpuSample(t *testing.T, b *Backend, id string) (usage time.Duration, throttled uint64, at time.Time) {
+	t.Helper()
+	resp, err := b.cli.ContainerStatsOneShot(context.Background(), id)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var st container.StatsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+	// st.Read is when the daemon read the counters; the time the response
+	// arrived would stretch the window and hide a cap that does not hold.
+	return time.Duration(st.CPUStats.CPUUsage.TotalUsage), st.CPUStats.ThrottlingData.ThrottledPeriods, st.Read
+}
+
+func TestBusyLoopIsHeldToTheCPUCap(t *testing.T) {
+	b := newTestBackend(t)
+
+	const cpus = 0.5
+	sb := create(t, b, "openblox-test-busyloop", sandbox.WithResources(sandbox.Resources{
+		CPUs:        cpus,
+		MemoryBytes: 256 << 20,
+		DiskBytes:   16 << 20,
+	}))
+
+	// Four busy loops ask for four cores. They run until both samples are in,
+	// however late the daemon answers; cancelling the Exec kills them.
+	loopCtx, stopLoops := context.WithCancel(context.Background())
+	defer stopLoops()
+	done := make(chan error, 1)
+	go func() {
+		_, err := sb.Exec(loopCtx, sandbox.Command{
+			Argv:    []string{"sh", "-c", `for i in 1 2 3 4; do (while :; do :; done) & done; wait`},
+			Timeout: 2 * time.Minute,
+		})
+		done <- err
+	}()
+
+	time.Sleep(2 * time.Second)
+	usage0, throttled0, t0 := cpuSample(t, b, sb.Info().ID)
+	time.Sleep(5 * time.Second)
+	usage1, throttled1, t1 := cpuSample(t, b, sb.Info().ID)
+
+	stopLoops()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("busy loop Exec = %v, want it cancelled after the samples", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the busy loops did not stop within 30 s of cancelling their Exec")
+	}
+
+	if !t1.After(t0) {
+		t.Fatalf("the daemon's two CPU samples are not in order: %v then %v", t0, t1)
+	}
+	ratio := float64(usage1-usage0) / float64(t1.Sub(t0))
+	t.Logf("CPU used %.2f cores against a cap of %.2f; throttled periods %d -> %d", ratio, cpus, throttled0, throttled1)
+
+	// No floor: a slow runner may give the loop less than its cap, which is safe.
+	if ratio > 0.75 {
+		t.Errorf("sandbox used %.2f cores with CPUs=%.2f — the CPU cap is not enforced", ratio, cpus)
+	}
+	// The kernel counts a throttled period only when the sandbox used its whole
+	// quota in it. A starved runner may never let it get that far, and then a
+	// flat count proves nothing either way.
+	if ratio >= 0.8*cpus && throttled1 <= throttled0 {
+		t.Errorf("throttled periods did not rise (%d -> %d) — the CPU cap never bit", throttled0, throttled1)
+	}
 }
