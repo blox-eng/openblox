@@ -39,16 +39,19 @@ func checkDaemonCaps(info system.Info, runtime string) error {
 	// Measured 2026-11-20: with --ignore-cgroups, runsc runs the sandbox in the
 	// daemon's own cgroup, and Docker still reports every limit as supported.
 	registered := info.Runtimes[runtime]
-	// runsc parses flags with Go's flag package, so -x, --x, --x=true and
-	// --x=1 all set it.
+	// Docker joins the args into a /bin/sh wrapper, so the shell splits, trims
+	// and unquotes them; runsc then parses flags with Go's flag package, so -x,
+	// --x, --x=true and --x=1 all set it. A word that mentions the flag in any
+	// other form counts as set: refusing a working host beats running uncapped.
 	ignoresCgroups := false
-	for _, arg := range registered.Args {
-		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
-		if name != "ignore-cgroups" {
+	words := strings.Fields(strings.NewReplacer(`"`, "", `'`, "", `\`, "").Replace(strings.Join(registered.Args, " ")))
+	for _, word := range words {
+		if !strings.Contains(word, "ignore-cgroups") {
 			continue
 		}
+		name, value, hasValue := strings.Cut(strings.TrimLeft(word, "-"), "=")
 		on, err := strconv.ParseBool(value)
-		ignoresCgroups = !hasValue || on || err != nil
+		ignoresCgroups = name != "ignore-cgroups" || !hasValue || on || err != nil
 	}
 	if ignoresCgroups {
 		return fmt.Errorf("%w: runtime %q runs with --ignore-cgroups, so memory, CPU and process limits do not apply; remove the flag from the runtime's registration (see "+fixDoc+")", sandbox.ErrRuntimeUnavailable, runtime)

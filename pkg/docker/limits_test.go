@@ -109,6 +109,11 @@ func TestDaemonWithoutCgroupsIsRefused(t *testing.T) {
 		{"root runsc with -ignore-cgroups", withArgs(healthy(), "-ignore-cgroups"), "runsc", "ignore-cgroups"},
 		{"root runsc with -ignore-cgroups=1", withArgs(healthy(), "-ignore-cgroups=1"), "runsc", "ignore-cgroups"},
 		{"root runsc with --ignore-cgroups=false", withArgs(healthy(), "--ignore-cgroups=false"), "runsc", ""},
+		// Docker joins runtimeArgs into a /bin/sh wrapper (moby runtime_unix.go),
+		// so the shell splits, trims and unquotes them before runsc sees them.
+		{"root runsc with a leading space", withArgs(healthy(), " --ignore-cgroups"), "runsc", "ignore-cgroups"},
+		{"root runsc with two flags in one arg", withArgs(healthy(), "--debug --ignore-cgroups"), "runsc", "ignore-cgroups"},
+		{"root runsc with a quoted flag", withArgs(healthy(), "'--ignore-cgroups'"), "runsc", "ignore-cgroups"},
 		{"rootless runc", rootless(healthy()), "runc", ""},
 	}
 	for _, c := range cases {

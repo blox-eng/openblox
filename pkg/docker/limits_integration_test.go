@@ -13,6 +13,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -314,13 +315,15 @@ func TestBusyLoopIsHeldToTheCPUCap(t *testing.T) {
 		DiskBytes:   16 << 20,
 	}))
 
-	// Four busy loops ask for four cores. The shell kills them after 8 s, so
-	// the 5 s window measured below sits inside the loop.
+	// Four busy loops ask for four cores. They run until both samples are in,
+	// however late the daemon answers; cancelling the Exec kills them.
+	loopCtx, stopLoops := context.WithCancel(context.Background())
+	defer stopLoops()
 	done := make(chan error, 1)
 	go func() {
-		_, err := sb.Exec(context.Background(), sandbox.Command{
-			Argv:    []string{"sh", "-c", `for i in 1 2 3 4; do (while :; do :; done) & done; sleep 8; kill $(jobs -p)`},
-			Timeout: 30 * time.Second,
+		_, err := sb.Exec(loopCtx, sandbox.Command{
+			Argv:    []string{"sh", "-c", `for i in 1 2 3 4; do (while :; do :; done) & done; wait`},
+			Timeout: 2 * time.Minute,
 		})
 		done <- err
 	}()
@@ -330,8 +333,14 @@ func TestBusyLoopIsHeldToTheCPUCap(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	usage1, throttled1, t1 := cpuSample(t, b, sb.Info().ID)
 
-	if err := <-done; err != nil {
-		t.Fatalf("busy loop Exec = %v", err)
+	stopLoops()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("busy loop Exec = %v, want it cancelled after the samples", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the busy loops did not stop within 30 s of cancelling their Exec")
 	}
 
 	if !t1.After(t0) {
