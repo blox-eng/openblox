@@ -13,6 +13,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-11-20
+
 ### Security
 
 - **`openbloxd` and the library are built with Go 1.27.4.** Go 1.27.3's `net/http`
@@ -572,7 +574,8 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
 - `Reap` for idle and max-age lifetime bounds, holding no state of its own.
 - Images are pulled when absent.
 
-[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.13.2...HEAD
+[Unreleased]: https://github.com/blox-eng/openblox/compare/v0.13.3...HEAD
+[0.13.3]: https://github.com/blox-eng/openblox/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/blox-eng/openblox/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/blox-eng/openblox/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/blox-eng/openblox/compare/v0.12.0...v0.13.0
