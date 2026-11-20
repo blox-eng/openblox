@@ -53,6 +53,13 @@ weakness, and say who was affected; the rest are as in Keep a Changelog.
   daemon as root and put `openbloxd` in front of it. See
   [Rootless Docker](https://docs.openblox.sh/security/#rootless).
 
+- **`openbloxd` and the library are built with Go 1.27.4.** Go 1.27.3's `net/http`
+  can crash an HTTP/1 server through a `MaxBytesReader` header race (GO-2026-6859),
+  and `govulncheck` finds it reachable from openblox's Docker and broker clients.
+  `go.mod` now says `go 1.27.4`; a Go 1.27 toolchain fetches it on its own. Anyone
+  running a released `openbloxd` was affected; upgrade the daemon to the release
+  that carries this.
+
 ### Added
 
 - A test proves the CPU cap throttles a busy loop, not only that it is set.
